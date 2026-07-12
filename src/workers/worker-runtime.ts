@@ -83,8 +83,9 @@ export function setupEvolutionWorker<TData, TReplay>(definition: WorkerDefinitio
 
             // Only rebuild champion replay on a meaningful improvement vs the last replay.
             // Tiny survival/noise bumps used to regenerate full replays every few seconds and
-            // restart snake/breaker animations while scores looked stuck.
-            const REPLAY_IMPROVEMENT_EPS = 5;
+            // restart snake/breaker animations while scores looked stuck. Relative to the current
+            // fitness scale so it works for both game scores (~hundreds) and Sharpe ratios (~units).
+            const REPLAY_IMPROVEMENT_EPS = Math.max(Math.abs(lastReplayFitness) * 0.02, 0.01);
             if (result.bestFitness > bestFitnessSeen) {
                 bestFitnessSeen = result.bestFitness;
                 bestGenome = [...result.bestGenome];
