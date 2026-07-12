@@ -14,7 +14,7 @@ const NAV_ITEMS = [
     {id: "stock" as const, label: "Stock Trading", shortLabel: "Trading", icon: CandlestickChart, color: "stock"},
 ];
 
-export const App = React.memo(function App() {
+export const App = React.memo(() => {
     const [topic, setTopic] = React.useState<TopicId>("theory");
     const activeItem = NAV_ITEMS.find(item => item.id === topic) ?? NAV_ITEMS[0];
 

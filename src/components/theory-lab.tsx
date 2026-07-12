@@ -22,7 +22,7 @@ const FLOW = ["初始化 Population", "評估 Fitness", "Selection", "Crossover"
 const PARENT_A = [0.82, -0.31, 0.14, 0.67, -0.74, 0.26, 0.51, -0.08];
 const PARENT_B = [-0.44, 0.76, 0.39, -0.22, 0.91, -0.58, 0.05, 0.63];
 
-export const TheoryLab = React.memo(function TheoryLab() {
+export const TheoryLab = React.memo(() => {
     const [mutationRate, setMutationRate] = React.useState(0.18);
     const [seed, setSeed] = React.useState(42);
     const child = React.useMemo(() => createChild(mutationRate, seed), [mutationRate, seed]);
@@ -136,7 +136,12 @@ interface GeneValue {
     mutated: boolean;
 }
 
-const GenomeRow = React.memo(function GenomeRow({label, values}: {label: string; values: GeneValue[]}) {
+interface GenomeRowProps {
+    label: string;
+    values: GeneValue[];
+}
+
+const GenomeRow = React.memo<GenomeRowProps>(({label, values}) => {
     return (
         <div className="genome-row">
             <span>{label}</span>

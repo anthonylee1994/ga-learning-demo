@@ -22,7 +22,7 @@ const DEFAULT_CONFIG: GAConfig = {
 
 type IndicatorView = "price" | "momentum" | "macd" | "risk";
 
-export const StockLab = React.memo(function StockLab() {
+export const StockLab = React.memo(() => {
     const [tickerInput, setTickerInput] = React.useState("QQQ");
     const [marketData, setMarketData] = React.useState<MarketDataResponse | null>(null);
     const [loading, setLoading] = React.useState(true);

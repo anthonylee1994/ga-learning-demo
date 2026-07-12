@@ -18,7 +18,7 @@ const DEFAULT_CONFIG: GAConfig = {
     speed: 3,
 };
 
-export const SnakeLab = React.memo(function SnakeLab() {
+export const SnakeLab = React.memo(() => {
     const demo = useEvolutionDemo<undefined, SnakeReplay>({
         topic: "snake",
         createWorker: () => new Worker(new URL("../workers/snake.worker.ts", import.meta.url), {type: "module"}),
@@ -73,7 +73,7 @@ interface DemoShellProps {
     children: React.ReactNode;
 }
 
-export const DemoShell = React.memo(function DemoShell(props: DemoShellProps) {
+export const DemoShell = React.memo<DemoShellProps>((props) => {
     return (
         <div className={`demo-view accent-${props.accent}`}>
             <header className="demo-header">

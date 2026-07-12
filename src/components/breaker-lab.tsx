@@ -19,7 +19,7 @@ const DEFAULT_CONFIG: GAConfig = {
     speed: 3,
 };
 
-export const BreakerLab = React.memo(function BreakerLab() {
+export const BreakerLab = React.memo(() => {
     const demo = useEvolutionDemo<undefined, BreakerReplay>({
         topic: "breaker",
         createWorker: () => new Worker(new URL("../workers/breaker.worker.ts", import.meta.url), {type: "module"}),

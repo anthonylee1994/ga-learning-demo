@@ -6,7 +6,7 @@ interface MetricsProps {
     extra?: Array<{label: string; value: string}>;
 }
 
-export const Metrics = React.memo(function Metrics({stats, extra = []}: MetricsProps) {
+export const Metrics = React.memo<MetricsProps>(({stats, extra = []}) => {
     const values = [
         {label: "Generation", value: stats ? String(stats.generation) : "0"},
         {label: "Best fitness", value: stats ? formatNumber(stats.bestFitness) : "—"},

@@ -3,13 +3,7 @@ import type {BreakerReplay} from "../lib/types";
 
 const TERMINAL_HOLD_MS = 900;
 
-export const BreakerCanvas = React.memo(function BreakerCanvas({
-    replay,
-    speed,
-    playing = true,
-    loop = true,
-    restartKey = 0,
-}: {
+interface Props {
     replay?: BreakerReplay;
     speed: number;
     /** Advance frames when true. */
@@ -18,7 +12,9 @@ export const BreakerCanvas = React.memo(function BreakerCanvas({
     loop?: boolean;
     /** Change to force restart from frame 0 (e.g. pause showcase of latest champion). */
     restartKey?: number | string;
-}) {
+}
+
+export const BreakerCanvas = React.memo<Props>(({ replay, speed, playing = true, loop = true, restartKey = 0 }) => {
     const canvasRef = React.useRef<HTMLCanvasElement>(null);
     const [frameIndex, setFrameIndex] = React.useState(0);
 

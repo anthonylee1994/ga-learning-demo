@@ -8,7 +8,7 @@ interface ApplicationPanelProps {
     termination: string;
 }
 
-export const ApplicationPanel = React.memo(function ApplicationPanel(props: ApplicationPanelProps) {
+export const ApplicationPanel = React.memo<ApplicationPanelProps>((props) => {
     return (
         <section className="application-panel">
             <div className="panel-heading">

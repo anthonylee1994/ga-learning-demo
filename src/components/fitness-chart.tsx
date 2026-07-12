@@ -2,7 +2,11 @@ import React from "react";
 import {CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis} from "recharts";
 import type {GenerationStats} from "../lib/types";
 
-export const FitnessChart = React.memo(function FitnessChart({history}: {history: GenerationStats[]}) {
+interface Props {
+    history: GenerationStats[];
+}
+
+export const FitnessChart = React.memo<Props>(({history}) => {
     return (
         <div className="chart-panel">
             <div className="panel-heading">

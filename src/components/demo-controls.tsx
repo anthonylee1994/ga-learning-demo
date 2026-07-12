@@ -8,7 +8,7 @@ interface DemoControlsProps {
     disabled?: boolean;
 }
 
-export const DemoControls = React.memo(function DemoControls({demo, disabled}: DemoControlsProps) {
+export const DemoControls = React.memo<DemoControlsProps>(({demo, disabled}) => {
     const updateNumber = (key: "populationSize" | "mutationRate" | "speed", value: number) => {
         demo.setConfig(current => ({...current, [key]: value}));
     };
@@ -97,7 +97,7 @@ interface ControlSliderProps {
     onChange: (value: number) => void;
 }
 
-const ControlSlider = React.memo(function ControlSlider(props: ControlSliderProps) {
+const ControlSlider = React.memo<ControlSliderProps>((props) => {
     return (
         <label className="control-field">
             <span className="control-label">

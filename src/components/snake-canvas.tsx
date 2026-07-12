@@ -3,7 +3,18 @@ import type {SnakeReplay} from "../lib/types";
 
 const TERMINAL_HOLD_MS = 900;
 
-export const SnakeCanvas = React.memo(function SnakeCanvas({
+interface Props {
+    replay?: SnakeReplay;
+    speed: number;
+    /** Advance frames when true. */
+    playing?: boolean;
+    /** After the final frame (game lost / finished), restart from 0. If false, freeze on last frame. */
+    loop?: boolean;
+    /** Change to force restart from frame 0 (e.g. pause showcase of latest champion). */
+    restartKey?: number | string;
+}
+
+export const SnakeCanvas = React.memo<Props>(({
     replay,
     speed,
     playing = true,
@@ -18,7 +29,7 @@ export const SnakeCanvas = React.memo(function SnakeCanvas({
     loop?: boolean;
     /** Change to force restart from frame 0 (e.g. pause showcase of latest champion). */
     restartKey?: number | string;
-}) {
+}) => {
     const canvasRef = React.useRef<HTMLCanvasElement>(null);
     const [frameIndex, setFrameIndex] = React.useState(0);
 
