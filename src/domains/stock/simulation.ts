@@ -5,6 +5,11 @@ import {decodeStockGenome} from "./strategy-genome";
 const STARTING_EQUITY = 10_000;
 const TRANSACTION_COST = 0.001;
 
+/** Fraction of the training segment used to fit; the remainder is held out as validation. */
+const TRAIN_VALIDATION_RATIO = 0.7;
+/** L2 penalty on the signal weights — nudges the GA toward simpler, more generalizable policies. */
+const WEIGHT_L2_PENALTY = 0.2;
+
 /**
  * Cache indicator snapshots by the exact points array reference.
  * evaluate() used to recompute indicators for every genome every generation —
@@ -45,11 +50,35 @@ export function evaluateStockGenome(genome: Genome, points: MarketDataPoint[]): 
     const {parameters, strategy} = decodeStockGenome(genome);
     const snapshots = getIndicatorSnapshots(points, parameters);
     const {train} = splitIndicators(snapshots);
-    if (train.length < 30) {
+    if (train.length < 60) {
         return -1_000;
     }
-    const result = simulateSegment(strategy, train, 0);
-    return result.totalReturn * 100 + result.sharpe * 8 - result.maxDrawdown * 45;
+
+    // Split the training segment into a fit window and a held-out validation window.
+    // Selection rewards generalization, not in-sample curve-fitting.
+    const splitAt = Math.max(30, Math.floor(train.length * TRAIN_VALIDATION_RATIO));
+    const fit = train.slice(0, splitAt);
+    const validation = train.slice(splitAt - 1);
+    const fitResult = simulateSegment(strategy, fit, 0);
+    const validationResult = simulateSegment(strategy, validation, fitResult.endingPosition);
+    const fitScore = segmentScore(fitResult, fit);
+    const validationScore = segmentScore(validationResult, validation);
+
+    // mean − 0.5·max(0, fit − val): when the genome overfits (fit ≫ val) this collapses to the
+    // validation score alone; when it generalizes (val ≥ fit) it keeps the average. Plus L2 on weights.
+    const mean = (fitScore + validationScore) / 2;
+    const overfitPenalty = Math.max(0, fitScore - validationScore) * 0.5;
+    const regularization = WEIGHT_L2_PENALTY * strategy.weights.reduce((sum, weight) => sum + weight * weight, 0);
+    return mean - overfitPenalty - regularization;
+}
+
+/** Per-window fitness: reward return in excess of buy & hold, reward Sharpe, punish drawdown. */
+function segmentScore(result: SegmentResult, snapshots: IndicatorSnapshot[]): number {
+    const first = snapshots[0]?.close ?? 1;
+    const last = snapshots.at(-1)?.close ?? first;
+    const benchmarkReturn = last / first - 1;
+    const excessReturn = result.totalReturn - benchmarkReturn;
+    return excessReturn * 100 + result.sharpe * 10 - result.maxDrawdown * 40;
 }
 
 export function createTradingReplay(genome: Genome, points: MarketDataPoint[]): TradingReplay {
