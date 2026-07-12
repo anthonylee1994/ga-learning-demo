@@ -1,15 +1,9 @@
-import {argMax, NeuralNetworkAdapter} from "../../lib/neural-network";
-import type {Genome, IndicatorSnapshot, MarketDataPoint, OptimizedIndicatorParameters, TradeMarker, TradingPoint, TradingReplay} from "../../lib/types";
+import type {Genome, IndicatorSnapshot, MarketDataPoint, OptimizedIndicatorParameters, StockStrategy, TradeMarker, TradingPoint, TradingReplay} from "../../lib/types";
 import {calculateIndicators, splitIndicators} from "./indicators";
-import {decodeStockGenome, STOCK_TOPOLOGY} from "./strategy-genome";
-
-export {STOCK_TOPOLOGY} from "./strategy-genome";
+import {decodeStockGenome} from "./strategy-genome";
 
 const STARTING_EQUITY = 10_000;
 const TRANSACTION_COST = 0.001;
-
-/** Shared adapter so evaluate/replay do not allocate a new network graph per genome. */
-const networkAdapter = new NeuralNetworkAdapter(STOCK_TOPOLOGY);
 
 /**
  * Cache indicator snapshots by the exact points array reference.
@@ -48,22 +42,22 @@ export function getIndicatorSnapshots(points: MarketDataPoint[], parameters: Opt
 }
 
 export function evaluateStockGenome(genome: Genome, points: MarketDataPoint[]): number {
-    const {parameters, networkGenome} = decodeStockGenome(genome);
+    const {parameters, strategy} = decodeStockGenome(genome);
     const snapshots = getIndicatorSnapshots(points, parameters);
     const {train} = splitIndicators(snapshots);
     if (train.length < 30) {
         return -1_000;
     }
-    const result = simulateSegment(networkGenome, train, 0);
+    const result = simulateSegment(strategy, train, 0);
     return result.totalReturn * 100 + result.sharpe * 8 - result.maxDrawdown * 45;
 }
 
 export function createTradingReplay(genome: Genome, points: MarketDataPoint[]): TradingReplay {
-    const {parameters, networkGenome} = decodeStockGenome(genome);
+    const {parameters, strategy} = decodeStockGenome(genome);
     const snapshots = getIndicatorSnapshots(points, parameters);
     const {train, test, splitIndex} = splitIndicators(snapshots);
-    const trainResult = simulateSegment(networkGenome, train, 0);
-    const testResult = simulateSegment(networkGenome, test, trainResult.endingPosition);
+    const trainResult = simulateSegment(strategy, train, 0);
+    const testResult = simulateSegment(strategy, test, trainResult.endingPosition);
     const trainCurve = trainResult.equityCurve;
     const testScale = trainCurve.at(-1) ?? STARTING_EQUITY;
     const normalizedTestCurve = testResult.equityCurve.map(value => (value / STARTING_EQUITY) * testScale);
@@ -100,8 +94,7 @@ export function createTradingReplay(genome: Genome, points: MarketDataPoint[]): 
     };
 }
 
-function simulateSegment(genome: Genome, snapshots: IndicatorSnapshot[], startingPosition: number): SegmentResult {
-    const runNetwork = networkAdapter.createRunner(genome);
+function simulateSegment(strategy: StockStrategy, snapshots: IndicatorSnapshot[], startingPosition: number): SegmentResult {
     let equity = STARTING_EQUITY;
     let position = startingPosition;
     const equityCurve = [equity];
@@ -111,9 +104,10 @@ function simulateSegment(genome: Genome, snapshots: IndicatorSnapshot[], startin
     for (let index = 1; index < snapshots.length; index += 1) {
         const previous = snapshots[index - 1];
         const current = snapshots[index];
-        const output = runNetwork([...previous.features, position]);
-        const action = argMax(output);
-        const targetPosition = action === 0 ? 1 : action === 2 ? 0 : position;
+        const score = scoreStrategy(strategy, previous.features);
+        // Hysteresis band: enter long on a strong positive score, exit to cash once it drops
+        // below the exit threshold. Holding between the thresholds keeps turnover (and cost) low.
+        const targetPosition = position < 0.5 ? (score > strategy.enterThreshold ? 1 : 0) : score < strategy.exitThreshold ? 0 : 1;
         const turnover = Math.abs(targetPosition - position);
         const priceReturn = current.close / previous.close - 1;
         const dailyReturn = position * priceReturn - turnover * TRANSACTION_COST;
@@ -140,6 +134,15 @@ function simulateSegment(genome: Genome, snapshots: IndicatorSnapshot[], startin
         maxDrawdown: calculateMaxDrawdown(equityCurve),
         endingPosition: position,
     };
+}
+
+/** Weighted linear signal squashed to [-1, 1]; the GA evolves the weights, bias and thresholds. */
+function scoreStrategy(strategy: StockStrategy, features: number[]): number {
+    let sum = strategy.bias;
+    for (let index = 0; index < strategy.weights.length; index += 1) {
+        sum += strategy.weights[index] * (features[index] ?? 0);
+    }
+    return Math.tanh(sum);
 }
 
 function calculateSharpe(returns: number[]): number {

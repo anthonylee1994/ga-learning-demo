@@ -213,9 +213,9 @@ export const StockLab = React.memo(() => {
                     <FitnessChart history={demo.history} />
                     <ApplicationPanel
                         fitness="Training return × 100 + Sharpe × 8 − max drawdown × 45"
-                        genome="12 個 indicator parameter genes + Brain.js 14 → 16 → 8 → 3 weights 與 biases"
-                        inputs="GA 優化後嘅 SMA、Williams %R、ROC、RSI、MACD、Bollinger、volatility、volume z-score、倉位"
-                        outputs="100% long、維持倉位、100% cash"
+                        genome="12 個 indicator parameter genes + 13 個 feature weight + bias + enter/exit threshold"
+                        inputs="GA 優化後嘅 SMA、Williams %R、ROC、RSI、MACD、Bollinger、volatility、volume z-score"
+                        outputs="加權訊號 score = tanh(bias + Σ wᵢ·featureᵢ)：> enter 做 100% long、< exit 走返 cash、中間維持倉位"
                         termination="由第一個有效 indicator session 跑到 training segment 尾；test data 絕不參與 selection"
                     />
                 </main>

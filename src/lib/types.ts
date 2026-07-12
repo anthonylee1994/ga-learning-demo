@@ -111,6 +111,14 @@ export interface OptimizedIndicatorParameters {
     volumeZScorePeriod: number;
 }
 
+/** Linear trading policy tuned directly by the GA — one weight per indicator feature, no neural network. */
+export interface StockStrategy {
+    weights: number[];
+    bias: number;
+    enterThreshold: number;
+    exitThreshold: number;
+}
+
 export interface IndicatorSnapshot {
     date: string;
     close: number;
