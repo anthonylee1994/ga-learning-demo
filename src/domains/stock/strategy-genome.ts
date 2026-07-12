@@ -3,7 +3,7 @@ import type {Genome, OptimizedIndicatorParameters} from "../../lib/types";
 
 export const STOCK_TOPOLOGY = {
     inputSize: 14,
-    hiddenLayers: [4],
+    hiddenLayers: [16, 8],
     outputSize: 3,
 };
 
