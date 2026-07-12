@@ -1,0 +1,6 @@
+allowBuilds:
+    esbuild: true
+    gl: false
+minimumReleaseAgeExclude:
+    - fetch-mock-cache@3.1.0
+    - yahoo-finance2@4.0.0
