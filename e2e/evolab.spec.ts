@@ -14,11 +14,17 @@ test("desktop workspace runs all three evolution demos", async ({page}, testInfo
     page.on("pageerror", error => consoleErrors.push(error.message));
 
     await page.goto("/");
+    await expect(page).toHaveURL(/\/theory$/);
     await expect(page.getByRole("heading", {name: "用演化，搜尋一個夠好嘅決策腦"})).toBeVisible();
     await expect(page.getByText("初始化 Population")).toBeVisible();
+    await page.getByRole("slider", {name: "Theory mutation rate"}).fill("0.6");
+    const mutatedGene = page.locator(".gene.mutated").first();
+    await expect(mutatedGene).toBeVisible();
+    expect(await mutatedGene.evaluate(element => window.getComputedStyle(element).borderTopColor)).toBe("rgb(227, 111, 91)");
     await page.screenshot({fullPage: true, path: testInfo.outputPath("theory-desktop.png")});
 
     await page.getByRole("button", {name: "Snake Game"}).click();
+    await expect(page).toHaveURL(/\/snake$/);
     await page.getByRole("slider", {name: "播放速度"}).fill("5");
     await page.getByRole("button", {name: "開始"}).click();
     await expectGeneration(page);
@@ -39,6 +45,7 @@ test("desktop workspace runs all three evolution demos", async ({page}, testInfo
     await expectCompleteReplayLoop(snakeCanvas, /collision|starved|timeout/, page);
 
     await page.getByRole("button", {name: "Block Breaker"}).click();
+    await expect(page).toHaveURL(/\/breaker$/);
     await page.getByRole("slider", {name: "播放速度"}).fill("5");
     await page.getByRole("button", {name: "開始"}).click();
     await expectGeneration(page);
@@ -50,6 +57,7 @@ test("desktop workspace runs all three evolution demos", async ({page}, testInfo
     await expectCompleteReplayLoop(breakerCanvas, /lost|cleared|timeout/, page);
 
     await page.getByRole("button", {name: "Stock Trading"}).click();
+    await expect(page).toHaveURL(/\/stock$/);
     await expect(page.getByText(/sessions · USD/)).toBeVisible({timeout: 30_000});
     await page.getByRole("button", {name: "開始"}).click();
     await expectGeneration(page, 45_000);
@@ -58,6 +66,19 @@ test("desktop workspace runs all three evolution demos", async ({page}, testInfo
     await page.screenshot({fullPage: true, path: testInfo.outputPath("stock-desktop.png")});
 
     expect(consoleErrors).toEqual([]);
+});
+
+test("routing supports direct links and browser history", async ({page}, testInfo) => {
+    test.skip(testInfo.project.name !== "desktop", "Desktop routing flow");
+    await page.goto("/snake");
+    await expect(page.getByRole("heading", {name: "Snake Neuroevolution"})).toBeVisible();
+    await expect(page.getByRole("button", {name: "Snake Game"})).toHaveClass(/active/);
+
+    await page.getByRole("button", {name: "演算法原理"}).click();
+    await expect(page).toHaveURL(/\/theory$/);
+    await page.goBack();
+    await expect(page).toHaveURL(/\/snake$/);
+    await expect(page.getByRole("heading", {name: "Snake Neuroevolution"})).toBeVisible();
 });
 
 test("mobile workspace keeps navigation and theory readable", async ({page}, testInfo) => {

@@ -4,7 +4,7 @@ import {TheoryLab} from "./theory-lab";
 
 describe("TheoryLab", () => {
     it("shows the full GA loop and updates the mutation visualizer", () => {
-        render(
+        const {container} = render(
             <React.Fragment>
                 <TheoryLab />
             </React.Fragment>
@@ -14,5 +14,6 @@ describe("TheoryLab", () => {
         expect(screen.getByText("Neuroevolution")).toBeInTheDocument();
         fireEvent.change(screen.getByLabelText("Theory mutation rate"), {target: {value: "0.6"}});
         expect(screen.getByText("60%")).toBeInTheDocument();
+        expect(container.querySelectorAll(".gene.mutated").length).toBeGreaterThan(0);
     });
 });

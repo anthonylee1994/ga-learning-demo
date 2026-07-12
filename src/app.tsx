@@ -1,22 +1,23 @@
 import React from "react";
 import {Button, Chip} from "@heroui/react";
 import {Blocks, BookOpen, CandlestickChart, Dna, Github, Network} from "lucide-react";
-import type {TopicId} from "./lib/types";
+import {Navigate, Route, Routes, useLocation, useNavigate} from "react-router-dom";
 import {BreakerLab} from "./components/breaker-lab";
 import {SnakeLab} from "./components/snake-lab";
 import {StockLab} from "./components/stock-lab";
 import {TheoryLab} from "./components/theory-lab";
 
 const NAV_ITEMS = [
-    {id: "theory" as const, label: "演算法原理", shortLabel: "原理", icon: BookOpen, color: "neutral"},
-    {id: "snake" as const, label: "Snake Game", shortLabel: "Snake", icon: Dna, color: "snake"},
-    {id: "breaker" as const, label: "Block Breaker", shortLabel: "Breaker", icon: Blocks, color: "breaker"},
-    {id: "stock" as const, label: "Stock Trading", shortLabel: "Trading", icon: CandlestickChart, color: "stock"},
+    {id: "theory" as const, path: "/theory", label: "演算法原理", shortLabel: "原理", icon: BookOpen, color: "neutral"},
+    {id: "snake" as const, path: "/snake", label: "Snake Game", shortLabel: "Snake", icon: Dna, color: "snake"},
+    {id: "breaker" as const, path: "/breaker", label: "Block Breaker", shortLabel: "Breaker", icon: Blocks, color: "breaker"},
+    {id: "stock" as const, path: "/stock", label: "Stock Trading", shortLabel: "Trading", icon: CandlestickChart, color: "stock"},
 ];
 
 export const App = React.memo(() => {
-    const [topic, setTopic] = React.useState<TopicId>("theory");
-    const activeItem = NAV_ITEMS.find(item => item.id === topic) ?? NAV_ITEMS[0];
+    const location = useLocation();
+    const navigate = useNavigate();
+    const activeItem = NAV_ITEMS.find(item => item.path === location.pathname) ?? NAV_ITEMS[0];
 
     return (
         <div className="app-shell">
@@ -33,7 +34,7 @@ export const App = React.memo(() => {
                 <nav aria-label="實驗主題" className="sidebar-nav">
                     <p>LEARNING PATH</p>
                     {NAV_ITEMS.map(item => (
-                        <Button className={`nav-button nav-${item.color} ${topic === item.id ? "active" : ""}`} fullWidth key={item.id} onPress={() => setTopic(item.id)} variant="tertiary">
+                        <Button className={`nav-button nav-${item.color} ${activeItem.id === item.id ? "active" : ""}`} fullWidth key={item.id} onPress={() => navigate(item.path)} variant="tertiary">
                             <item.icon size={17} strokeWidth={1.5} />
                             <span>{item.label}</span>
                             <i />
@@ -81,17 +82,21 @@ export const App = React.memo(() => {
                 </header>
                 <nav aria-label="手機實驗主題" className="mobile-nav">
                     {NAV_ITEMS.map(item => (
-                        <Button className={topic === item.id ? "active" : ""} key={item.id} onPress={() => setTopic(item.id)} size="sm" variant="tertiary">
+                        <Button className={activeItem.id === item.id ? "active" : ""} key={item.id} onPress={() => navigate(item.path)} size="sm" variant="tertiary">
                             <item.icon size={15} strokeWidth={1.5} />
                             {item.shortLabel}
                         </Button>
                     ))}
                 </nav>
                 <div className="content-scroll">
-                    {topic === "theory" ? <TheoryLab /> : null}
-                    {topic === "snake" ? <SnakeLab /> : null}
-                    {topic === "breaker" ? <BreakerLab /> : null}
-                    {topic === "stock" ? <StockLab /> : null}
+                    <Routes>
+                        <Route element={<Navigate replace to="/theory" />} path="/" />
+                        <Route element={<TheoryLab />} path="/theory" />
+                        <Route element={<SnakeLab />} path="/snake" />
+                        <Route element={<BreakerLab />} path="/breaker" />
+                        <Route element={<StockLab />} path="/stock" />
+                        <Route element={<Navigate replace to="/theory" />} path="*" />
+                    </Routes>
                 </div>
             </div>
         </div>

@@ -455,12 +455,6 @@ button {
     border: 1px solid;
     border-radius: 2px;
 }
-.gene-a {
-    border-color: #4e89b0 !important;
-}
-.gene-b {
-    border-color: #9e813f !important;
-}
 .gene-mutated {
     border-color: var(--stock) !important;
 }

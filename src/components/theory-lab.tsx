@@ -147,7 +147,7 @@ const GenomeRow = React.memo<GenomeRowProps>(({label, values}) => {
             <span>{label}</span>
             <div>
                 {values.map((gene, index) => (
-                    <code className={`gene gene-${gene.source}${gene.mutated ? "mutated" : ""}`} key={`${label}-${index}`}>
+                    <code className={getGeneClassName(gene)} key={`${label}-${index}`}>
                         {gene.value.toFixed(2)}
                     </code>
                 ))}
@@ -155,6 +155,10 @@ const GenomeRow = React.memo<GenomeRowProps>(({label, values}) => {
         </div>
     );
 });
+
+function getGeneClassName(gene: GeneValue): string {
+    return ["gene", `gene-${gene.source}`, gene.mutated ? "mutated" : null].filter(Boolean).join(" ");
+}
 
 function createChild(mutationRate: number, seed: number): GeneValue[] {
     const random = createRandom(seed);
