@@ -22,8 +22,21 @@ export function uniformCrossover(parentA: Genome, parentB: Genome, random: Rando
     return parentA.map((gene, index) => (random.next() < 0.5 ? gene : parentB[index]));
 }
 
+/** Share of mutations that redraw the gene from scratch instead of perturbing it. Keeps
+ * tanh-decoded genes (e.g. the stock indicator parameters) mutable after they saturate,
+ * and lets a converged population escape a locked-in local optimum. */
+const RESET_MUTATION_SHARE = 0.2;
+
 export function mutateGenome(genome: Genome, mutationRate: number, mutationScale: number, random: RandomSource): Genome {
-    return genome.map(gene => (random.next() < mutationRate ? gene + random.gaussian() * mutationScale : gene));
+    return genome.map(gene => {
+        if (random.next() >= mutationRate) {
+            return gene;
+        }
+        if (random.next() < RESET_MUTATION_SHARE) {
+            return random.gaussian() * 0.55;
+        }
+        return gene + random.gaussian() * mutationScale;
+    });
 }
 
 export function calculateDiversity(population: Genome[]): number {
@@ -51,6 +64,13 @@ export function evolvePopulation(population: Genome[], fitnesses: number[], conf
         const parentB = tournamentSelect(ranked, config.tournamentSize, random);
         const child = uniformCrossover(parentA, parentB, random);
         nextPopulation.push(mutateGenome(child, config.mutationRate, config.mutationScale, random));
+    }
+
+    // Random immigrant: one slot per generation is a fresh genome, so a converged population
+    // never fully stops exploring (e.g. new indicator-parameter combinations in the stock lab).
+    if (nextPopulation.length > 2) {
+        const geneCount = population[0]?.length ?? 0;
+        nextPopulation[nextPopulation.length - 1] = Array.from({length: geneCount}, () => random.gaussian() * 0.55);
     }
 
     const averageFitness = fitnesses.reduce((sum, value) => sum + value, 0) / fitnesses.length;
