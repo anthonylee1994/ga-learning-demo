@@ -213,9 +213,9 @@ export const StockLab = React.memo(() => {
                     <FitnessChart history={demo.history} />
                     <ApplicationPanel
                         fitness="每個窗口：超額回報(vs buy&hold) × 100 + Sharpe × 10 − maxDD × 40；fit 同 validation 取 mean − 0.5·overfit gap − weight L2"
-                        genome="12 個 indicator parameter genes + 13 個 feature weight + bias + enter/exit threshold"
-                        inputs="GA 優化後嘅 SMA、Williams %R、ROC、RSI、MACD、Bollinger、volatility、volume z-score"
-                        outputs="加權訊號 score = tanh(bias + Σ wᵢ·featureᵢ)：> enter 做 100% long、< exit 走返 cash、中間維持倉位"
+                        genome="12 個 indicator parameter genes + Brain.js 14 → 16 → 8 → 3 weights 與 biases"
+                        inputs="GA 優化後嘅 SMA、Williams %R、ROC、RSI、MACD、Bollinger、volatility、volume z-score、倉位"
+                        outputs="Brain.js network → argMax(buy / hold / sell)：100% long、維持倉位、100% cash"
                         termination="train 內部再切 70% fit / 30% validation，selection 睇 validation 抗 overfit；最後 20% test data 絕不參與 selection"
                     />
                 </main>

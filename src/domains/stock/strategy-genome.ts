@@ -1,12 +1,15 @@
-import type {Genome, OptimizedIndicatorParameters, StockStrategy} from "../../lib/types";
+import {calculateGeneCount} from "../../lib/neural-network";
+import type {Genome, OptimizedIndicatorParameters} from "../../lib/types";
 
-/** Number of indicator features produced per session by calculateIndicators(). */
-export const STOCK_FEATURE_COUNT = 13;
+export const STOCK_TOPOLOGY = {
+    inputSize: 14,
+    hiddenLayers: [16, 8],
+    outputSize: 3,
+};
 
 export const STOCK_PARAMETER_GENE_COUNT = 12;
-/** feature weights + bias + enter/exit thresholds — the GA tunes these directly (no neural network). */
-export const STOCK_DECISION_GENE_COUNT = STOCK_FEATURE_COUNT + 3;
-export const STOCK_GENE_COUNT = STOCK_PARAMETER_GENE_COUNT + STOCK_DECISION_GENE_COUNT;
+export const STOCK_NETWORK_GENE_COUNT = calculateGeneCount(STOCK_TOPOLOGY);
+export const STOCK_GENE_COUNT = STOCK_PARAMETER_GENE_COUNT + STOCK_NETWORK_GENE_COUNT;
 
 export const DEFAULT_INDICATOR_PARAMETERS: OptimizedIndicatorParameters = {
     smaFastPeriod: 20,
@@ -25,7 +28,7 @@ export const DEFAULT_INDICATOR_PARAMETERS: OptimizedIndicatorParameters = {
 
 export interface DecodedStockGenome {
     parameters: OptimizedIndicatorParameters;
-    strategy: StockStrategy;
+    networkGenome: Genome;
 }
 
 export function decodeStockGenome(genome: Genome): DecodedStockGenome {
@@ -38,12 +41,6 @@ export function decodeStockGenome(genome: Genome): DecodedStockGenome {
     const smaSlowPeriod = Math.max(smaFastPeriod + 5, value(1, 30, 200));
     const macdFastPeriod = value(5, 5, 18);
     const macdSlowPeriod = Math.max(macdFastPeriod + 3, value(6, 20, 50));
-
-    const decisionGenes = genome.slice(STOCK_PARAMETER_GENE_COUNT);
-    const weights = decisionGenes.slice(0, STOCK_FEATURE_COUNT).map(gene => decodeFloat(gene, -2, 2));
-    const bias = decodeFloat(decisionGenes[STOCK_FEATURE_COUNT], -1, 1);
-    const enterThreshold = decodeFloat(decisionGenes[STOCK_FEATURE_COUNT + 1], 0, 0.8);
-    const exitThreshold = decodeFloat(decisionGenes[STOCK_FEATURE_COUNT + 2], -0.8, 0);
 
     return {
         parameters: {
@@ -60,7 +57,7 @@ export function decodeStockGenome(genome: Genome): DecodedStockGenome {
             volatilityPeriod: value(10, 10, 60),
             volumeZScorePeriod: value(11, 10, 60),
         },
-        strategy: {weights, bias, enterThreshold, exitThreshold},
+        networkGenome: genome.slice(STOCK_PARAMETER_GENE_COUNT),
     };
 }
 
