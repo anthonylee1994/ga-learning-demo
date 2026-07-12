@@ -27,10 +27,5 @@ export const Metrics = React.memo<MetricsProps>(({stats, extra = []}) => {
 });
 
 function formatNumber(value: number): string {
-    // Small-magnitude fitness values (e.g. the stock lab's Sharpe ratio) need full precision —
-    // rounding to 1dp hides real generation-to-generation improvements. Large game scores keep 1dp.
-    if (Math.abs(value) < 10) {
-        return String(value);
-    }
     return new Intl.NumberFormat("zh-HK", {maximumFractionDigits: 1}).format(value);
 }
