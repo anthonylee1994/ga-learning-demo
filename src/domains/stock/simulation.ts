@@ -8,10 +8,14 @@ export {STOCK_TOPOLOGY} from "./strategy-genome";
 const STARTING_EQUITY = 10_000;
 const TRANSACTION_COST = 0.001;
 
-/** Fraction of the training segment used to fit; the remainder is held out as validation. */
-const TRAIN_VALIDATION_RATIO = 0.7;
+/** Number of contiguous sub-periods the training segment is scored across (each a mini out-of-sample window). */
+const VALIDATION_FOLDS = 5;
 /** Weight-decay coefficient (× mean-square of the network genome) — nudges the GA toward smaller, more generalizable weights. */
-const WEIGHT_L2_PENALTY = 4;
+const WEIGHT_L2_PENALTY = 8;
+/** Trades per year a strategy can make before the churn penalty kicks in. */
+const TRADE_ALLOWANCE_PER_YEAR = 12;
+/** Fitness deducted per annualized trade beyond the allowance — high-churn policies are usually noise fits. */
+const CHURN_PENALTY = 1.5;
 
 /** Shared adapter so evaluate/replay do not allocate a new network graph per genome. */
 const networkAdapter = new NeuralNetworkAdapter(STOCK_TOPOLOGY);
@@ -56,26 +60,28 @@ export function evaluateStockGenome(genome: Genome, points: MarketDataPoint[]): 
     const {parameters, networkGenome} = decodeStockGenome(genome);
     const snapshots = getIndicatorSnapshots(points, parameters);
     const {train} = splitIndicators(snapshots);
-    if (train.length < 60) {
+    if (train.length < VALIDATION_FOLDS * 20) {
         return -1_000;
     }
 
-    // Split the training segment into a fit window and a held-out validation window.
-    // Selection rewards generalization, not in-sample curve-fitting.
-    const splitAt = Math.max(30, Math.floor(train.length * TRAIN_VALIDATION_RATIO));
-    const fit = train.slice(0, splitAt);
-    const validation = train.slice(splitAt - 1);
-    const fitResult = simulateSegment(networkGenome, fit, 0);
-    const validationResult = simulateSegment(networkGenome, validation, fitResult.endingPosition);
-    const fitScore = segmentScore(fitResult, fit);
-    const validationScore = segmentScore(validationResult, validation);
+    // Score the genome across several contiguous sub-periods of the training segment. Each fold is a
+    // mini out-of-sample window, so a policy that only curve-fits one regime scores badly on the others.
+    const foldSize = Math.floor(train.length / VALIDATION_FOLDS);
+    const scores: number[] = [];
+    for (let fold = 0; fold < VALIDATION_FOLDS; fold += 1) {
+        const start = fold * foldSize;
+        const end = fold === VALIDATION_FOLDS - 1 ? train.length : start + foldSize;
+        const window = train.slice(start, end);
+        scores.push(segmentScore(simulateSegment(networkGenome, window, 0), window));
+    }
 
-    // mean − 0.5·max(0, fit − val): when the genome overfits (fit ≫ val) this collapses to the
-    // validation score alone; when it generalizes (val ≥ fit) it keeps the average. Plus network weight decay.
-    const mean = (fitScore + validationScore) / 2;
-    const overfitPenalty = Math.max(0, fitScore - validationScore) * 0.5;
+    // Blend the average with the worst fold so consistency across every sub-period is rewarded, not a
+    // lucky fit to one window. Weight the worst fold heavier — one blow-out window must not carry the
+    // score. Plus L2 weight decay on the network genome.
+    const mean = scores.reduce((sum, value) => sum + value, 0) / scores.length;
+    const worst = Math.min(...scores);
     const regularization = WEIGHT_L2_PENALTY * meanSquare(networkGenome);
-    return mean - overfitPenalty - regularization;
+    return 0.35 * mean + 0.65 * worst - regularization;
 }
 
 /** Mean of the squared network weights — the weight-decay term. */
@@ -90,13 +96,16 @@ function meanSquare(genome: Genome): number {
     return sum / genome.length;
 }
 
-/** Per-window fitness: reward return in excess of buy & hold, reward Sharpe, punish drawdown. */
+/** Per-window fitness: reward return in excess of buy & hold, reward Sharpe, punish drawdown and churn. */
 function segmentScore(result: SegmentResult, snapshots: IndicatorSnapshot[]): number {
     const first = snapshots[0]?.close ?? 1;
     const last = snapshots.at(-1)?.close ?? first;
     const benchmarkReturn = last / first - 1;
     const excessReturn = result.totalReturn - benchmarkReturn;
-    return excessReturn * 100 + result.sharpe * 10 - result.maxDrawdown * 40;
+    const years = Math.max(snapshots.length / 252, 1 / 252);
+    const tradesPerYear = result.trades.length / years;
+    const churnPenalty = Math.max(0, tradesPerYear - TRADE_ALLOWANCE_PER_YEAR) * CHURN_PENALTY;
+    return excessReturn * 100 + result.sharpe * 10 - result.maxDrawdown * 40 - churnPenalty;
 }
 
 export function createTradingReplay(genome: Genome, points: MarketDataPoint[]): TradingReplay {

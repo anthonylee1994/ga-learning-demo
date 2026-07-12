@@ -11,14 +11,16 @@ export function createPineScript(genome: Genome, symbol: string): string {
     const layers = decodeLayers(networkGenome);
     const safeSymbol = symbol.replace(/[^A-Z0-9._-]/gi, "").toUpperCase() || "QQQ";
     const inputNames = Array.from({length: STOCK_TOPOLOGY.inputSize}, (_, index) => `f${index}`);
-    const hiddenOneNames = layers[0].biases.map((_, index) => `h1_${index}`);
-    const hiddenTwoNames = layers[1].biases.map((_, index) => `h2_${index}`);
     const outputNames = ["outBuy", "outHold", "outSell"];
-    const networkLines = [
-        ...createLayerLines(hiddenOneNames, inputNames, layers[0]),
-        ...createLayerLines(hiddenTwoNames, hiddenOneNames, layers[1]),
-        ...createLayerLines(outputNames, hiddenTwoNames, layers[2], false),
-    ];
+    // Name every layer generically so the export follows STOCK_TOPOLOGY (any number of hidden layers).
+    const layerNames = layers.map((layer, layerIndex) => (layerIndex === layers.length - 1 ? outputNames : layer.biases.map((_, node) => `h${layerIndex + 1}_${node}`)));
+    const networkLines: string[] = [];
+    let previousNames = inputNames;
+    layers.forEach((layer, layerIndex) => {
+        const isOutput = layerIndex === layers.length - 1;
+        networkLines.push(...createLayerLines(layerNames[layerIndex], previousNames, layer, !isOutput));
+        previousNames = layerNames[layerIndex];
+    });
 
     return `//@version=6
 strategy("EvoLab ${safeSymbol} Evolved Strategy", overlay=true, initial_capital=1000000, default_qty_type=strategy.percent_of_equity, default_qty_value=100, pyramiding=0, commission_type=strategy.commission.percent, commission_value=0.1, process_orders_on_close=true)
