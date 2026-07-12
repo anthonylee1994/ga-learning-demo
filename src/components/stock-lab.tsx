@@ -212,7 +212,7 @@ export const StockLab = React.memo(() => {
                     </section>
                     <FitnessChart history={demo.history} />
                     <ApplicationPanel
-                        fitness="Train 段嘅年化 Sharpe ratio"
+                        fitness="超額回報(vs buy&hold) × 100 − maxDrawdown × 40"
                         genome="12 個 indicator parameter genes + Brain.js 14 → 4 → 3 weights 與 biases"
                         inputs="GA 優化後嘅 SMA、Williams %R、ROC、RSI、MACD、Bollinger、volatility、volume z-score、倉位"
                         outputs="Brain.js network → argMax(buy / hold / sell)：100% long、維持倉位、100% cash"

@@ -55,8 +55,13 @@ export function evaluateStockGenome(genome: Genome, points: MarketDataPoint[]): 
         return -1_000;
     }
 
-    // Fitness is simply the annualized Sharpe ratio of the training segment.
-    return simulateSegment(networkGenome, train, 0).sharpe;
+    // Fitness: performance (return in excess of buy & hold) minus a max-drawdown penalty.
+    const result = simulateSegment(networkGenome, train, 0);
+    const first = train[0]?.close ?? 1;
+    const last = train.at(-1)?.close ?? first;
+    const benchmarkReturn = last / first - 1;
+    const excessReturn = result.totalReturn - benchmarkReturn;
+    return excessReturn * 100 - result.maxDrawdown * 40;
 }
 
 export function createTradingReplay(genome: Genome, points: MarketDataPoint[]): TradingReplay {
