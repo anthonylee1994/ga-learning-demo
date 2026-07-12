@@ -12,6 +12,10 @@ describe("stock strategy genome", () => {
         expect(decoded.parameters.bollingerMultiplier).toBeGreaterThanOrEqual(1);
         expect(decoded.parameters.bollingerMultiplier).toBeLessThanOrEqual(3.5);
         expect(decoded.parameters.macdSlowPeriod).toBeGreaterThan(decoded.parameters.macdFastPeriod);
+        expect(decoded.parameters.volatilityPeriod).toBeGreaterThanOrEqual(10);
+        expect(decoded.parameters.volatilityPeriod).toBeLessThanOrEqual(60);
+        expect(decoded.parameters.volumeZScorePeriod).toBeGreaterThanOrEqual(10);
+        expect(decoded.parameters.volumeZScorePeriod).toBeLessThanOrEqual(60);
     });
 
     it("rejects legacy network-only genomes", () => {

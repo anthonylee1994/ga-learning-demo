@@ -68,6 +68,10 @@ test("desktop workspace runs all three evolution demos", async ({page}, testInfo
     await page.getByRole("button", {name: "開始"}).click();
     await expectGeneration(page, 45_000);
     await expect(page.getByRole("heading", {name: "Best indicator parameters"})).toBeVisible();
+    await page.getByLabel("技術指標").selectOption("risk");
+    const marketPanel = page.locator(".market-panel").filter({has: page.getByRole("heading", {name: "市場與交易訊號"})});
+    await expect(marketPanel.getByText("Volatility", {exact: true})).toBeVisible();
+    await expect(marketPanel.getByText("Volume Z", {exact: true})).toBeVisible();
     await expect(page.getByText("Strategy vs Buy & Hold")).toBeVisible();
     const downloadPromise = page.waitForEvent("download");
     await page.getByRole("button", {name: "匯出 Pine Script"}).click();

@@ -676,7 +676,7 @@ button {
 }
 .parameter-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     margin-top: 16px;
     border: 1px solid #2b323a;
     border-radius: 6px;
@@ -687,10 +687,10 @@ button {
     border-right: 1px solid #2b323a;
     border-bottom: 1px solid #2b323a;
 }
-.parameter-grid div:nth-child(3n) {
+.parameter-grid div:nth-child(4n) {
     border-right: 0;
 }
-.parameter-grid div:nth-last-child(-n + 3) {
+.parameter-grid div:nth-last-child(-n + 4) {
     border-bottom: 0;
 }
 .parameter-grid span {

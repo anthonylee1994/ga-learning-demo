@@ -6,7 +6,7 @@ describe("stock indicators", () => {
     it("calculates every requested signal after warm-up", () => {
         const rows = calculateIndicators(createMarketData(120));
         expect(rows).toHaveLength(70);
-        expect(rows[0].features).toHaveLength(11);
+        expect(rows[0].features).toHaveLength(13);
         expect(rows[0]).toEqual(
             expect.objectContaining({
                 smaFast: expect.any(Number),
@@ -16,6 +16,8 @@ describe("stock indicators", () => {
                 rsi: expect.any(Number),
                 macd: expect.any(Number),
                 bollingerPercentB: expect.any(Number),
+                volatility: expect.any(Number),
+                volumeZScore: expect.any(Number),
             })
         );
         expect(rows.every(row => row.features.every(Number.isFinite))).toBe(true);
@@ -30,10 +32,14 @@ describe("stock indicators", () => {
             rocPeriod: 5,
             bollingerPeriod: 12,
             bollingerMultiplier: 3,
+            volatilityPeriod: 10,
+            volumeZScorePeriod: 10,
         });
         expect(optimized.at(-1)?.rsi).not.toBe(baseline.at(-1)?.rsi);
         expect(optimized.at(-1)?.roc).not.toBe(baseline.at(-1)?.roc);
         expect(optimized.at(-1)?.bollingerUpper).not.toBe(baseline.at(-1)?.bollingerUpper);
+        expect(optimized.at(-1)?.volatility).not.toBe(baseline.at(-1)?.volatility);
+        expect(optimized.at(-1)?.volumeZScore).not.toBe(baseline.at(-1)?.volumeZScore);
     });
 
     it("does not leak a future price into earlier indicators", () => {

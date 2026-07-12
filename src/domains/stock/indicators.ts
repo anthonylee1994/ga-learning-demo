@@ -10,6 +10,7 @@ export function calculateIndicators(points: MarketDataPoint[], parameters: Optim
     }
 
     const closes = points.map(point => point.close);
+    const volumes = points.map(point => point.volume);
     const emaFast = exponentialMovingAverage(closes, parameters.macdFastPeriod);
     const emaSlow = exponentialMovingAverage(closes, parameters.macdSlowPeriod);
     const macd = closes.map((_, index) => emaFast[index] - emaSlow[index]);
@@ -33,6 +34,10 @@ export function calculateIndicators(points: MarketDataPoint[], parameters: Optim
         const williamsR = calculateWilliamsR(points, index, parameters.williamsPeriod);
         const roc = point.close / closes[index - parameters.rocPeriod] - 1;
         const rsi = calculateRsi(closes, index, parameters.rsiPeriod);
+        const volatility = calculateVolatility(closes, index, parameters.volatilityPeriod);
+        const volumeWindow = volumes.slice(index - parameters.volumeZScorePeriod + 1, index + 1);
+        const volumeDeviation = standardDeviation(volumeWindow);
+        const volumeZScore = (point.volume - mean(volumeWindow)) / Math.max(volumeDeviation, EPSILON);
         const macdHistogram = macd[index] - macdSignal[index];
 
         const features = [
@@ -47,6 +52,8 @@ export function calculateIndicators(points: MarketDataPoint[], parameters: Optim
             clamp((macdHistogram / point.close) * 50, -1, 1),
             clamp((bollingerPercentB - 0.5) * 2, -1, 1),
             clamp(bollingerBandwidth * 8, -1, 1),
+            clamp(volatility * 5, -1, 1),
+            clamp(volumeZScore / 3, -1, 1),
         ];
 
         return [
@@ -65,6 +72,8 @@ export function calculateIndicators(points: MarketDataPoint[], parameters: Optim
                 bollingerLower,
                 bollingerPercentB,
                 bollingerBandwidth,
+                volatility,
+                volumeZScore,
                 features,
             },
         ];
@@ -78,7 +87,9 @@ export function getIndicatorWarmup(parameters: OptimizedIndicatorParameters): nu
         parameters.rocPeriod,
         parameters.rsiPeriod,
         parameters.macdSlowPeriod + parameters.macdSignalPeriod,
-        parameters.bollingerPeriod
+        parameters.bollingerPeriod,
+        parameters.volatilityPeriod,
+        parameters.volumeZScorePeriod
     );
 }
 
@@ -125,6 +136,14 @@ function calculateRsi(closes: number[], index: number, period: number): number {
     }
     const relativeStrength = averageGain / averageLoss;
     return 100 - 100 / (1 + relativeStrength);
+}
+
+function calculateVolatility(closes: number[], index: number, period: number): number {
+    const returns: number[] = [];
+    for (let cursor = index - period + 1; cursor <= index; cursor += 1) {
+        returns.push(closes[cursor] / closes[cursor - 1] - 1);
+    }
+    return standardDeviation(returns) * Math.sqrt(252);
 }
 
 function mean(values: number[]): number {

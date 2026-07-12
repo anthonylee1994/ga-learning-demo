@@ -84,6 +84,8 @@ export function createTradingReplay(genome: Genome, points: MarketDataPoint[]): 
         macdSignal: snapshot.macdSignal,
         bollingerUpper: snapshot.bollingerUpper,
         bollingerLower: snapshot.bollingerLower,
+        volatility: snapshot.volatility,
+        volumeZScore: snapshot.volumeZScore,
     }));
 
     return {

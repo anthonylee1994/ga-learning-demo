@@ -2,12 +2,12 @@ import {calculateGeneCount} from "../../lib/neural-network";
 import type {Genome, OptimizedIndicatorParameters} from "../../lib/types";
 
 export const STOCK_TOPOLOGY = {
-    inputSize: 12,
+    inputSize: 14,
     hiddenLayers: [16, 8],
     outputSize: 3,
 };
 
-export const STOCK_PARAMETER_GENE_COUNT = 10;
+export const STOCK_PARAMETER_GENE_COUNT = 12;
 export const STOCK_NETWORK_GENE_COUNT = calculateGeneCount(STOCK_TOPOLOGY);
 export const STOCK_GENE_COUNT = STOCK_PARAMETER_GENE_COUNT + STOCK_NETWORK_GENE_COUNT;
 
@@ -22,6 +22,8 @@ export const DEFAULT_INDICATOR_PARAMETERS: OptimizedIndicatorParameters = {
     macdSignalPeriod: 9,
     bollingerPeriod: 20,
     bollingerMultiplier: 2,
+    volatilityPeriod: 20,
+    volumeZScorePeriod: 20,
 };
 
 export interface DecodedStockGenome {
@@ -52,6 +54,8 @@ export function decodeStockGenome(genome: Genome): DecodedStockGenome {
             macdSignalPeriod: value(7, 3, 15),
             bollingerPeriod: value(8, 10, 60),
             bollingerMultiplier: decodeFloat(genome[9], 1, 3.5, 2),
+            volatilityPeriod: value(10, 10, 60),
+            volumeZScorePeriod: value(11, 10, 60),
         },
         networkGenome: genome.slice(STOCK_PARAMETER_GENE_COUNT),
     };

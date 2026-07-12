@@ -21,7 +21,7 @@ const DEFAULT_CONFIG: GAConfig = {
     speed: 3,
 };
 
-type IndicatorView = "price" | "momentum" | "macd";
+type IndicatorView = "price" | "momentum" | "macd" | "risk";
 
 export const StockLab = React.memo(() => {
     const [tickerInput, setTickerInput] = React.useState("QQQ");
@@ -168,6 +168,8 @@ export const StockLab = React.memo(() => {
                                     label="MACD"
                                     value={`${replay.optimizedParameters.macdFastPeriod} / ${replay.optimizedParameters.macdSlowPeriod} / ${replay.optimizedParameters.macdSignalPeriod}`}
                                 />
+                                <ParameterValue label="Volatility" value={String(replay.optimizedParameters.volatilityPeriod)} />
+                                <ParameterValue label="Volume Z" value={String(replay.optimizedParameters.volumeZScorePeriod)} />
                             </div>
                         </section>
                     ) : null}
@@ -181,6 +183,7 @@ export const StockLab = React.memo(() => {
                                 <option value="price">SMA + Bollinger</option>
                                 <option value="momentum">RSI + Williams %R + ROC</option>
                                 <option value="macd">MACD</option>
+                                <option value="risk">Volatility + Volume Z</option>
                             </select>
                         </div>
                         <div className="chart-height-lg">
@@ -210,8 +213,8 @@ export const StockLab = React.memo(() => {
                     <FitnessChart history={demo.history} />
                     <ApplicationPanel
                         fitness="Training return × 100 + Sharpe × 8 − max drawdown × 45"
-                        genome="10 個 indicator parameter genes + Brain.js 12 → 16 → 8 → 3 weights 與 biases"
-                        inputs="GA 優化後嘅 SMA、Williams %R、ROC、RSI、MACD、Bollinger、倉位"
+                        genome="12 個 indicator parameter genes + Brain.js 14 → 16 → 8 → 3 weights 與 biases"
+                        inputs="GA 優化後嘅 SMA、Williams %R、ROC、RSI、MACD、Bollinger、volatility、volume z-score、倉位"
                         outputs="100% long、維持倉位、100% cash"
                         termination="由第一個有效 indicator session 跑到 training segment 尾；test data 絕不參與 selection"
                     />
@@ -238,6 +241,8 @@ type MarketChartDatum = {
     macdSignal?: number;
     bollingerUpper?: number;
     bollingerLower?: number;
+    volatility?: number;
+    volumeZScore?: number;
 };
 
 interface MarketChartProps {
@@ -291,6 +296,12 @@ const MarketChart = React.memo<MarketChartProps>(({data, indicatorView, replay, 
                 <React.Fragment>
                     <Line dataKey="macd" dot={false} isAnimationActive={false} name="MACD" stroke="#63c6a1" strokeWidth={1} yAxisId="indicator" />
                     <Line dataKey="macdSignal" dot={false} isAnimationActive={false} name="Signal" stroke="#e7b955" strokeWidth={1} yAxisId="indicator" />
+                </React.Fragment>
+            ) : null}
+            {indicatorView === "risk" && replay ? (
+                <React.Fragment>
+                    <Line dataKey="volatility" dot={false} isAnimationActive={false} name="Volatility" stroke="#e36f5b" strokeWidth={1} yAxisId="indicator" />
+                    <Line dataKey="volumeZScore" dot={false} isAnimationActive={false} name="Volume Z" stroke="#5da6d9" strokeWidth={1} yAxisId="indicator" />
                 </React.Fragment>
             ) : null}
             {splitDate ? <ReferenceLine label={{value: "TEST", fill: "#e7b955", fontSize: 10}} stroke="#e7b955" strokeDasharray="4 4" x={splitDate} /> : null}

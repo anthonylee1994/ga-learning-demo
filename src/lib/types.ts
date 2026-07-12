@@ -107,6 +107,8 @@ export interface OptimizedIndicatorParameters {
     macdSignalPeriod: number;
     bollingerPeriod: number;
     bollingerMultiplier: number;
+    volatilityPeriod: number;
+    volumeZScorePeriod: number;
 }
 
 export interface IndicatorSnapshot {
@@ -124,6 +126,8 @@ export interface IndicatorSnapshot {
     bollingerLower: number;
     bollingerPercentB: number;
     bollingerBandwidth: number;
+    volatility: number;
+    volumeZScore: number;
     features: number[];
 }
 
@@ -148,6 +152,8 @@ export interface TradingPoint {
     macdSignal: number;
     bollingerUpper: number;
     bollingerLower: number;
+    volatility: number;
+    volumeZScore: number;
 }
 
 export interface TradingReplay {

@@ -35,6 +35,8 @@ macdSlowPeriod = ${parameters.macdSlowPeriod}
 macdSignalPeriod = ${parameters.macdSignalPeriod}
 bollingerPeriod = ${parameters.bollingerPeriod}
 bollingerMultiplier = ${formatNumber(parameters.bollingerMultiplier)}
+volatilityPeriod = ${parameters.volatilityPeriod}
+volumeZScorePeriod = ${parameters.volumeZScorePeriod}
 
 clamp(value) => math.min(1.0, math.max(-1.0, nz(value)))
 tanh(value) =>
@@ -62,6 +64,11 @@ bollingerLower = bollingerBasis - bollingerDeviation
 bollingerRange = math.max(bollingerUpper - bollingerLower, 0.000000001)
 bollingerPercentB = (close - bollingerLower) / bollingerRange
 bollingerBandwidth = bollingerRange / math.max(bollingerBasis, 0.000000001)
+dailyReturn = close / close[1] - 1.0
+volatility = ta.stdev(dailyReturn, volatilityPeriod) * math.sqrt(252.0)
+volumeAverage = ta.sma(volume, volumeZScorePeriod)
+volumeDeviation = ta.stdev(volume, volumeZScorePeriod)
+volumeZScore = (volume - volumeAverage) / math.max(volumeDeviation, 0.000000001)
 
 f0 = clamp((close / smaFast - 1.0) * 10.0)
 f1 = clamp((close / smaSlow - 1.0) * 10.0)
@@ -74,11 +81,13 @@ f7 = clamp(macdSignal / close * 25.0)
 f8 = clamp(macdHistogram / close * 50.0)
 f9 = clamp((bollingerPercentB - 0.5) * 2.0)
 f10 = clamp(bollingerBandwidth * 8.0)
-f11 = strategy.position_size > 0 ? 1.0 : 0.0
+f11 = clamp(volatility * 5.0)
+f12 = clamp(volumeZScore / 3.0)
+f13 = strategy.position_size > 0 ? 1.0 : 0.0
 
 ${networkLines.join("\n")}
 
-ready = not na(smaSlow) and not na(williamsR) and not na(roc) and not na(rsi) and not na(macdSignal) and not na(bollingerUpper)
+ready = not na(smaSlow) and not na(williamsR) and not na(roc) and not na(rsi) and not na(macdSignal) and not na(bollingerUpper) and not na(volatility) and not na(volumeZScore)
 buySignal = ready and outBuy >= outHold and outBuy >= outSell
 sellSignal = ready and outSell > outBuy and outSell > outHold
 

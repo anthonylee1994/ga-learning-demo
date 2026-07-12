@@ -149,11 +149,12 @@ export function setupEvolutionWorker<TData, TReplay>(definition: WorkerDefinitio
             data = command.data ?? data;
             random = createRandom(config.seed + generation * 7919);
             if (population.length !== config.populationSize) {
-                population = createPopulation(config.populationSize, definition.geneCount, random, command.champion);
+                const compatibleChampion = command.champion?.length === definition.geneCount ? command.champion : undefined;
+                population = createPopulation(config.populationSize, definition.geneCount, random, compatibleChampion);
                 generation = 0;
                 bestFitnessSeen = Number.NEGATIVE_INFINITY;
                 lastReplayFitness = Number.NEGATIVE_INFINITY;
-                bestGenome = command.champion ? [...command.champion] : null;
+                bestGenome = compatibleChampion ? [...compatibleChampion] : null;
                 lastStats = null;
             }
             running = true;
