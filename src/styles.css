@@ -658,11 +658,53 @@ button {
 }
 .chart-panel,
 .market-panel,
+.optimized-panel,
 .application-panel {
     border: 1px solid #2b323a;
     border-radius: 8px;
     background: #11151a;
     padding: 16px;
+}
+.optimized-panel {
+    border: 1px solid rgba(227, 111, 91, 0.28);
+    border-radius: 8px;
+    background: rgba(227, 111, 91, 0.035);
+    padding: 16px;
+}
+.optimized-panel .button {
+    border-radius: 6px;
+}
+.parameter-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin-top: 16px;
+    border: 1px solid #2b323a;
+    border-radius: 6px;
+}
+.parameter-grid div {
+    min-width: 0;
+    padding: 11px 12px;
+    border-right: 1px solid #2b323a;
+    border-bottom: 1px solid #2b323a;
+}
+.parameter-grid div:nth-child(3n) {
+    border-right: 0;
+}
+.parameter-grid div:nth-last-child(-n + 3) {
+    border-bottom: 0;
+}
+.parameter-grid span {
+    display: block;
+    color: #737d88;
+    font-size: 9px;
+}
+.parameter-grid strong {
+    display: block;
+    margin-top: 4px;
+    color: #e5e8eb;
+    font-family: "SFMono-Regular", Consolas, monospace;
+    font-size: 12px;
+    font-weight: 500;
 }
 .chart-height-sm {
     height: 190px;
@@ -935,6 +977,15 @@ button {
     }
     .theory-card.card {
         min-height: 0;
+    }
+    .parameter-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .parameter-grid div:nth-child(4n) {
+        border-right: 1px solid #2b323a;
+    }
+    .parameter-grid div:nth-child(even) {
+        border-right: 0;
     }
     .metrics-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));

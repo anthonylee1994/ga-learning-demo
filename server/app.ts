@@ -41,9 +41,9 @@ export function createApp(): express.Express {
         const symbol = String(request.query.symbol ?? "QQQ")
             .trim()
             .toUpperCase();
-        const range = String(request.query.range ?? "10y");
+        const range = String(request.query.range ?? "15y");
         const interval = String(request.query.interval ?? "1d");
-        if (!SYMBOL_PATTERN.test(symbol) || range !== "10y" || interval !== "1d") {
+        if (!SYMBOL_PATTERN.test(symbol) || range !== "15y" || interval !== "1d") {
             response.status(400).json({error: "Ticker、range 或 interval 格式無效。"});
             return;
         }
@@ -55,11 +55,12 @@ export function createApp(): express.Express {
         }
 
         try {
-            const period1 = new Date();
-            period1.setUTCFullYear(period1.getUTCFullYear() - 10);
+            const period2 = new Date();
+            const period1 = new Date(period2);
+            period1.setFullYear(period1.getFullYear() - 15);
             const result = await yahooFinance.chart(symbol, {
                 period1,
-                period2: new Date(),
+                period2,
                 interval: "1d",
                 return: "array",
             });

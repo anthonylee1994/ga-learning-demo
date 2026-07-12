@@ -1,45 +1,44 @@
-import type {IndicatorSnapshot, MarketDataPoint} from "../../lib/types";
+import type {IndicatorSnapshot, MarketDataPoint, OptimizedIndicatorParameters} from "../../lib/types";
+import {DEFAULT_INDICATOR_PARAMETERS} from "./strategy-genome";
 
 const EPSILON = 1e-9;
 
-export function calculateIndicators(points: MarketDataPoint[]): IndicatorSnapshot[] {
-    if (points.length < 51) {
+export function calculateIndicators(points: MarketDataPoint[], parameters: OptimizedIndicatorParameters = DEFAULT_INDICATOR_PARAMETERS): IndicatorSnapshot[] {
+    const warmup = getIndicatorWarmup(parameters);
+    if (points.length <= warmup) {
         return [];
     }
 
     const closes = points.map(point => point.close);
-    const volumes = points.map(point => point.volume);
-    const ema12 = exponentialMovingAverage(closes, 12);
-    const ema26 = exponentialMovingAverage(closes, 26);
-    const macd = closes.map((_, index) => ema12[index] - ema26[index]);
-    const macdSignal = exponentialMovingAverage(macd, 9);
+    const emaFast = exponentialMovingAverage(closes, parameters.macdFastPeriod);
+    const emaSlow = exponentialMovingAverage(closes, parameters.macdSlowPeriod);
+    const macd = closes.map((_, index) => emaFast[index] - emaSlow[index]);
+    const macdSignal = exponentialMovingAverage(macd, parameters.macdSignalPeriod);
 
     return points.flatMap((point, index) => {
-        if (index < 50) {
+        if (index < warmup) {
             return [];
         }
 
-        const sma20 = mean(closes.slice(index - 19, index + 1));
-        const sma50 = mean(closes.slice(index - 49, index + 1));
-        const standardDeviation20 = standardDeviation(closes.slice(index - 19, index + 1));
-        const bollingerUpper = sma20 + standardDeviation20 * 2;
-        const bollingerLower = sma20 - standardDeviation20 * 2;
+        const smaFast = mean(closes.slice(index - parameters.smaFastPeriod + 1, index + 1));
+        const smaSlow = mean(closes.slice(index - parameters.smaSlowPeriod + 1, index + 1));
+        const bollingerWindow = closes.slice(index - parameters.bollingerPeriod + 1, index + 1);
+        const bollingerBasis = mean(bollingerWindow);
+        const bollingerDeviation = standardDeviation(bollingerWindow);
+        const bollingerUpper = bollingerBasis + bollingerDeviation * parameters.bollingerMultiplier;
+        const bollingerLower = bollingerBasis - bollingerDeviation * parameters.bollingerMultiplier;
         const bollingerRange = Math.max(bollingerUpper - bollingerLower, EPSILON);
         const bollingerPercentB = (point.close - bollingerLower) / bollingerRange;
-        const bollingerBandwidth = bollingerRange / Math.max(sma20, EPSILON);
-        const williamsR = calculateWilliamsR(points, index, 14);
-        const roc = point.close / closes[index - 12] - 1;
-        const rsi = calculateRsi(closes, index, 14);
-        const volatility = calculateVolatility(closes, index, 20);
-        const volumeWindow = volumes.slice(index - 19, index + 1);
-        const volumeDeviation = standardDeviation(volumeWindow);
-        const volumeZScore = (point.volume - mean(volumeWindow)) / Math.max(volumeDeviation, EPSILON);
+        const bollingerBandwidth = bollingerRange / Math.max(bollingerBasis, EPSILON);
+        const williamsR = calculateWilliamsR(points, index, parameters.williamsPeriod);
+        const roc = point.close / closes[index - parameters.rocPeriod] - 1;
+        const rsi = calculateRsi(closes, index, parameters.rsiPeriod);
         const macdHistogram = macd[index] - macdSignal[index];
 
         const features = [
-            clamp((point.close / sma20 - 1) * 10, -1, 1),
-            clamp((point.close / sma50 - 1) * 10, -1, 1),
-            clamp((sma20 / sma50 - 1) * 10, -1, 1),
+            clamp((point.close / smaFast - 1) * 10, -1, 1),
+            clamp((point.close / smaSlow - 1) * 10, -1, 1),
+            clamp((smaFast / smaSlow - 1) * 10, -1, 1),
             clamp((williamsR + 50) / 50, -1, 1),
             clamp(roc * 5, -1, 1),
             clamp((rsi - 50) / 50, -1, 1),
@@ -48,16 +47,14 @@ export function calculateIndicators(points: MarketDataPoint[]): IndicatorSnapsho
             clamp((macdHistogram / point.close) * 50, -1, 1),
             clamp((bollingerPercentB - 0.5) * 2, -1, 1),
             clamp(bollingerBandwidth * 8, -1, 1),
-            clamp(volatility * 5, -1, 1),
-            clamp(volumeZScore / 3, -1, 1),
         ];
 
         return [
             {
                 date: point.date,
                 close: point.close,
-                sma20,
-                sma50,
+                smaFast,
+                smaSlow,
                 williamsR,
                 roc,
                 rsi,
@@ -68,12 +65,21 @@ export function calculateIndicators(points: MarketDataPoint[]): IndicatorSnapsho
                 bollingerLower,
                 bollingerPercentB,
                 bollingerBandwidth,
-                volatility,
-                volumeZScore,
                 features,
             },
         ];
     });
+}
+
+export function getIndicatorWarmup(parameters: OptimizedIndicatorParameters): number {
+    return Math.max(
+        parameters.smaSlowPeriod,
+        parameters.williamsPeriod,
+        parameters.rocPeriod,
+        parameters.rsiPeriod,
+        parameters.macdSlowPeriod + parameters.macdSignalPeriod,
+        parameters.bollingerPeriod
+    );
 }
 
 export function splitIndicators(snapshots: IndicatorSnapshot[], trainRatio = 0.8): {train: IndicatorSnapshot[]; test: IndicatorSnapshot[]; splitIndex: number} {
@@ -119,14 +125,6 @@ function calculateRsi(closes: number[], index: number, period: number): number {
     }
     const relativeStrength = averageGain / averageLoss;
     return 100 - 100 / (1 + relativeStrength);
-}
-
-function calculateVolatility(closes: number[], index: number, period: number): number {
-    const returns: number[] = [];
-    for (let cursor = index - period + 1; cursor <= index; cursor += 1) {
-        returns.push(closes[cursor] / closes[cursor - 1] - 1);
-    }
-    return standardDeviation(returns) * Math.sqrt(252);
 }
 
 function mean(values: number[]): number {

@@ -1,12 +1,9 @@
 import {argMax, NeuralNetworkAdapter} from "../../lib/neural-network";
-import type {Genome, IndicatorSnapshot, MarketDataPoint, TradeMarker, TradingPoint, TradingReplay} from "../../lib/types";
+import type {Genome, IndicatorSnapshot, MarketDataPoint, OptimizedIndicatorParameters, TradeMarker, TradingPoint, TradingReplay} from "../../lib/types";
 import {calculateIndicators, splitIndicators} from "./indicators";
+import {decodeStockGenome, STOCK_TOPOLOGY} from "./strategy-genome";
 
-export const STOCK_TOPOLOGY = {
-    inputSize: 14,
-    hiddenLayers: [16, 8],
-    outputSize: 3,
-};
+export {STOCK_TOPOLOGY} from "./strategy-genome";
 
 const STARTING_EQUITY = 10_000;
 const TRANSACTION_COST = 0.001;
@@ -20,7 +17,7 @@ const networkAdapter = new NeuralNetworkAdapter(STOCK_TOPOLOGY);
  * with ~2.5k daily bars that was a large allocation storm.
  */
 let cachedPoints: MarketDataPoint[] | null = null;
-let cachedSnapshots: IndicatorSnapshot[] = [];
+const cachedSnapshots = new Map<string, IndicatorSnapshot[]>();
 
 interface SegmentResult {
     equityCurve: number[];
@@ -32,30 +29,41 @@ interface SegmentResult {
     endingPosition: number;
 }
 
-export function getIndicatorSnapshots(points: MarketDataPoint[]): IndicatorSnapshot[] {
-    if (points === cachedPoints) {
-        return cachedSnapshots;
+export function getIndicatorSnapshots(points: MarketDataPoint[], parameters: OptimizedIndicatorParameters): IndicatorSnapshot[] {
+    if (points !== cachedPoints) {
+        cachedPoints = points;
+        cachedSnapshots.clear();
     }
-    cachedPoints = points;
-    cachedSnapshots = calculateIndicators(points);
-    return cachedSnapshots;
+    const key = Object.values(parameters).join(":");
+    const cached = cachedSnapshots.get(key);
+    if (cached) {
+        return cached;
+    }
+    const snapshots = calculateIndicators(points, parameters);
+    if (cachedSnapshots.size >= 256) {
+        cachedSnapshots.clear();
+    }
+    cachedSnapshots.set(key, snapshots);
+    return snapshots;
 }
 
 export function evaluateStockGenome(genome: Genome, points: MarketDataPoint[]): number {
-    const snapshots = getIndicatorSnapshots(points);
+    const {parameters, networkGenome} = decodeStockGenome(genome);
+    const snapshots = getIndicatorSnapshots(points, parameters);
     const {train} = splitIndicators(snapshots);
     if (train.length < 30) {
         return -1_000;
     }
-    const result = simulateSegment(genome, train, 0);
+    const result = simulateSegment(networkGenome, train, 0);
     return result.totalReturn * 100 + result.sharpe * 8 - result.maxDrawdown * 45;
 }
 
 export function createTradingReplay(genome: Genome, points: MarketDataPoint[]): TradingReplay {
-    const snapshots = getIndicatorSnapshots(points);
+    const {parameters, networkGenome} = decodeStockGenome(genome);
+    const snapshots = getIndicatorSnapshots(points, parameters);
     const {train, test, splitIndex} = splitIndicators(snapshots);
-    const trainResult = simulateSegment(genome, train, 0);
-    const testResult = simulateSegment(genome, test, trainResult.endingPosition);
+    const trainResult = simulateSegment(networkGenome, train, 0);
+    const testResult = simulateSegment(networkGenome, test, trainResult.endingPosition);
     const trainCurve = trainResult.equityCurve;
     const testScale = trainCurve.at(-1) ?? STARTING_EQUITY;
     const normalizedTestCurve = testResult.equityCurve.map(value => (value / STARTING_EQUITY) * testScale);
@@ -67,8 +75,8 @@ export function createTradingReplay(genome: Genome, points: MarketDataPoint[]): 
         strategy: fullCurve[index] ?? fullCurve.at(-1) ?? STARTING_EQUITY,
         benchmark: STARTING_EQUITY * (snapshot.close / firstClose),
         segment: index < splitIndex ? "train" : "test",
-        sma20: snapshot.sma20,
-        sma50: snapshot.sma50,
+        smaFast: snapshot.smaFast,
+        smaSlow: snapshot.smaSlow,
         rsi: snapshot.rsi,
         williamsR: snapshot.williamsR,
         roc: snapshot.roc,
@@ -76,8 +84,6 @@ export function createTradingReplay(genome: Genome, points: MarketDataPoint[]): 
         macdSignal: snapshot.macdSignal,
         bollingerUpper: snapshot.bollingerUpper,
         bollingerLower: snapshot.bollingerLower,
-        volatility: snapshot.volatility,
-        volumeZScore: snapshot.volumeZScore,
     }));
 
     return {
@@ -88,6 +94,7 @@ export function createTradingReplay(genome: Genome, points: MarketDataPoint[]): 
         benchmarkReturn: snapshots.length > 1 ? snapshots.at(-1)!.close / firstClose - 1 : 0,
         sharpe: trainResult.sharpe,
         maxDrawdown: trainResult.maxDrawdown,
+        optimizedParameters: parameters,
     };
 }
 

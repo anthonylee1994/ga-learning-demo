@@ -96,11 +96,24 @@ export interface MarketDataResponse {
     points: MarketDataPoint[];
 }
 
+export interface OptimizedIndicatorParameters {
+    smaFastPeriod: number;
+    smaSlowPeriod: number;
+    williamsPeriod: number;
+    rocPeriod: number;
+    rsiPeriod: number;
+    macdFastPeriod: number;
+    macdSlowPeriod: number;
+    macdSignalPeriod: number;
+    bollingerPeriod: number;
+    bollingerMultiplier: number;
+}
+
 export interface IndicatorSnapshot {
     date: string;
     close: number;
-    sma20: number;
-    sma50: number;
+    smaFast: number;
+    smaSlow: number;
     williamsR: number;
     roc: number;
     rsi: number;
@@ -111,8 +124,6 @@ export interface IndicatorSnapshot {
     bollingerLower: number;
     bollingerPercentB: number;
     bollingerBandwidth: number;
-    volatility: number;
-    volumeZScore: number;
     features: number[];
 }
 
@@ -128,8 +139,8 @@ export interface TradingPoint {
     strategy: number;
     benchmark: number;
     segment: "train" | "test";
-    sma20: number;
-    sma50: number;
+    smaFast: number;
+    smaSlow: number;
     rsi: number;
     williamsR: number;
     roc: number;
@@ -137,8 +148,6 @@ export interface TradingPoint {
     macdSignal: number;
     bollingerUpper: number;
     bollingerLower: number;
-    volatility: number;
-    volumeZScore: number;
 }
 
 export interface TradingReplay {
@@ -149,6 +158,7 @@ export interface TradingReplay {
     benchmarkReturn: number;
     sharpe: number;
     maxDrawdown: number;
+    optimizedParameters: OptimizedIndicatorParameters;
 }
 
 export type WorkerCommand<TData = unknown> =

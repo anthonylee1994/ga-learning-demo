@@ -1,12 +1,12 @@
 /// <reference lib="webworker" />
 
-import {createTradingReplay, evaluateStockGenome, STOCK_TOPOLOGY} from "../domains/stock/simulation";
-import {calculateGeneCount} from "../lib/neural-network";
+import {createTradingReplay, evaluateStockGenome} from "../domains/stock/simulation";
+import {STOCK_GENE_COUNT} from "../domains/stock/strategy-genome";
 import type {MarketDataPoint} from "../lib/types";
 import {setupEvolutionWorker} from "./worker-runtime";
 
 setupEvolutionWorker<MarketDataPoint[], ReturnType<typeof createTradingReplay>>({
-    geneCount: calculateGeneCount(STOCK_TOPOLOGY),
+    geneCount: STOCK_GENE_COUNT,
     requiresData: true,
     evaluate(genome, data) {
         return evaluateStockGenome(genome, data ?? []);

@@ -1,4 +1,5 @@
 import {expect, test} from "@playwright/test";
+import {readFile} from "node:fs/promises";
 
 test.describe.configure({mode: "serial"});
 test.setTimeout(120_000);
@@ -58,10 +59,28 @@ test("desktop workspace runs all three evolution demos", async ({page}, testInfo
 
     await page.getByRole("button", {name: "Stock Trading"}).click();
     await expect(page).toHaveURL(/\/stock$/);
-    await expect(page.getByText(/sessions · USD/)).toBeVisible({timeout: 30_000});
+    await expect(page.getByText(/QQQ · .* sessions · USD/)).toBeVisible({timeout: 30_000});
+    await page.getByRole("textbox", {name: "股票代號"}).fill("AAPL");
+    await page.getByRole("button", {name: "載入 Ticker"}).click();
+    await expect(page.getByText(/AAPL · .* sessions · USD/)).toBeVisible({timeout: 30_000});
+    await expect(page.getByText("AAPL · Daily")).toBeVisible();
+    await expect(page.locator(".market-zoom-brush")).toBeVisible();
     await page.getByRole("button", {name: "開始"}).click();
     await expectGeneration(page, 45_000);
+    await expect(page.getByRole("heading", {name: "Best indicator parameters"})).toBeVisible();
     await expect(page.getByText("Strategy vs Buy & Hold")).toBeVisible();
+    const downloadPromise = page.waitForEvent("download");
+    await page.getByRole("button", {name: "匯出 Pine Script"}).click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toBe("aapl-evolab-strategy.pine");
+    const downloadPath = await download.path();
+    expect(downloadPath).not.toBeNull();
+    const pineScript = await readFile(downloadPath!, "utf8");
+    expect(pineScript).toContain("//@version=6");
+    expect(pineScript).toContain("rsiPeriod =");
+    expect(pineScript).toContain("bollingerPeriod =");
+    expect(pineScript).toContain("h1_0 = tanh(");
+    expect(pineScript).not.toContain("math.tanh");
     await page.getByRole("button", {name: "暫停"}).click();
     await page.screenshot({fullPage: true, path: testInfo.outputPath("stock-desktop.png")});
 
