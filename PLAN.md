@@ -11,7 +11,7 @@
     1. **Genome / Chromosome**：一組 Brain.js weights 與 biases 如何代表一個 AI。
     2. **Population**：同一代包含多個不同 neural networks。
     3. **Fitness Function**：用分數衡量個體解決問題嘅能力。
-    4. **Selection**：以 tournament selection 增加優良個體繁殖機會。
+    4. **Selection**：以 roulette wheel selection 按 fitness 比例增加優良個體繁殖機會。
     5. **Crossover**：由兩個 parents 混合 weights，產生 child genome。
     6. **Mutation**：隨機微調 weights，維持 population diversity。
     7. **Elitism**：最佳個體直接保留到下一代。
@@ -41,7 +41,7 @@
     - Adapter 將 genome 載入 Brain.js network，以 `run()` 做 forward inference。
     - 不使用 Brain.js `train()` 或 backpropagation。
 - 三個訓練流程放入獨立 Web Workers。
-- 共用 typed GA engine：seeded RNG、tournament selection、elitism、uniform crossover、Gaussian mutation及 generation statistics。
+- 共用 typed GA engine：seeded RNG、roulette wheel selection、elitism、uniform crossover、Gaussian mutation及 generation statistics。
 - UI 提供開始、暫停、重設、速度、population、mutation rate、seed，以及 generation、best/average fitness、population diversity、champion replay。
 - 控制項旁加入簡短 theory tooltip，解釋調高或調低參數嘅影響。
 - 使用 versioned `localStorage` 保存設定、seed、champion genome及摘要；reload 後用 champion 建立新 population。

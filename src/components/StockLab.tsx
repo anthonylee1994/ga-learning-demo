@@ -18,7 +18,6 @@ const DEFAULT_CONFIG: GAConfig = {
     mutationRate: 0.12,
     mutationScale: 0.22,
     eliteRate: 0.08,
-    tournamentSize: 4,
     seed: 420,
     speed: 3,
     useNeuralNetwork: true,

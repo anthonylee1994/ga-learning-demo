@@ -96,8 +96,8 @@ export function evolvePopulation(population: Genome[], fitnesses: number[], conf
     const profile = options?.mutationProfile;
 
     while (nextPopulation.length < population.length) {
-        const parentA = tournamentSelect(ranked, config.tournamentSize, random);
-        const parentB = tournamentSelect(ranked, config.tournamentSize, random);
+        const parentA = rouletteWheelSelect(ranked, random);
+        const parentB = rouletteWheelSelect(ranked, random);
         const child = uniformCrossover(parentA, parentB, random);
         nextPopulation.push(mutateGenome(child, config.mutationRate, config.mutationScale, random, profile));
     }
@@ -128,13 +128,29 @@ export function evolvePopulation(population: Genome[], fitnesses: number[], conf
     };
 }
 
-function tournamentSelect(ranked: Array<{genome: Genome; fitness: number}>, tournamentSize: number, random: RandomSource): Genome {
-    let best = ranked[random.integer(0, ranked.length - 1)];
-    for (let index = 1; index < tournamentSize; index += 1) {
-        const candidate = ranked[random.integer(0, ranked.length - 1)];
-        if (candidate.fitness > best.fitness) {
-            best = candidate;
+export function rouletteWheelSelect(candidates: Array<{genome: Genome; fitness: number}>, random: RandomSource): Genome {
+    let fitnessScale = 1;
+    for (const candidate of candidates) {
+        fitnessScale = Math.max(fitnessScale, Math.abs(candidate.fitness));
+    }
+
+    const scaledFitnesses = candidates.map(candidate => candidate.fitness / fitnessScale);
+    const minimumFitness = Math.min(...scaledFitnesses);
+    const offset = minimumFitness < 0 ? -minimumFitness : 0;
+    const weights = scaledFitnesses.map(fitness => fitness + offset);
+    const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+
+    if (totalWeight <= 0) {
+        return candidates[random.integer(0, candidates.length - 1)].genome;
+    }
+
+    let threshold = random.next() * totalWeight;
+    for (let index = 0; index < candidates.length; index += 1) {
+        threshold -= weights[index];
+        if (threshold < 0) {
+            return candidates[index].genome;
         }
     }
-    return best.genome;
+
+    return candidates[candidates.length - 1].genome;
 }

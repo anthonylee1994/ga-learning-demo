@@ -1,5 +1,6 @@
-import {createPopulation, evolvePopulation, mutateGenome, uniformCrossover} from "./ga";
+import {createPopulation, evolvePopulation, mutateGenome, rouletteWheelSelect, uniformCrossover} from "./ga";
 import {createRandom} from "./random";
+import type {RandomSource} from "./random";
 import type {GAConfig} from "./types";
 
 const CONFIG: GAConfig = {
@@ -7,10 +8,23 @@ const CONFIG: GAConfig = {
     mutationRate: 0.2,
     mutationScale: 0.3,
     eliteRate: 0.1,
-    tournamentSize: 3,
     seed: 1,
     speed: 1,
 };
+
+function createFixedRandom(nextValue: number, integerValue = 0): RandomSource {
+    return {
+        next() {
+            return nextValue;
+        },
+        integer() {
+            return integerValue;
+        },
+        gaussian() {
+            return 0;
+        },
+    };
+}
 
 describe("genetic algorithm", () => {
     it("creates reproducible populations from a seed", () => {
@@ -43,6 +57,26 @@ describe("genetic algorithm", () => {
         expect(result.population[0]).toEqual([9, 9.5]);
         expect(result.population).toHaveLength(10);
         expect(result.stats.diversity).toBeGreaterThan(0);
+    });
+
+    it("selects parents by roulette wheel fitness proportion", () => {
+        const candidates = [
+            {genome: [0], fitness: -5},
+            {genome: [1], fitness: 0},
+            {genome: [2], fitness: 5},
+        ];
+
+        expect(rouletteWheelSelect(candidates, createFixedRandom(0.1))).toEqual([1]);
+        expect(rouletteWheelSelect(candidates, createFixedRandom(0.5))).toEqual([2]);
+    });
+
+    it("selects uniformly when roulette wheel fitnesses have no weight", () => {
+        const candidates = [
+            {genome: [0], fitness: 0},
+            {genome: [1], fitness: 0},
+        ];
+
+        expect(rouletteWheelSelect(candidates, createFixedRandom(0.5, 1))).toEqual([1]);
     });
 
     it("mutates head genes more than the tail when a profile is set", () => {

@@ -7,7 +7,7 @@ const THEORY_ITEMS = [
     {icon: Dna, title: "Genome / Chromosome", text: "每個 genome 都係一組 Brain.js weights 同 biases，完整描述一個 AI 嘅決策方式。"},
     {icon: Users, title: "Population", text: "同一代同時測試多個不同 neural networks，唔將希望押喺單一解法。"},
     {icon: Target, title: "Fitness Function", text: "將生存、回報或任務表現壓縮成分數，決定邊啲個體值得繁殖。"},
-    {icon: ShieldCheck, title: "Selection + Elitism", text: "Tournament selection 偏向強者；elitism 直接保留最優個體，避免倒退。"},
+    {icon: ShieldCheck, title: "Selection + Elitism", text: "Roulette wheel selection 按 fitness 比例增加強者繁殖機會；elitism 直接保留最優個體，避免倒退。"},
     {icon: Shuffle, title: "Crossover", text: "兩個 parents 逐個 gene 混合，child 同時繼承兩邊已經有效嘅結構。"},
     {icon: Sparkles, title: "Mutation", text: "以低機率擾動 weights，為 population 注入新方向，跳出局部最佳。"},
     {icon: Network, title: "Neuroevolution", text: "唔用 backpropagation；直接以演化搜尋 neural network parameters。"},

@@ -30,7 +30,6 @@ describe("block breaker simulation", () => {
             mutationRate: 0.14,
             mutationScale: 0.26,
             eliteRate: 0.1,
-            tournamentSize: 4,
             seed: 281,
             speed: 3,
         };
