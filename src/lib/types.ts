@@ -111,6 +111,21 @@ export interface OptimizedIndicatorParameters {
     volumeZScorePeriod: number;
 }
 
+/** Pure rule thresholds evolved by GA (no neural network). */
+export interface OptimizedStrategyRules {
+    rsiBuy: number;
+    rsiSell: number;
+    williamsBuy: number;
+    williamsSell: number;
+    rocBuy: number;
+    rocSell: number;
+    bollingerBuy: number;
+    bollingerSell: number;
+    minBuySignals: number;
+    minSellSignals: number;
+    useTrendFilter: boolean;
+}
+
 export interface IndicatorSnapshot {
     date: string;
     close: number;
@@ -165,6 +180,7 @@ export interface TradingReplay {
     sharpe: number;
     maxDrawdown: number;
     optimizedParameters: OptimizedIndicatorParameters;
+    optimizedRules: OptimizedStrategyRules;
 }
 
 export type WorkerCommand<TData = unknown> =

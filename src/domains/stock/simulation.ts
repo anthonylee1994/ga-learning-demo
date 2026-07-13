@@ -1,15 +1,9 @@
-import {argMax, NeuralNetworkAdapter} from "../../lib/neural-network";
-import type {Genome, IndicatorSnapshot, MarketDataPoint, OptimizedIndicatorParameters, TradeMarker, TradingPoint, TradingReplay} from "../../lib/types";
+import type {Genome, IndicatorSnapshot, MarketDataPoint, OptimizedStrategyRules, TradeMarker, TradingPoint, TradingReplay} from "../../lib/types";
 import {calculateIndicators, splitIndicators} from "./indicators";
-import {decodeStockGenome, STOCK_TOPOLOGY} from "./strategy-genome";
-
-export {STOCK_TOPOLOGY} from "./strategy-genome";
+import {decodeStockGenome} from "./strategy-genome";
 
 const STARTING_EQUITY = 10_000;
 const TRANSACTION_COST = 0.001;
-
-/** Shared adapter so evaluate/replay do not allocate a new network graph per genome. */
-const networkAdapter = new NeuralNetworkAdapter(STOCK_TOPOLOGY);
 
 /**
  * Cache indicator snapshots by the exact points array reference.
@@ -29,7 +23,7 @@ interface SegmentResult {
     endingPosition: number;
 }
 
-export function getIndicatorSnapshots(points: MarketDataPoint[], parameters: OptimizedIndicatorParameters): IndicatorSnapshot[] {
+export function getIndicatorSnapshots(points: MarketDataPoint[], parameters: ReturnType<typeof decodeStockGenome>["parameters"]): IndicatorSnapshot[] {
     if (points !== cachedPoints) {
         cachedPoints = points;
         cachedSnapshots.clear();
@@ -48,7 +42,7 @@ export function getIndicatorSnapshots(points: MarketDataPoint[], parameters: Opt
 }
 
 export function evaluateStockGenome(genome: Genome, points: MarketDataPoint[]): number {
-    const {parameters, networkGenome} = decodeStockGenome(genome);
+    const {parameters, rules} = decodeStockGenome(genome);
     const snapshots = getIndicatorSnapshots(points, parameters);
     const {train} = splitIndicators(snapshots);
     if (train.length < 100) {
@@ -56,7 +50,7 @@ export function evaluateStockGenome(genome: Genome, points: MarketDataPoint[]): 
     }
 
     // Fitness: performance (return in excess of buy & hold) minus a max-drawdown penalty.
-    const result = simulateSegment(networkGenome, train, 0);
+    const result = simulateSegment(rules, train, 0);
     const first = train[0]?.close ?? 1;
     const last = train.at(-1)?.close ?? first;
     const benchmarkReturn = last / first - 1;
@@ -65,11 +59,11 @@ export function evaluateStockGenome(genome: Genome, points: MarketDataPoint[]): 
 }
 
 export function createTradingReplay(genome: Genome, points: MarketDataPoint[]): TradingReplay {
-    const {parameters, networkGenome} = decodeStockGenome(genome);
+    const {parameters, rules} = decodeStockGenome(genome);
     const snapshots = getIndicatorSnapshots(points, parameters);
     const {train, test, splitIndex} = splitIndicators(snapshots);
-    const trainResult = simulateSegment(networkGenome, train, 0);
-    const testResult = simulateSegment(networkGenome, test, trainResult.endingPosition);
+    const trainResult = simulateSegment(rules, train, 0);
+    const testResult = simulateSegment(rules, test, trainResult.endingPosition);
     const trainCurve = trainResult.equityCurve;
     const testScale = trainCurve.at(-1) ?? STARTING_EQUITY;
     const normalizedTestCurve = testResult.equityCurve.map(value => (value / STARTING_EQUITY) * testScale);
@@ -103,11 +97,69 @@ export function createTradingReplay(genome: Genome, points: MarketDataPoint[]): 
         sharpe: trainResult.sharpe,
         maxDrawdown: trainResult.maxDrawdown,
         optimizedParameters: parameters,
+        optimizedRules: rules,
     };
 }
 
-function simulateSegment(genome: Genome, snapshots: IndicatorSnapshot[], startingPosition: number): SegmentResult {
-    const runNetwork = networkAdapter.createRunner(genome);
+/**
+ * Multi-indicator voting rules evolved by GA.
+ * buy / hold / sell → target long (1) or cash (0); never short.
+ */
+export function decidePosition(snapshot: IndicatorSnapshot, rules: OptimizedStrategyRules, position: number): number {
+    const trendUp = snapshot.smaFast > snapshot.smaSlow;
+    let buySignals = 0;
+    let sellSignals = 0;
+
+    if (trendUp) {
+        buySignals += 1;
+    } else {
+        sellSignals += 1;
+    }
+    if (snapshot.rsi < rules.rsiBuy) {
+        buySignals += 1;
+    }
+    if (snapshot.rsi > rules.rsiSell) {
+        sellSignals += 1;
+    }
+    if (snapshot.williamsR < rules.williamsBuy) {
+        buySignals += 1;
+    }
+    if (snapshot.williamsR > rules.williamsSell) {
+        sellSignals += 1;
+    }
+    if (snapshot.roc > rules.rocBuy) {
+        buySignals += 1;
+    }
+    if (snapshot.roc < rules.rocSell) {
+        sellSignals += 1;
+    }
+    if (snapshot.bollingerPercentB < rules.bollingerBuy) {
+        buySignals += 1;
+    }
+    if (snapshot.bollingerPercentB > rules.bollingerSell) {
+        sellSignals += 1;
+    }
+    if (snapshot.macd > snapshot.macdSignal) {
+        buySignals += 1;
+    } else {
+        sellSignals += 1;
+    }
+
+    if (position <= 0) {
+        const trendOk = !rules.useTrendFilter || trendUp;
+        if (trendOk && buySignals >= rules.minBuySignals) {
+            return 1;
+        }
+        return 0;
+    }
+
+    if (sellSignals >= rules.minSellSignals) {
+        return 0;
+    }
+    return 1;
+}
+
+function simulateSegment(rules: OptimizedStrategyRules, snapshots: IndicatorSnapshot[], startingPosition: number): SegmentResult {
     let equity = STARTING_EQUITY;
     let position = startingPosition;
     const equityCurve = [equity];
@@ -117,9 +169,7 @@ function simulateSegment(genome: Genome, snapshots: IndicatorSnapshot[], startin
     for (let index = 1; index < snapshots.length; index += 1) {
         const previous = snapshots[index - 1];
         const current = snapshots[index];
-        const output = runNetwork([...previous.features, position]);
-        const action = argMax(output);
-        const targetPosition = action === 0 ? 1 : action === 2 ? 0 : position;
+        const targetPosition = decidePosition(previous, rules, position);
         const turnover = Math.abs(targetPosition - position);
         const priceReturn = current.close / previous.close - 1;
         const dailyReturn = position * priceReturn - turnover * TRANSACTION_COST;

@@ -1,15 +1,9 @@
-import {calculateGeneCount} from "../../lib/neural-network";
-import type {Genome, OptimizedIndicatorParameters} from "../../lib/types";
+import type {Genome, OptimizedIndicatorParameters, OptimizedStrategyRules} from "../../lib/types";
 
-export const STOCK_TOPOLOGY = {
-    inputSize: 14,
-    hiddenLayers: [16, 8],
-    outputSize: 3,
-};
-
+/** Indicator period genes (0–11) + rule-threshold genes (12–22). Pure GA — no neural weights. */
 export const STOCK_PARAMETER_GENE_COUNT = 12;
-export const STOCK_NETWORK_GENE_COUNT = calculateGeneCount(STOCK_TOPOLOGY);
-export const STOCK_GENE_COUNT = STOCK_PARAMETER_GENE_COUNT + STOCK_NETWORK_GENE_COUNT;
+export const STOCK_RULE_GENE_COUNT = 11;
+export const STOCK_GENE_COUNT = STOCK_PARAMETER_GENE_COUNT + STOCK_RULE_GENE_COUNT;
 
 export const DEFAULT_INDICATOR_PARAMETERS: OptimizedIndicatorParameters = {
     smaFastPeriod: 20,
@@ -26,9 +20,23 @@ export const DEFAULT_INDICATOR_PARAMETERS: OptimizedIndicatorParameters = {
     volumeZScorePeriod: 20,
 };
 
+export const DEFAULT_STRATEGY_RULES: OptimizedStrategyRules = {
+    rsiBuy: 30,
+    rsiSell: 70,
+    williamsBuy: -80,
+    williamsSell: -20,
+    rocBuy: 0,
+    rocSell: 0,
+    bollingerBuy: 0.2,
+    bollingerSell: 0.8,
+    minBuySignals: 3,
+    minSellSignals: 3,
+    useTrendFilter: true,
+};
+
 export interface DecodedStockGenome {
     parameters: OptimizedIndicatorParameters;
-    networkGenome: Genome;
+    rules: OptimizedStrategyRules;
 }
 
 export function decodeStockGenome(genome: Genome): DecodedStockGenome {
@@ -41,6 +49,12 @@ export function decodeStockGenome(genome: Genome): DecodedStockGenome {
     const smaSlowPeriod = Math.max(smaFastPeriod + 5, value(1, 30, 200));
     const macdFastPeriod = value(5, 5, 18);
     const macdSlowPeriod = Math.max(macdFastPeriod + 3, value(6, 20, 50));
+    const rsiBuy = value(12, 15, 45);
+    const rsiSell = Math.max(rsiBuy + 10, value(13, 55, 85));
+    const williamsBuy = decodeFloat(genome[14], -95, -50, 2);
+    const williamsSell = Math.max(williamsBuy + 5, decodeFloat(genome[15], -50, -5, 2));
+    const bollingerBuy = decodeFloat(genome[18], 0, 0.4, 3);
+    const bollingerSell = Math.max(bollingerBuy + 0.15, decodeFloat(genome[19], 0.6, 1, 3));
 
     return {
         parameters: {
@@ -57,7 +71,19 @@ export function decodeStockGenome(genome: Genome): DecodedStockGenome {
             volatilityPeriod: value(10, 10, 60),
             volumeZScorePeriod: value(11, 10, 60),
         },
-        networkGenome: genome.slice(STOCK_PARAMETER_GENE_COUNT),
+        rules: {
+            rsiBuy,
+            rsiSell,
+            williamsBuy,
+            williamsSell,
+            rocBuy: decodeFloat(genome[16], -0.05, 0.1, 4),
+            rocSell: decodeFloat(genome[17], -0.1, 0.05, 4),
+            bollingerBuy,
+            bollingerSell,
+            minBuySignals: value(20, 1, 5),
+            minSellSignals: value(21, 1, 5),
+            useTrendFilter: Math.tanh(genome[22]) >= 0,
+        },
     };
 }
 

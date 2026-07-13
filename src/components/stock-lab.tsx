@@ -95,7 +95,7 @@ export const StockLab = React.memo(() => {
     return (
         <DemoShell
             accent="stock"
-            description="用 QQQ 近 15 年日線歷史進化交易 policy；80% 數據訓練，最後 20% 完全留作 out-of-sample 測試。"
+            description="用 QQQ 近 15 年日線歷史，以純 Genetic Algorithm 進化多指標規則策略（唔經 neural network）；80% 訓練，最後 20% out-of-sample 測試。"
             icon={<CandlestickChart size={20} strokeWidth={1.5} />}
             title="Stock Trading Evolution"
         >
@@ -151,7 +151,7 @@ export const StockLab = React.memo(() => {
                             <div className="panel-heading">
                                 <div>
                                     <p className="eyebrow">Champion genome</p>
-                                    <h3>Best indicator parameters</h3>
+                                    <h3>Best indicator & rule parameters</h3>
                                 </div>
                                 <Button onPress={() => downloadPineScript(demo.champion!.genome, marketData?.symbol ?? "QQQ")} size="sm" variant="secondary">
                                     <FileDown size={15} strokeWidth={1.5} />
@@ -160,9 +160,9 @@ export const StockLab = React.memo(() => {
                             </div>
                             <div className="parameter-grid">
                                 <ParameterValue label="SMA" value={`${replay.optimizedParameters.smaFastPeriod} / ${replay.optimizedParameters.smaSlowPeriod}`} />
-                                <ParameterValue label="RSI" value={String(replay.optimizedParameters.rsiPeriod)} />
+                                <ParameterValue label="RSI period" value={String(replay.optimizedParameters.rsiPeriod)} />
                                 <ParameterValue label="Bollinger" value={`${replay.optimizedParameters.bollingerPeriod} / ${replay.optimizedParameters.bollingerMultiplier.toFixed(2)}σ`} />
-                                <ParameterValue label="ROC" value={String(replay.optimizedParameters.rocPeriod)} />
+                                <ParameterValue label="ROC period" value={String(replay.optimizedParameters.rocPeriod)} />
                                 <ParameterValue label="Williams %R" value={String(replay.optimizedParameters.williamsPeriod)} />
                                 <ParameterValue
                                     label="MACD"
@@ -170,6 +170,12 @@ export const StockLab = React.memo(() => {
                                 />
                                 <ParameterValue label="Volatility" value={String(replay.optimizedParameters.volatilityPeriod)} />
                                 <ParameterValue label="Volume Z" value={String(replay.optimizedParameters.volumeZScorePeriod)} />
+                                <ParameterValue label="RSI buy / sell" value={`${replay.optimizedRules.rsiBuy} / ${replay.optimizedRules.rsiSell}`} />
+                                <ParameterValue label="Williams buy / sell" value={`${replay.optimizedRules.williamsBuy.toFixed(1)} / ${replay.optimizedRules.williamsSell.toFixed(1)}`} />
+                                <ParameterValue label="%B buy / sell" value={`${replay.optimizedRules.bollingerBuy.toFixed(2)} / ${replay.optimizedRules.bollingerSell.toFixed(2)}`} />
+                                <ParameterValue label="Min signals" value={`${replay.optimizedRules.minBuySignals} buy · ${replay.optimizedRules.minSellSignals} sell`} />
+                                <ParameterValue label="Trend filter" value={replay.optimizedRules.useTrendFilter ? "SMA fast > slow" : "Off"} />
+                                <ParameterValue label="ROC buy / sell" value={`${formatSigned(replay.optimizedRules.rocBuy)} / ${formatSigned(replay.optimizedRules.rocSell)}`} />
                             </div>
                         </section>
                     ) : null}
@@ -213,9 +219,9 @@ export const StockLab = React.memo(() => {
                     <FitnessChart history={demo.history} />
                     <ApplicationPanel
                         fitness="超額回報(vs buy&hold) × 100 − maxDrawdown × 40"
-                        genome="12 個 indicator parameter genes + Brain.js 14 → 4 → 3 weights 與 biases"
-                        inputs="GA 優化後嘅 SMA、Williams %R、ROC、RSI、MACD、Bollinger、volatility、volume z-score、倉位"
-                        outputs="Brain.js network → argMax(buy / hold / sell)：100% long、維持倉位、100% cash"
+                        genome="12 個 indicator period genes + 11 個規則門檻 genes（RSI / Williams / ROC / Bollinger / 最少確認數 / 趨勢過濾）"
+                        inputs="SMA 交叉、RSI、Williams %R、ROC、MACD、Bollinger %B（全部由 GA 解碼參數計算）"
+                        outputs="多指標投票規則 → long 100% 或 cash 100%（達到 min buy/sell signals 先轉倉）"
                         termination="用頭 80% 數據做 selection；最後 20% test data 絕不參與訓練，用嚟審視 out-of-sample 表現"
                     />
                 </main>
@@ -273,8 +279,8 @@ const MarketChart = React.memo<MarketChartProps>(({data, indicatorView, replay, 
             <Line dataKey="close" dot={false} isAnimationActive={false} name="Close" stroke="#dfe3e8" strokeWidth={1.5} type="monotone" yAxisId="price" />
             {replay ? (
                 <React.Fragment>
-                    <Line connectNulls={false} dataKey="buy" dot={{fill: "#58d68d", r: 2.5, strokeWidth: 0}} isAnimationActive={false} name="Buy" stroke="none" yAxisId="price" />
-                    <Line connectNulls={false} dataKey="sell" dot={{fill: "#e36f5b", r: 2.5, strokeWidth: 0}} isAnimationActive={false} name="Sell" stroke="none" yAxisId="price" />
+                    <Line connectNulls={false} dataKey="buy" dot={{fill: "#58d68d", r: 5, strokeWidth: 0}} isAnimationActive={false} name="Buy" stroke="none" yAxisId="price" />
+                    <Line connectNulls={false} dataKey="sell" dot={{fill: "#e36f5b", r: 5, strokeWidth: 0}} isAnimationActive={false} name="Sell" stroke="none" yAxisId="price" />
                 </React.Fragment>
             ) : null}
             {indicatorView === "price" && replay ? (
@@ -362,6 +368,10 @@ async function loadMarketData(symbol: string): Promise<MarketDataResponse> {
 
 function formatPercent(value: number): string {
     return new Intl.NumberFormat("zh-HK", {style: "percent", maximumFractionDigits: 1}).format(value);
+}
+
+function formatSigned(value: number): string {
+    return `${value >= 0 ? "+" : ""}${(value * 100).toFixed(2)}%`;
 }
 
 function formatBrushDate(value: string): string {
