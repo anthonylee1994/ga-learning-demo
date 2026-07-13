@@ -1,4 +1,4 @@
-import {calculateGeneCount, NeuralNetworkAdapter} from "./neural-network";
+import {calculateGeneCount, NeuralNetworkAdapter} from "./neuralNetwork";
 
 describe("NeuralNetworkAdapter", () => {
     const topology = {inputSize: 3, hiddenLayers: [4], outputSize: 2};

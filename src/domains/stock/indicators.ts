@@ -1,5 +1,5 @@
 import type {IndicatorSnapshot, MarketDataPoint, OptimizedIndicatorParameters} from "../../lib/types";
-import {DEFAULT_INDICATOR_PARAMETERS} from "./strategy-genome";
+import {DEFAULT_INDICATOR_PARAMETERS} from "./strategyGenome";
 
 const EPSILON = 1e-9;
 

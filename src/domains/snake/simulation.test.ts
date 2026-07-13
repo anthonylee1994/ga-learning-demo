@@ -1,4 +1,4 @@
-import {calculateGeneCount} from "../../lib/neural-network";
+import {calculateGeneCount} from "../../lib/neuralNetwork";
 import {createSnakeReplay, evaluateSnakeGenome, SNAKE_TOPOLOGY} from "./simulation";
 
 describe("snake simulation", () => {

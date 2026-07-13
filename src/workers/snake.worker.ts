@@ -1,8 +1,8 @@
 /// <reference lib="webworker" />
 
 import {createSnakeReplay, evaluateSnakeGenome, SNAKE_TOPOLOGY} from "../domains/snake/simulation";
-import {calculateGeneCount} from "../lib/neural-network";
-import {setupEvolutionWorker} from "./worker-runtime";
+import {calculateGeneCount} from "../lib/neuralNetwork";
+import {setupEvolutionWorker} from "./workerRuntime";
 
 setupEvolutionWorker({
     geneCount: calculateGeneCount(SNAKE_TOPOLOGY),

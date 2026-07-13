@@ -1,7 +1,7 @@
 import type {IndicatorSnapshot} from "../../lib/types";
-import {createMarketData} from "../../test/market-fixture";
+import {createMarketData} from "../../test/marketFixture";
 import {createTradingReplay, decidePosition, evaluateStockGenome} from "./simulation";
-import {DEFAULT_STRATEGY_RULES, STOCK_GENE_COUNT} from "./strategy-genome";
+import {DEFAULT_STRATEGY_RULES, STOCK_GENE_COUNT} from "./strategyGenome";
 
 describe("stock simulation", () => {
     const genome = Array(STOCK_GENE_COUNT).fill(0);

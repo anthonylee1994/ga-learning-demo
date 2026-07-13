@@ -2,14 +2,14 @@ import React from "react";
 import {Button, Chip, Spinner} from "@heroui/react";
 import {CandlestickChart, Download, FileDown, TriangleAlert} from "lucide-react";
 import {Brush, CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis} from "recharts";
-import {useEvolutionDemo} from "../hooks/use-evolution-demo";
+import {useEvolutionDemo} from "../hooks/useEvolutionDemo";
 import type {GAConfig, MarketDataResponse, TradingPoint, TradingReplay} from "../lib/types";
-import {createPineScript} from "../domains/stock/pine-script";
-import {ApplicationPanel} from "./application-panel";
-import {DemoControls} from "./demo-controls";
-import {FitnessChart} from "./fitness-chart";
-import {Metrics} from "./metrics";
-import {DemoShell} from "./snake-lab";
+import {createPineScript} from "../domains/stock/pineScript";
+import {ApplicationPanel} from "./ApplicationPanel";
+import {DemoControls} from "./DemoControls";
+import {FitnessChart} from "./FitnessChart";
+import {Metrics} from "./Metrics";
+import {DemoShell} from "./SnakeLab";
 
 const DEFAULT_CONFIG: GAConfig = {
     populationSize: 12,

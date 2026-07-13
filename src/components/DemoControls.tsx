@@ -1,7 +1,7 @@
 import React from "react";
 import {Button, Card, Chip, Tooltip} from "@heroui/react";
 import {Info, Pause, Play, RotateCcw} from "lucide-react";
-import type {EvolutionDemoState} from "../hooks/use-evolution-demo";
+import type {EvolutionDemoState} from "../hooks/useEvolutionDemo";
 
 interface DemoControlsProps {
     demo: EvolutionDemoState<unknown>;

@@ -1,5 +1,5 @@
 import type {Genome} from "../../lib/types";
-import {decodeStockGenome} from "./strategy-genome";
+import {decodeStockGenome} from "./strategyGenome";
 
 export function createPineScript(genome: Genome, symbol: string): string {
     const {parameters, rules} = decodeStockGenome(genome);

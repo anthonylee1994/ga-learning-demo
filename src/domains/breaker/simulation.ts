@@ -1,5 +1,5 @@
 import Matter from "matter-js";
-import {argMax, NeuralNetworkAdapter} from "../../lib/neural-network";
+import {argMax, NeuralNetworkAdapter} from "../../lib/neuralNetwork";
 import type {BreakerBrick, BreakerFrame, BreakerReplay, Genome} from "../../lib/types";
 
 export const BREAKER_TOPOLOGY = {

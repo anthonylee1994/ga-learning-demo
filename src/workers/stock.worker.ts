@@ -1,9 +1,9 @@
 /// <reference lib="webworker" />
 
 import {createTradingReplay, evaluateStockGenome} from "../domains/stock/simulation";
-import {STOCK_GENE_COUNT} from "../domains/stock/strategy-genome";
+import {STOCK_GENE_COUNT} from "../domains/stock/strategyGenome";
 import type {MarketDataPoint} from "../lib/types";
-import {setupEvolutionWorker} from "./worker-runtime";
+import {setupEvolutionWorker} from "./workerRuntime";
 
 setupEvolutionWorker<MarketDataPoint[], ReturnType<typeof createTradingReplay>>({
     geneCount: STOCK_GENE_COUNT,

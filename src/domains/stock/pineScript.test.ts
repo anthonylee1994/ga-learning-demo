@@ -1,5 +1,5 @@
-import {createPineScript} from "./pine-script";
-import {decodeStockGenome, STOCK_GENE_COUNT} from "./strategy-genome";
+import {createPineScript} from "./pineScript";
+import {decodeStockGenome, STOCK_GENE_COUNT} from "./strategyGenome";
 
 describe("Pine Script export", () => {
     it("embeds optimized parameters, rule thresholds, and long-only orders", () => {

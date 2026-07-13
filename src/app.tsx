@@ -2,10 +2,11 @@ import React from "react";
 import {Button, Chip} from "@heroui/react";
 import {Blocks, BookOpen, CandlestickChart, Dna, Github, Network} from "lucide-react";
 import {Navigate, Route, Routes, useLocation, useNavigate} from "react-router-dom";
-import {BreakerLab} from "./components/breaker-lab";
-import {SnakeLab} from "./components/snake-lab";
-import {StockLab} from "./components/stock-lab";
-import {TheoryLab} from "./components/theory-lab";
+
+const TheoryLab = React.lazy(() => import("./components/TheoryLab").then(module => ({default: module.TheoryLab})));
+const SnakeLab = React.lazy(() => import("./components/SnakeLab").then(module => ({default: module.SnakeLab})));
+const BreakerLab = React.lazy(() => import("./components/BreakerLab").then(module => ({default: module.BreakerLab})));
+const StockLab = React.lazy(() => import("./components/StockLab").then(module => ({default: module.StockLab})));
 
 const NAV_ITEMS = [
     {id: "theory" as const, path: "/theory", label: "演算法原理", shortLabel: "原理", icon: BookOpen, color: "neutral"},
@@ -89,14 +90,16 @@ export const App = React.memo(() => {
                     ))}
                 </nav>
                 <div className="content-scroll">
-                    <Routes>
-                        <Route element={<Navigate replace to="/theory" />} path="/" />
-                        <Route element={<TheoryLab />} path="/theory" />
-                        <Route element={<SnakeLab />} path="/snake" />
-                        <Route element={<BreakerLab />} path="/breaker" />
-                        <Route element={<StockLab />} path="/stock" />
-                        <Route element={<Navigate replace to="/theory" />} path="*" />
-                    </Routes>
+                    <React.Suspense fallback={<div className="lab-loading">Loading lab…</div>}>
+                        <Routes>
+                            <Route element={<Navigate replace to="/theory" />} path="/" />
+                            <Route element={<TheoryLab />} path="/theory" />
+                            <Route element={<SnakeLab />} path="/snake" />
+                            <Route element={<BreakerLab />} path="/breaker" />
+                            <Route element={<StockLab />} path="/stock" />
+                            <Route element={<Navigate replace to="/theory" />} path="*" />
+                        </Routes>
+                    </React.Suspense>
                 </div>
             </div>
         </div>

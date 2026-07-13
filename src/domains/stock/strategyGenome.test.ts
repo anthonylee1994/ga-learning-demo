@@ -1,4 +1,4 @@
-import {decodeStockGenome, STOCK_GENE_COUNT, STOCK_PARAMETER_GENE_COUNT, STOCK_RULE_GENE_COUNT} from "./strategy-genome";
+import {decodeStockGenome, STOCK_GENE_COUNT, STOCK_PARAMETER_GENE_COUNT, STOCK_RULE_GENE_COUNT} from "./strategyGenome";
 
 describe("stock strategy genome", () => {
     it("decodes bounded indicator parameters and rule thresholds", () => {

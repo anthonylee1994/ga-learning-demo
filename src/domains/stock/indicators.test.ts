@@ -1,6 +1,6 @@
-import {createMarketData} from "../../test/market-fixture";
+import {createMarketData} from "../../test/marketFixture";
 import {calculateIndicators, splitIndicators} from "./indicators";
-import {DEFAULT_INDICATOR_PARAMETERS} from "./strategy-genome";
+import {DEFAULT_INDICATOR_PARAMETERS} from "./strategyGenome";
 
 describe("stock indicators", () => {
     it("calculates every requested signal after warm-up", () => {

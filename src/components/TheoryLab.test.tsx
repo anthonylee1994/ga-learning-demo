@@ -1,6 +1,6 @@
 import React from "react";
 import {fireEvent, render, screen} from "@testing-library/react";
-import {TheoryLab} from "./theory-lab";
+import {TheoryLab} from "./TheoryLab";
 
 describe("TheoryLab", () => {
     it("shows the full GA loop and updates the mutation visualizer", () => {

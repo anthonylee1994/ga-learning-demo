@@ -1,12 +1,12 @@
 import React from "react";
 import {Dna} from "lucide-react";
-import {useEvolutionDemo} from "../hooks/use-evolution-demo";
+import {useEvolutionDemo} from "../hooks/useEvolutionDemo";
 import type {GAConfig, SnakeReplay} from "../lib/types";
-import {ApplicationPanel} from "./application-panel";
-import {DemoControls} from "./demo-controls";
-import {FitnessChart} from "./fitness-chart";
-import {Metrics} from "./metrics";
-import {SnakeCanvas} from "./snake-canvas";
+import {ApplicationPanel} from "./ApplicationPanel";
+import {DemoControls} from "./DemoControls";
+import {FitnessChart} from "./FitnessChart";
+import {Metrics} from "./Metrics";
+import {SnakeCanvas} from "./SnakeCanvas";
 
 const DEFAULT_CONFIG: GAConfig = {
     populationSize: 36,

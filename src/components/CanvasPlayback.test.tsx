@@ -1,7 +1,7 @@
 import React from "react";
 import {act, render, screen} from "@testing-library/react";
-import {BreakerCanvas} from "./breaker-canvas";
-import {SnakeCanvas} from "./snake-canvas";
+import {BreakerCanvas} from "./BreakerCanvas";
+import {SnakeCanvas} from "./SnakeCanvas";
 import type {BreakerReplay, SnakeReplay} from "../lib/types";
 
 const snakeReplay: SnakeReplay = {

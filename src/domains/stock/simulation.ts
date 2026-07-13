@@ -1,6 +1,6 @@
 import type {Genome, IndicatorSnapshot, MarketDataPoint, OptimizedStrategyRules, TradeMarker, TradingPoint, TradingReplay} from "../../lib/types";
 import {calculateIndicators, splitIndicators} from "./indicators";
-import {decodeStockGenome} from "./strategy-genome";
+import {decodeStockGenome} from "./strategyGenome";
 
 const STARTING_EQUITY = 10_000;
 const TRANSACTION_COST = 0.001;

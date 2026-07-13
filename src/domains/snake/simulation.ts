@@ -1,4 +1,4 @@
-import {argMax, NeuralNetworkAdapter} from "../../lib/neural-network";
+import {argMax, NeuralNetworkAdapter} from "../../lib/neuralNetwork";
 import {createRandom} from "../../lib/random";
 import type {Genome, Point, SnakeFrame, SnakeReplay} from "../../lib/types";
 

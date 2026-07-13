@@ -1,13 +1,13 @@
 import React from "react";
 import {Blocks} from "lucide-react";
-import {useEvolutionDemo} from "../hooks/use-evolution-demo";
+import {useEvolutionDemo} from "../hooks/useEvolutionDemo";
 import type {BreakerReplay, GAConfig} from "../lib/types";
-import {ApplicationPanel} from "./application-panel";
-import {BreakerCanvas} from "./breaker-canvas";
-import {DemoControls} from "./demo-controls";
-import {FitnessChart} from "./fitness-chart";
-import {Metrics} from "./metrics";
-import {DemoShell} from "./snake-lab";
+import {ApplicationPanel} from "./ApplicationPanel";
+import {BreakerCanvas} from "./BreakerCanvas";
+import {DemoControls} from "./DemoControls";
+import {FitnessChart} from "./FitnessChart";
+import {Metrics} from "./Metrics";
+import {DemoShell} from "./SnakeLab";
 
 const DEFAULT_CONFIG: GAConfig = {
     populationSize: 12,

@@ -1,4 +1,4 @@
-import {calculateGeneCount} from "../../lib/neural-network";
+import {calculateGeneCount} from "../../lib/neuralNetwork";
 import {createPopulation, evolvePopulation} from "../../lib/ga";
 import {createRandom} from "../../lib/random";
 import {BREAKER_TOPOLOGY, createBreakerReplay, evaluateBreakerGenome} from "./simulation";

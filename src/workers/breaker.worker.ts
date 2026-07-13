@@ -1,8 +1,8 @@
 /// <reference lib="webworker" />
 
 import {BREAKER_TOPOLOGY, createBreakerReplay, evaluateBreakerGenome} from "../domains/breaker/simulation";
-import {calculateGeneCount} from "../lib/neural-network";
-import {setupEvolutionWorker} from "./worker-runtime";
+import {calculateGeneCount} from "../lib/neuralNetwork";
+import {setupEvolutionWorker} from "./workerRuntime";
 
 setupEvolutionWorker({
     geneCount: calculateGeneCount(BREAKER_TOPOLOGY),
