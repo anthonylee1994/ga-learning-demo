@@ -5,7 +5,7 @@ import {Brush, CartesianGrid, Legend, Line, LineChart, ReferenceLine, Responsive
 import {useEvolutionDemo} from "../hooks/useEvolutionDemo";
 import type {GAConfig, MarketDataResponse, TradingPoint, TradingReplay} from "../lib/types";
 import {createPineScript} from "../domains/stock/pineScript";
-import {decodeStockGenome, strategyStyleLabel} from "../domains/stock/strategyGenome";
+import {decodeStockGenome, describeStockNetwork, STOCK_NETWORK_GENE_COUNT, STOCK_TOPOLOGY} from "../domains/stock/strategyGenome";
 import {ApplicationPanel} from "./ApplicationPanel";
 import {DemoControls} from "./DemoControls";
 import {FitnessChart} from "./FitnessChart";
@@ -86,7 +86,6 @@ export const StockLab = React.memo(() => {
         }
     }, [demo.champion?.genome]);
     const parameters = decoded?.parameters ?? replay?.optimizedParameters;
-    const rules = decoded?.rules ?? replay?.optimizedRules;
     /**
      * Chart labels must track the *replay* parameters, not the live-decoded genome.
      * Live parameters are a new object every generation and used to blow MarketChart's
@@ -131,7 +130,7 @@ export const StockLab = React.memo(() => {
     return (
         <DemoShell
             accent="stock"
-            description="用日線歷史以 GA 進化交易規則：可選 trend / mean-reversion / hybrid 風格；80% 訓練，最後 20% out-of-sample。QQQ 強牛市好難靠簡單 TA 贏 buy & hold，fitness 會同時睇回報、Sharpe、回撤。"
+            description="用日線歷史以 GA 同時進化技術指標參數同 Brain.js 神經網絡權重（buy / hold / sell）；80% 訓練，最後 20% out-of-sample。QQQ 強牛市好難贏 buy & hold，fitness 會同時睇回報、Sharpe、回撤。"
             icon={<CandlestickChart size={20} strokeWidth={1.5} />}
             title="Stock Trading Evolution"
         >
@@ -174,12 +173,12 @@ export const StockLab = React.memo(() => {
             <div className="workspace-grid">
                 <main className="demo-main">
                     <Metrics extra={metricsExtra} stats={demo.stats} />
-                    {parameters && rules ? (
+                    {parameters ? (
                         <section className="optimized-panel">
                             <div className="panel-heading">
                                 <div>
                                     <p className="eyebrow">Champion genome</p>
-                                    <h3>Best indicator & rule parameters</h3>
+                                    <h3>Best indicator periods & network</h3>
                                 </div>
                                 <Button onPress={() => downloadPineScript(demo.champion!.genome, marketData?.symbol ?? "QQQ")} size="sm" variant="secondary">
                                     <FileDown size={15} strokeWidth={1.5} />
@@ -195,12 +194,10 @@ export const StockLab = React.memo(() => {
                                 <ParameterValue label="MACD" value={`${parameters.macdFastPeriod} / ${parameters.macdSlowPeriod} / ${parameters.macdSignalPeriod}`} />
                                 <ParameterValue label="Volatility" value={String(parameters.volatilityPeriod)} />
                                 <ParameterValue label="Volume Z" value={String(parameters.volumeZScorePeriod)} />
-                                <ParameterValue label="RSI buy / sell" value={`${rules.rsiBuy} / ${rules.rsiSell}`} />
-                                <ParameterValue label="Williams buy / sell" value={`${rules.williamsBuy.toFixed(1)} / ${rules.williamsSell.toFixed(1)}`} />
-                                <ParameterValue label="%B buy / sell" value={`${rules.bollingerBuy.toFixed(2)} / ${rules.bollingerSell.toFixed(2)}`} />
-                                <ParameterValue label="Min signals" value={`${rules.minBuySignals} buy · ${rules.minSellSignals} sell`} />
-                                <ParameterValue label="Style" value={strategyStyleLabel(rules.strategyStyle)} />
-                                <ParameterValue label="ROC buy / sell" value={`${formatSigned(rules.rocBuy)} / ${formatSigned(rules.rocSell)}`} />
+                                <ParameterValue label="Network" value={describeStockNetwork()} />
+                                <ParameterValue label="Inputs" value={`${STOCK_TOPOLOGY.inputSize} features + position`} />
+                                <ParameterValue label="Outputs" value="buy · hold · sell" />
+                                <ParameterValue label="NN genes" value={String(STOCK_NETWORK_GENE_COUNT)} />
                             </div>
                         </section>
                     ) : null}
@@ -251,10 +248,10 @@ export const StockLab = React.memo(() => {
                     </section>
                     <FitnessChart history={demo.history} />
                     <ApplicationPanel
-                        fitness="70% 全段 train + 30% 最差半段：策略 CAGR×100 + Sharpe×15 − maxDD×40 + 超額回報×35（鼓勵真係賺錢同風險調整，唔係淨係坐現金）"
-                        genome="12 個 indicator period genes + 11 個規則 genes（門檻 / min signals / strategy style：trend · mean-reversion · hybrid）"
-                        inputs="Trend：SMA、MACD、ROC、Volume Z；Mean-reversion：RSI、Williams %R、Bollinger %B；入場另有 volatility 過濾"
-                        outputs="按 style 投票 → long 100% 或 cash 100%（夠 min buy/sell signals 先轉倉；trend 只會順勢開倉）"
+                        fitness="70% 全段 train + 30% 最差半段：CAGR×100 + Sharpe×15 − maxDD×40 + 超額回報×35 − 網絡 L2；鼓勵賺錢同泛化"
+                        genome={`12 個 indicator period genes + ${STOCK_NETWORK_GENE_COUNT} 個 Brain.js weights/biases（${describeStockNetwork()}）`}
+                        inputs="12 維：價格相對 SMA、Williams、ROC、RSI、MACD、Bollinger %B、波動、成交量 Z、持倉狀態（全部 normalize 到約 ±1）"
+                        outputs="網絡 argmax → buy（全倉 long）/ hold / sell（全現金）；GA 進化權重，唔用 backprop"
                         termination="用頭 80% 數據做 selection；最後 20% test data 絕不參與訓練，用嚟審視 out-of-sample 表現"
                     />
                 </main>
@@ -425,10 +422,6 @@ async function loadMarketData(symbol: string): Promise<MarketDataResponse> {
 
 function formatPercent(value: number): string {
     return new Intl.NumberFormat("zh-HK", {style: "percent", maximumFractionDigits: 1}).format(value);
-}
-
-function formatSigned(value: number): string {
-    return `${value >= 0 ? "+" : ""}${(value * 100).toFixed(2)}%`;
 }
 
 function formatBrushDate(value: string): string {

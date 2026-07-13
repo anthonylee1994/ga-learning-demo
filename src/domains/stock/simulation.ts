@@ -1,12 +1,20 @@
-import type {Genome, IndicatorSnapshot, MarketDataPoint, OptimizedIndicatorParameters, OptimizedStrategyRules, TradeMarker, TradingPoint, TradingReplay} from "../../lib/types";
+import {argMax, NeuralNetworkAdapter} from "../../lib/neuralNetwork";
+import type {Genome, MarketDataPoint, OptimizedIndicatorParameters, TradeMarker, TradingPoint, TradingReplay} from "../../lib/types";
 import type {IndicatorColumns} from "./indicators";
 import {calculateIndicatorColumns, columnsToSnapshots} from "./indicators";
-import {decodeStockGenome, MAX_ENTRY_VOLATILITY, VOLUME_Z_CONFIRM} from "./strategyGenome";
+import {decodeStockGenome, STOCK_TOPOLOGY} from "./strategyGenome";
+
+export {STOCK_TOPOLOGY} from "./strategyGenome";
 
 const STARTING_EQUITY = 10_000;
 const TRANSACTION_COST = 0.001;
 /** Keep a small LRU of indicator series — Float64Array columns, ~1MB per full history entry. */
 const MAX_INDICATOR_CACHE = 16;
+/** Mild weight decay so the GA prefers smaller, more generalizable networks. */
+const WEIGHT_L2_PENALTY = 1.5;
+
+/** Shared adapter — avoid allocating a fresh brain.js graph per genome. */
+const networkAdapter = new NeuralNetworkAdapter(STOCK_TOPOLOGY);
 
 /**
  * Cache indicator columns by the exact points array reference.
@@ -52,30 +60,27 @@ export function getIndicatorColumns(points: MarketDataPoint[], parameters: Optim
     return columns;
 }
 
-export function getIndicatorSnapshots(points: MarketDataPoint[], parameters: OptimizedIndicatorParameters): IndicatorSnapshot[] {
+export function getIndicatorSnapshots(points: MarketDataPoint[], parameters: OptimizedIndicatorParameters) {
     return columnsToSnapshots(points, getIndicatorColumns(points, parameters));
 }
 
 export function evaluateStockGenome(genome: Genome, points: MarketDataPoint[]): number {
-    const {parameters, rules} = decodeStockGenome(genome);
+    const {parameters, networkGenome} = decodeStockGenome(genome);
     const columns = getIndicatorColumns(points, parameters);
-    // Same boundary as createTradingReplay so fitness and UI metrics agree on train window.
     const trainLength = Math.max(2, Math.floor(columns.length * 0.8));
     if (trainLength < 100) {
         return -1_000;
     }
 
-    // Full-train score gives a smooth gradient toward strategies that actually make money.
-    // Worst-half score (30%) keeps one-lucky-bull-run overfits from dominating.
-    // Old fitness was pure min(excess vs B&H) — on QQQ that crushed every coherent TA
-    // strategy into "sit in cash" / random churn with no learnable path to good charts.
+    const runNetwork = networkAdapter.createRunner(networkGenome);
     const mid = Math.floor(trainLength / 2);
-    const full = simulateColumnMetrics(rules, columns, 0, 0, trainLength);
-    const firstHalf = simulateColumnMetrics(rules, columns, 0, 0, mid + 1);
-    const secondHalf = simulateColumnMetrics(rules, columns, firstHalf.endingPosition, mid, trainLength);
+    const full = simulateColumnMetrics(runNetwork, columns, 0, 0, trainLength);
+    const firstHalf = simulateColumnMetrics(runNetwork, columns, 0, 0, mid + 1);
+    const secondHalf = simulateColumnMetrics(runNetwork, columns, firstHalf.endingPosition, mid, trainLength);
     const fullScore = scoreSegment(full, columns, 0, trainLength);
     const robustScore = Math.min(scoreSegment(firstHalf, columns, 0, mid + 1), scoreSegment(secondHalf, columns, mid, trainLength));
-    return fullScore * 0.7 + robustScore * 0.3;
+    const regularization = WEIGHT_L2_PENALTY * meanSquare(networkGenome);
+    return fullScore * 0.7 + robustScore * 0.3 - regularization;
 }
 
 /**
@@ -89,9 +94,6 @@ function scoreSegment(metrics: SegmentMetrics, columns: IndicatorColumns, start:
     const strategyCagr = annualize(metrics.totalReturn, years);
     const benchmarkCagr = annualize(last / first - 1, years);
     const excess = strategyCagr - benchmarkCagr;
-    // Mild churn tax: many flips destroy edge after costs; sharpe already hurts noise,
-    // but explicit turnover (approx from return path variance vs position) is heavy —
-    // use drawdown + sharpe; add small penalty when total return is near-zero (idle cash).
     const idlePenalty = Math.abs(metrics.totalReturn) < 0.02 ? 8 : 0;
     return strategyCagr * 100 + metrics.sharpe * 15 - metrics.maxDrawdown * 40 + excess * 35 - idlePenalty;
 }
@@ -100,20 +102,30 @@ function annualize(totalReturn: number, years: number): number {
     return Math.pow(1 + Math.max(totalReturn, -0.99), 1 / years) - 1;
 }
 
+function meanSquare(genome: Genome): number {
+    if (genome.length === 0) {
+        return 0;
+    }
+    let sum = 0;
+    for (const weight of genome) {
+        sum += weight * weight;
+    }
+    return sum / genome.length;
+}
+
 export function createTradingReplay(genome: Genome, points: MarketDataPoint[]): TradingReplay {
-    const {parameters, rules} = decodeStockGenome(genome);
+    const {parameters, networkGenome} = decodeStockGenome(genome);
     const columns = getIndicatorColumns(points, parameters);
-    // Same train/test split as fitness + previous snapshot-based replay (test overlaps last train bar).
+    const runNetwork = networkAdapter.createRunner(networkGenome);
     const splitIndex = Math.max(2, Math.floor(columns.length * 0.8));
-    const trainResult = simulateColumnReplay(rules, columns, points, 0, splitIndex, 0);
-    const testResult = simulateColumnReplay(rules, columns, points, Math.max(0, splitIndex - 1), columns.length, trainResult.endingPosition);
+    const trainResult = simulateColumnReplay(runNetwork, columns, points, 0, splitIndex, 0);
+    const testResult = simulateColumnReplay(runNetwork, columns, points, Math.max(0, splitIndex - 1), columns.length, trainResult.endingPosition);
     const trainCurve = trainResult.equityCurve;
     const testScale = trainCurve.at(-1) ?? STARTING_EQUITY;
     const fullCurve = new Array<number>(columns.length);
     for (let index = 0; index < trainCurve.length; index += 1) {
         fullCurve[index] = trainCurve[index];
     }
-    // testResult starts at splitIndex-1 (overlap); map equity onto splitIndex..end with scale continuity.
     for (let index = 1; index < testResult.equityCurve.length; index += 1) {
         fullCurve[splitIndex - 1 + index] = (testResult.equityCurve[index] / STARTING_EQUITY) * testScale;
     }
@@ -151,100 +163,49 @@ export function createTradingReplay(genome: Genome, points: MarketDataPoint[]): 
         sharpe: trainResult.sharpe,
         maxDrawdown: trainResult.maxDrawdown,
         optimizedParameters: parameters,
-        optimizedRules: rules,
     };
 }
 
-/** The subset of indicator fields the voting rules actually read. */
-export type StrategySignals = Pick<IndicatorSnapshot, "smaFast" | "smaSlow" | "rsi" | "williamsR" | "roc" | "bollingerPercentB" | "macd" | "macdSignal" | "volatility" | "volumeZScore">;
-
 /**
- * Multi-indicator voting rules evolved by GA.
- * buy / hold / sell → target long (1) or cash (0); never short.
- *
- * Styles keep trend-following and mean-reversion from vetoing each other:
- * - trend: SMA, MACD, ROC, volume-Z (directional / breakout)
- * - mean_reversion: RSI, Williams, Bollinger %B (only vote at extremes)
- * - hybrid: both families
+ * Map brain.js outputs to long (1) or cash (0).
+ * action 0 = buy/long, 1 = hold, 2 = sell/cash.
  */
-export function decidePosition(snapshot: StrategySignals, rules: OptimizedStrategyRules, position: number): number {
-    const style = rules.strategyStyle;
-    const useTrend = style === "trend" || style === "hybrid";
-    const useReversion = style === "mean_reversion" || style === "hybrid";
-    const trendUp = snapshot.smaFast > snapshot.smaSlow;
-    const macdUp = snapshot.macd > snapshot.macdSignal;
-    let buySignals = 0;
-    let sellSignals = 0;
-
-    if (useTrend) {
-        if (trendUp) {
-            buySignals += 1;
-        } else {
-            sellSignals += 1;
-        }
-        if (macdUp) {
-            buySignals += 1;
-        } else {
-            sellSignals += 1;
-        }
-        if (snapshot.roc > rules.rocBuy) {
-            buySignals += 1;
-        } else if (snapshot.roc < rules.rocSell) {
-            sellSignals += 1;
-        }
-        // Evolved volume-Z period feeds a real confirmation (was previously computed but unused).
-        if (snapshot.volumeZScore >= VOLUME_Z_CONFIRM) {
-            buySignals += 1;
-        }
+export function decidePositionFromNetwork(output: number[], position: number): number {
+    const action = argMax(output);
+    if (action === 0) {
+        return 1;
     }
-
-    if (useReversion) {
-        if (snapshot.rsi < rules.rsiBuy) {
-            buySignals += 1;
-        }
-        if (snapshot.rsi > rules.rsiSell) {
-            sellSignals += 1;
-        }
-        if (snapshot.williamsR < rules.williamsBuy) {
-            buySignals += 1;
-        }
-        if (snapshot.williamsR > rules.williamsSell) {
-            sellSignals += 1;
-        }
-        if (snapshot.bollingerPercentB < rules.bollingerBuy) {
-            buySignals += 1;
-        }
-        if (snapshot.bollingerPercentB > rules.bollingerSell) {
-            sellSignals += 1;
-        }
-    }
-
-    if (position <= 0) {
-        // Vol filter uses evolved volatility lookback — avoid chasing panicked spikes.
-        if (snapshot.volatility > MAX_ENTRY_VOLATILITY) {
-            return 0;
-        }
-        // Trend styles only open longs with the tape (SMA fast > slow).
-        if (style === "trend" && !trendUp) {
-            return 0;
-        }
-        if (buySignals >= rules.minBuySignals) {
-            return 1;
-        }
+    if (action === 2) {
         return 0;
     }
-
-    if (sellSignals >= rules.minSellSignals) {
-        return 0;
-    }
-    return 1;
+    return position;
 }
 
 /**
- * Streaming fitness metrics over columns[start, end) — the hot GA path. Reads Float64Array
- * columns through one reused view object so evaluating a genome allocates nothing per bar.
+ * Clamp raw indicator ratios into roughly [-1, 1] so tanh units see consistent scale.
  */
-function simulateColumnMetrics(rules: OptimizedStrategyRules, columns: IndicatorColumns, startingPosition: number, start: number, end: number): SegmentMetrics {
+export function buildNetworkFeatures(columns: IndicatorColumns, index: number, position: number, out: number[] = new Array(STOCK_TOPOLOGY.inputSize)): number[] {
+    const close = Math.max(columns.close[index], 1e-9);
+    const smaFast = Math.max(columns.smaFast[index], 1e-9);
+    const smaSlow = Math.max(columns.smaSlow[index], 1e-9);
+    out[0] = clamp((close / smaFast - 1) * 10);
+    out[1] = clamp((close / smaSlow - 1) * 10);
+    out[2] = clamp((smaFast / smaSlow - 1) * 10);
+    out[3] = clamp((columns.williamsR[index] + 50) / 50);
+    out[4] = clamp(columns.roc[index] * 5);
+    out[5] = clamp((columns.rsi[index] - 50) / 50);
+    out[6] = clamp((columns.macd[index] / close) * 25);
+    out[7] = clamp((columns.macdSignal[index] / close) * 25);
+    out[8] = clamp((columns.bollingerPercentB[index] - 0.5) * 2);
+    out[9] = clamp(columns.volatility[index] * 5);
+    out[10] = clamp(columns.volumeZScore[index] / 3);
+    out[11] = position > 0 ? 1 : -1;
+    return out;
+}
+
+type NetworkRunner = (input: number[]) => number[];
+
+function simulateColumnMetrics(runNetwork: NetworkRunner, columns: IndicatorColumns, startingPosition: number, start: number, end: number): SegmentMetrics {
     let equity = STARTING_EQUITY;
     let position = startingPosition;
     let peak = equity;
@@ -252,32 +213,12 @@ function simulateColumnMetrics(rules: OptimizedStrategyRules, columns: Indicator
     let returnSum = 0;
     let returnSqSum = 0;
     let returnCount = 0;
-    const view: StrategySignals = {
-        smaFast: 0,
-        smaSlow: 0,
-        rsi: 0,
-        williamsR: 0,
-        roc: 0,
-        bollingerPercentB: 0,
-        macd: 0,
-        macdSignal: 0,
-        volatility: 0,
-        volumeZScore: 0,
-    };
+    const features = new Array<number>(STOCK_TOPOLOGY.inputSize);
 
     for (let index = start + 1; index < end; index += 1) {
         const previous = index - 1;
-        view.smaFast = columns.smaFast[previous];
-        view.smaSlow = columns.smaSlow[previous];
-        view.rsi = columns.rsi[previous];
-        view.williamsR = columns.williamsR[previous];
-        view.roc = columns.roc[previous];
-        view.bollingerPercentB = columns.bollingerPercentB[previous];
-        view.macd = columns.macd[previous];
-        view.macdSignal = columns.macdSignal[previous];
-        view.volatility = columns.volatility[previous];
-        view.volumeZScore = columns.volumeZScore[previous];
-        const targetPosition = decidePosition(view, rules, position);
+        buildNetworkFeatures(columns, previous, position, features);
+        const targetPosition = decidePositionFromNetwork(runNetwork(features), position);
         const turnover = Math.abs(targetPosition - position);
         const priceReturn = columns.close[index] / columns.close[previous] - 1;
         const dailyReturn = position * priceReturn - turnover * TRANSACTION_COST;
@@ -298,11 +239,7 @@ function simulateColumnMetrics(rules: OptimizedStrategyRules, columns: Indicator
     };
 }
 
-/**
- * Replay path over columns[start, end) — builds equity curve + trade markers without
- * materializing a full IndicatorSnapshot[] first (that was a multi-MB spike every refresh).
- */
-function simulateColumnReplay(rules: OptimizedStrategyRules, columns: IndicatorColumns, points: MarketDataPoint[], start: number, end: number, startingPosition: number): SegmentResult {
+function simulateColumnReplay(runNetwork: NetworkRunner, columns: IndicatorColumns, points: MarketDataPoint[], start: number, end: number, startingPosition: number): SegmentResult {
     const length = Math.max(0, end - start);
     let equity = STARTING_EQUITY;
     let position = startingPosition;
@@ -316,32 +253,12 @@ function simulateColumnReplay(rules: OptimizedStrategyRules, columns: IndicatorC
         equityCurve[0] = equity;
     }
     const trades: TradeMarker[] = [];
-    const view: StrategySignals = {
-        smaFast: 0,
-        smaSlow: 0,
-        rsi: 0,
-        williamsR: 0,
-        roc: 0,
-        bollingerPercentB: 0,
-        macd: 0,
-        macdSignal: 0,
-        volatility: 0,
-        volumeZScore: 0,
-    };
+    const features = new Array<number>(STOCK_TOPOLOGY.inputSize);
 
     for (let index = start + 1; index < end; index += 1) {
         const previous = index - 1;
-        view.smaFast = columns.smaFast[previous];
-        view.smaSlow = columns.smaSlow[previous];
-        view.rsi = columns.rsi[previous];
-        view.williamsR = columns.williamsR[previous];
-        view.roc = columns.roc[previous];
-        view.bollingerPercentB = columns.bollingerPercentB[previous];
-        view.macd = columns.macd[previous];
-        view.macdSignal = columns.macdSignal[previous];
-        view.volatility = columns.volatility[previous];
-        view.volumeZScore = columns.volumeZScore[previous];
-        const targetPosition = decidePosition(view, rules, position);
+        buildNetworkFeatures(columns, previous, position, features);
+        const targetPosition = decidePositionFromNetwork(runNetwork(features), position);
         const turnover = Math.abs(targetPosition - position);
         const priceReturn = columns.close[index] / columns.close[previous] - 1;
         const dailyReturn = position * priceReturn - turnover * TRANSACTION_COST;
@@ -381,4 +298,11 @@ function calculateSharpeFromMoments(returnSum: number, returnSqSum: number, retu
     const variance = returnSqSum / returnCount - average * average;
     const deviation = Math.sqrt(Math.max(0, variance));
     return deviation > 1e-9 ? (average / deviation) * Math.sqrt(252) : 0;
+}
+
+function clamp(value: number): number {
+    if (!Number.isFinite(value)) {
+        return 0;
+    }
+    return Math.min(1, Math.max(-1, value));
 }

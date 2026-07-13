@@ -111,29 +111,6 @@ export interface OptimizedIndicatorParameters {
     volumeZScorePeriod: number;
 }
 
-/** Which indicator family the evolved rules listen to. */
-export type StrategyStyle = "trend" | "mean_reversion" | "hybrid";
-
-/** Pure rule thresholds evolved by GA (no neural network). */
-export interface OptimizedStrategyRules {
-    rsiBuy: number;
-    rsiSell: number;
-    williamsBuy: number;
-    williamsSell: number;
-    rocBuy: number;
-    rocSell: number;
-    bollingerBuy: number;
-    bollingerSell: number;
-    minBuySignals: number;
-    minSellSignals: number;
-    /**
-     * trend = SMA/MACD/ROC/volume (directional)
-     * mean_reversion = RSI/Williams/Bollinger (extremes only)
-     * hybrid = both families (harder; can whipsaw if mins are high)
-     */
-    strategyStyle: StrategyStyle;
-}
-
 export interface IndicatorSnapshot {
     date: string;
     close: number;
@@ -187,7 +164,6 @@ export interface TradingReplay {
     sharpe: number;
     maxDrawdown: number;
     optimizedParameters: OptimizedIndicatorParameters;
-    optimizedRules: OptimizedStrategyRules;
 }
 
 export type WorkerCommand<TData = unknown> =
