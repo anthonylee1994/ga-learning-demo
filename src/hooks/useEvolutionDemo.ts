@@ -85,32 +85,41 @@ export function useEvolutionDemo<TData, TReplay>(options: EvolutionDemoOptions<T
                 suppressChampionUpdatesRef.current = true;
                 awaitingPauseShowcaseRef.current = false;
             } else {
-                setStats(event.stats);
-                setHistory(current => [...current.slice(-79), event.stats]);
+                // Stats/history are cheap; champion replays (stock series) are huge. Keep the
+                // generation ticker responsive without blocking paint on structured-clone payloads.
+                React.startTransition(() => {
+                    setStats(event.stats);
+                    setHistory(current => [...current.slice(-79), event.stats]);
 
-                const isPauseShowcase = event.reason === "pause-showcase" && event.champion.replay !== undefined;
-                if (suppressChampionUpdatesRef.current && !isPauseShowcase) {
-                    return;
-                }
+                    const isPauseShowcase = event.reason === "pause-showcase" && event.champion.replay !== undefined;
+                    if (suppressChampionUpdatesRef.current && !isPauseShowcase) {
+                        return;
+                    }
 
-                setChampion(current => {
-                    const next = event.champion;
-                    storedChampionRef.current = next.genome;
-                    if (next.replay !== undefined) {
-                        return {genome: next.genome, fitness: next.fitness, replay: next.replay};
+                    setChampion(current => {
+                        const next = event.champion;
+                        storedChampionRef.current = next.genome;
+                        if (next.replay !== undefined) {
+                            return {genome: next.genome, fitness: next.fitness, replay: next.replay};
+                        }
+                        if (current) {
+                            // Same fitness + same genes → keep the previous object so memoized
+                            // chart subtrees (MarketChart / EquityChart) never see a new champion.
+                            if (current.fitness === next.fitness && genomesEqual(current.genome, next.genome)) {
+                                return current;
+                            }
+                            return {genome: next.genome, fitness: next.fitness, replay: current.replay};
+                        }
+                        return null;
+                    });
+                    schedulePersist(configRef.current, event.champion.genome, event.champion.fitness);
+
+                    if (isPauseShowcase) {
+                        awaitingPauseShowcaseRef.current = false;
+                        suppressChampionUpdatesRef.current = true;
+                        setShowcaseEpoch(value => value + 1);
                     }
-                    if (current) {
-                        return {genome: next.genome, fitness: next.fitness, replay: current.replay};
-                    }
-                    return null;
                 });
-                schedulePersist(configRef.current, event.champion.genome, event.champion.fitness);
-
-                if (isPauseShowcase) {
-                    awaitingPauseShowcaseRef.current = false;
-                    suppressChampionUpdatesRef.current = true;
-                    setShowcaseEpoch(value => value + 1);
-                }
             }
         };
         return () => {
@@ -199,4 +208,19 @@ function writeStoredDemo(topic: DemoTopic, config: GAConfig, champion?: number[]
     } catch {
         // Private browsing or storage quotas should not stop a training session.
     }
+}
+
+function genomesEqual(a: number[], b: number[]): boolean {
+    if (a === b) {
+        return true;
+    }
+    if (a.length !== b.length) {
+        return false;
+    }
+    for (let index = 0; index < a.length; index += 1) {
+        if (a[index] !== b[index]) {
+            return false;
+        }
+    }
+    return true;
 }

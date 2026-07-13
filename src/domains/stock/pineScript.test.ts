@@ -2,7 +2,7 @@ import {createPineScript} from "./pineScript";
 import {decodeStockGenome, STOCK_GENE_COUNT} from "./strategyGenome";
 
 describe("Pine Script export", () => {
-    it("embeds optimized parameters, rule thresholds, and long-only orders", () => {
+    it("embeds optimized parameters, style-scoped rules, and long-only orders", () => {
         const genome = Array.from({length: STOCK_GENE_COUNT}, (_, index) => Math.sin(index) * 0.4);
         const {parameters, rules} = decodeStockGenome(genome);
         const script = createPineScript(genome, "QQQ");
@@ -19,7 +19,9 @@ describe("Pine Script export", () => {
         expect(script).toContain(`rsiSell = ${rules.rsiSell}`);
         expect(script).toContain(`minBuySignals = ${rules.minBuySignals}`);
         expect(script).toContain(`minSellSignals = ${rules.minSellSignals}`);
-        expect(script).toContain(`useTrendFilter = ${rules.useTrendFilter}`);
+        expect(script).toContain(`strategyStyle = "${rules.strategyStyle}"`);
+        expect(script).toContain("useTrendFamily");
+        expect(script).toContain("useReversionFamily");
         expect(script).toContain("buySignals = 0");
         expect(script).toContain("sellSignals = 0");
         expect(script).not.toContain("tanh(value) =>");

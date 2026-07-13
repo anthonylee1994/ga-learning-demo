@@ -7,6 +7,13 @@ import type {GAConfig, GenerationStats, Genome, WorkerCommand, WorkerEvent} from
 interface WorkerDefinition<TData, TReplay> {
     geneCount: number;
     requiresData?: boolean;
+    /**
+     * Minimum generations between full champion replays. Stock series / long snake
+     * frame buffers are multi-MB structured clones — refresh sparingly.
+     */
+    minReplayGenerationGap?: number;
+    /** Optional classic baselines inserted into a fresh population (e.g. SMA cross). */
+    seedGenomes?: Genome[];
     evaluate(genome: Genome, data: TData | undefined): number;
     createReplay(genome: Genome, data: TData | undefined): TReplay;
 }
@@ -27,7 +34,7 @@ export function setupEvolutionWorker<TData, TReplay>(definition: WorkerDefinitio
     let lastStats: GenerationStats | null = null;
     let scheduledHandle: ReturnType<typeof scope.setTimeout> | null = null;
     /** Avoid structured-cloning huge replays every generation when fitness crawls upward. */
-    const MIN_REPLAY_GENERATION_GAP = 5;
+    const MIN_REPLAY_GENERATION_GAP = definition.minReplayGenerationGap ?? 5;
 
     function emit(event: WorkerEvent<TReplay>): void {
         scope.postMessage(event);
@@ -164,6 +171,17 @@ export function setupEvolutionWorker<TData, TReplay>(definition: WorkerDefinitio
             if (population.length !== config.populationSize) {
                 const compatibleChampion = command.champion?.length === definition.geneCount ? command.champion : undefined;
                 population = createPopulation(config.populationSize, definition.geneCount, random, compatibleChampion);
+                // Inject classic baselines after the optional champion slot so GA has coherent
+                // starting strategies (stock TA especially needs this — random thresholds thrash).
+                if (definition.seedGenomes?.length) {
+                    const offset = compatibleChampion ? 1 : 0;
+                    definition.seedGenomes.forEach((seed, index) => {
+                        const slot = offset + index;
+                        if (slot < population.length && seed.length === definition.geneCount) {
+                            population[slot] = [...seed];
+                        }
+                    });
+                }
                 generation = 0;
                 bestFitnessSeen = Number.NEGATIVE_INFINITY;
                 lastReplayFitness = Number.NEGATIVE_INFINITY;

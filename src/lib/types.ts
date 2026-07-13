@@ -111,6 +111,9 @@ export interface OptimizedIndicatorParameters {
     volumeZScorePeriod: number;
 }
 
+/** Which indicator family the evolved rules listen to. */
+export type StrategyStyle = "trend" | "mean_reversion" | "hybrid";
+
 /** Pure rule thresholds evolved by GA (no neural network). */
 export interface OptimizedStrategyRules {
     rsiBuy: number;
@@ -123,7 +126,12 @@ export interface OptimizedStrategyRules {
     bollingerSell: number;
     minBuySignals: number;
     minSellSignals: number;
-    useTrendFilter: boolean;
+    /**
+     * trend = SMA/MACD/ROC/volume (directional)
+     * mean_reversion = RSI/Williams/Bollinger (extremes only)
+     * hybrid = both families (harder; can whipsaw if mins are high)
+     */
+    strategyStyle: StrategyStyle;
 }
 
 export interface IndicatorSnapshot {

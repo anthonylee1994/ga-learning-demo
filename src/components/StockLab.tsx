@@ -5,7 +5,7 @@ import {Brush, CartesianGrid, Legend, Line, LineChart, ReferenceLine, Responsive
 import {useEvolutionDemo} from "../hooks/useEvolutionDemo";
 import type {GAConfig, MarketDataResponse, TradingPoint, TradingReplay} from "../lib/types";
 import {createPineScript} from "../domains/stock/pineScript";
-import {decodeStockGenome} from "../domains/stock/strategyGenome";
+import {decodeStockGenome, strategyStyleLabel} from "../domains/stock/strategyGenome";
 import {ApplicationPanel} from "./ApplicationPanel";
 import {DemoControls} from "./DemoControls";
 import {FitnessChart} from "./FitnessChart";
@@ -87,6 +87,12 @@ export const StockLab = React.memo(() => {
     }, [demo.champion?.genome]);
     const parameters = decoded?.parameters ?? replay?.optimizedParameters;
     const rules = decoded?.rules ?? replay?.optimizedRules;
+    /**
+     * Chart labels must track the *replay* parameters, not the live-decoded genome.
+     * Live parameters are a new object every generation and used to blow MarketChart's
+     * React.memo — Recharts then redraws ~15y of series several times/sec until the tab OOMs.
+     */
+    const chartParameters = replay?.optimizedParameters;
     const rawChartData = React.useMemo(() => marketData?.points.map(point => ({date: point.date, close: point.close})) ?? [], [marketData]);
     const chartData = React.useMemo(() => {
         if (!replay) {
@@ -108,12 +114,24 @@ export const StockLab = React.memo(() => {
             setMarketRange({startIndex: Math.max(0, chartData.length - 504), endIndex: chartData.length - 1});
         }
     }, [chartData.length, marketData?.symbol]);
+    const onMarketRangeChange = React.useCallback((range: {startIndex: number; endIndex: number}) => {
+        setMarketRange(current => (current.startIndex === range.startIndex && current.endIndex === range.endIndex ? current : range));
+    }, []);
     const splitDate = replay?.points.find(point => point.segment === "test")?.date;
+    const metricsExtra = React.useMemo(
+        () => [
+            {label: "Train return", value: replay ? formatPercent(replay.trainReturn) : "—"},
+            {label: "Test return", value: replay ? formatPercent(replay.testReturn) : "—"},
+            {label: "Buy & hold", value: replay ? formatPercent(replay.benchmarkReturn) : "—"},
+            {label: "Max drawdown", value: replay ? formatPercent(-replay.maxDrawdown) : "—"},
+        ],
+        [replay]
+    );
 
     return (
         <DemoShell
             accent="stock"
-            description="用 QQQ 近 15 年日線歷史，以純 Genetic Algorithm 進化多指標規則策略（唔經 neural network）；80% 訓練，最後 20% out-of-sample 測試。"
+            description="用日線歷史以 GA 進化交易規則：可選 trend / mean-reversion / hybrid 風格；80% 訓練，最後 20% out-of-sample。QQQ 強牛市好難靠簡單 TA 贏 buy & hold，fitness 會同時睇回報、Sharpe、回撤。"
             icon={<CandlestickChart size={20} strokeWidth={1.5} />}
             title="Stock Trading Evolution"
         >
@@ -155,15 +173,7 @@ export const StockLab = React.memo(() => {
             ) : null}
             <div className="workspace-grid">
                 <main className="demo-main">
-                    <Metrics
-                        extra={[
-                            {label: "Train return", value: replay ? formatPercent(replay.trainReturn) : "—"},
-                            {label: "Test return", value: replay ? formatPercent(replay.testReturn) : "—"},
-                            {label: "Buy & hold", value: replay ? formatPercent(replay.benchmarkReturn) : "—"},
-                            {label: "Max drawdown", value: replay ? formatPercent(-replay.maxDrawdown) : "—"},
-                        ]}
-                        stats={demo.stats}
-                    />
+                    <Metrics extra={metricsExtra} stats={demo.stats} />
                     {parameters && rules ? (
                         <section className="optimized-panel">
                             <div className="panel-heading">
@@ -189,7 +199,7 @@ export const StockLab = React.memo(() => {
                                 <ParameterValue label="Williams buy / sell" value={`${rules.williamsBuy.toFixed(1)} / ${rules.williamsSell.toFixed(1)}`} />
                                 <ParameterValue label="%B buy / sell" value={`${rules.bollingerBuy.toFixed(2)} / ${rules.bollingerSell.toFixed(2)}`} />
                                 <ParameterValue label="Min signals" value={`${rules.minBuySignals} buy · ${rules.minSellSignals} sell`} />
-                                <ParameterValue label="Trend filter" value={rules.useTrendFilter ? "SMA fast > slow" : "Off"} />
+                                <ParameterValue label="Style" value={strategyStyleLabel(rules.strategyStyle)} />
                                 <ParameterValue label="ROC buy / sell" value={`${formatSigned(rules.rocBuy)} / ${formatSigned(rules.rocSell)}`} />
                             </div>
                         </section>
@@ -218,8 +228,8 @@ export const StockLab = React.memo(() => {
                                     data={chartData}
                                     indicatorView={indicatorView}
                                     marketRange={marketRange}
-                                    onRangeChange={setMarketRange}
-                                    parameters={parameters}
+                                    onRangeChange={onMarketRangeChange}
+                                    parameters={chartParameters}
                                     replay={replay}
                                     splitDate={splitDate}
                                 />
@@ -241,10 +251,10 @@ export const StockLab = React.memo(() => {
                     </section>
                     <FitnessChart history={demo.history} />
                     <ApplicationPanel
-                        fitness="train 數據分前後兩半各自計分，取最差嗰半：年化超額回報 × 100 + Sharpe × 10 − maxDrawdown × 30（逼策略跨市況都要得）"
-                        genome="12 個 indicator period genes + 11 個規則門檻 genes（RSI / Williams / ROC / Bollinger / 最少確認數 / 趨勢過濾）"
-                        inputs="SMA 交叉、RSI、Williams %R、ROC、MACD、Bollinger %B（全部由 GA 解碼參數計算）"
-                        outputs="多指標投票規則 → long 100% 或 cash 100%（達到 min buy/sell signals 先轉倉）"
+                        fitness="70% 全段 train + 30% 最差半段：策略 CAGR×100 + Sharpe×15 − maxDD×40 + 超額回報×35（鼓勵真係賺錢同風險調整，唔係淨係坐現金）"
+                        genome="12 個 indicator period genes + 11 個規則 genes（門檻 / min signals / strategy style：trend · mean-reversion · hybrid）"
+                        inputs="Trend：SMA、MACD、ROC、Volume Z；Mean-reversion：RSI、Williams %R、Bollinger %B；入場另有 volatility 過濾"
+                        outputs="按 style 投票 → long 100% 或 cash 100%（夠 min buy/sell signals 先轉倉；trend 只會順勢開倉）"
                         termination="用頭 80% 數據做 selection；最後 20% test data 絕不參與訓練，用嚟審視 out-of-sample 表現"
                     />
                 </main>
@@ -281,7 +291,7 @@ interface MarketChartProps {
     replay: TradingReplay | undefined;
     splitDate: string | undefined;
     marketRange: {startIndex: number; endIndex: number};
-    onRangeChange: React.Dispatch<React.SetStateAction<{startIndex: number; endIndex: number}>>;
+    onRangeChange: (range: {startIndex: number; endIndex: number}) => void;
 }
 
 /**
@@ -289,69 +299,89 @@ interface MarketChartProps {
  * stats/history) do not force recharts to redraw thousands of points every frame —
  * series data only re-renders when the champion replay actually refreshes.
  */
-const MarketChart = React.memo<MarketChartProps>(({data, indicatorView, parameters, replay, splitDate, marketRange, onRangeChange}) => (
-    <ResponsiveContainer height="100%" width="100%">
-        <LineChart data={data} margin={{left: 0, right: 14, top: 8, bottom: 0}}>
-            <CartesianGrid stroke="#252a31" strokeDasharray="3 3" vertical={false} />
-            <XAxis dataKey="date" minTickGap={70} stroke="#747b86" tick={{fontSize: 10}} tickLine={false} />
-            <YAxis domain={["auto", "auto"]} stroke="#747b86" tick={{fontSize: 10}} tickLine={false} width={58} yAxisId="price" />
-            {indicatorView !== "price" && replay ? (
-                <YAxis domain={["auto", "auto"]} orientation="right" stroke="#747b86" tick={{fontSize: 10}} tickLine={false} width={48} yAxisId="indicator" />
-            ) : null}
-            <Tooltip contentStyle={{background: "#15191f", border: "1px solid #303640", borderRadius: 8}} />
-            <Legend wrapperStyle={{fontSize: 11}} />
-            <Line dataKey="close" dot={false} isAnimationActive={false} name="Close" stroke="#dfe3e8" strokeWidth={1.5} type="monotone" yAxisId="price" />
-            {replay ? (
-                <React.Fragment>
-                    <Line connectNulls={false} dataKey="buy" dot={{fill: "#58d68d", r: 5, strokeWidth: 0}} isAnimationActive={false} name="Buy" stroke="none" yAxisId="price" />
-                    <Line connectNulls={false} dataKey="sell" dot={{fill: "#e36f5b", r: 5, strokeWidth: 0}} isAnimationActive={false} name="Sell" stroke="none" yAxisId="price" />
-                </React.Fragment>
-            ) : null}
-            {indicatorView === "price" && replay && parameters ? (
-                <React.Fragment>
-                    <Line dataKey="smaFast" dot={false} isAnimationActive={false} name={`SMA${parameters.smaFastPeriod}`} stroke="#e7b955" strokeWidth={1} yAxisId="price" />
-                    <Line dataKey="smaSlow" dot={false} isAnimationActive={false} name={`SMA${parameters.smaSlowPeriod}`} stroke="#5da6d9" strokeWidth={1} yAxisId="price" />
-                    <Line dataKey="bollingerUpper" dot={false} isAnimationActive={false} name="BB upper" stroke="#6f7782" strokeDasharray="4 4" strokeWidth={1} yAxisId="price" />
-                    <Line dataKey="bollingerLower" dot={false} isAnimationActive={false} name="BB lower" stroke="#6f7782" strokeDasharray="4 4" strokeWidth={1} yAxisId="price" />
-                </React.Fragment>
-            ) : null}
-            {indicatorView === "momentum" && replay ? (
-                <React.Fragment>
-                    <Line dataKey="rsi" dot={false} isAnimationActive={false} name="RSI" stroke="#63c6a1" strokeWidth={1} yAxisId="indicator" />
-                    <Line dataKey="williamsR" dot={false} isAnimationActive={false} name="Williams %R" stroke="#e36f5b" strokeWidth={1} yAxisId="indicator" />
-                    <Line dataKey="roc" dot={false} isAnimationActive={false} name="ROC" stroke="#b38bd4" strokeWidth={1} yAxisId="indicator" />
-                </React.Fragment>
-            ) : null}
-            {indicatorView === "macd" && replay ? (
-                <React.Fragment>
-                    <Line dataKey="macd" dot={false} isAnimationActive={false} name="MACD" stroke="#63c6a1" strokeWidth={1} yAxisId="indicator" />
-                    <Line dataKey="macdSignal" dot={false} isAnimationActive={false} name="Signal" stroke="#e7b955" strokeWidth={1} yAxisId="indicator" />
-                </React.Fragment>
-            ) : null}
-            {indicatorView === "risk" && replay ? (
-                <React.Fragment>
-                    <Line dataKey="volatility" dot={false} isAnimationActive={false} name="Volatility" stroke="#e36f5b" strokeWidth={1} yAxisId="indicator" />
-                    <Line dataKey="volumeZScore" dot={false} isAnimationActive={false} name="Volume Z" stroke="#5da6d9" strokeWidth={1} yAxisId="indicator" />
-                </React.Fragment>
-            ) : null}
-            {splitDate ? <ReferenceLine label={{value: "TEST", fill: "#e7b955", fontSize: 10}} stroke="#e7b955" strokeDasharray="4 4" x={splitDate} /> : null}
-            <Brush
-                ariaLabel="市場日期縮放範圍"
-                className="market-zoom-brush"
-                dataKey="date"
-                endIndex={marketRange.endIndex}
-                fill="#0d1115"
-                gap={Math.max(1, Math.floor(data.length / 1000))}
-                height={28}
-                onChange={range => onRangeChange({startIndex: range.startIndex ?? 0, endIndex: range.endIndex ?? data.length - 1})}
-                startIndex={marketRange.startIndex}
-                stroke="#49515b"
-                tickFormatter={formatBrushDate}
-                travellerWidth={10}
-            />
-        </LineChart>
-    </ResponsiveContainer>
-));
+const MarketChart = React.memo<MarketChartProps>(
+    ({data, indicatorView, parameters, replay, splitDate, marketRange, onRangeChange}) => {
+        const hasReplay = replay !== undefined;
+        const handleBrushChange = (range: {startIndex?: number; endIndex?: number}) => {
+            onRangeChange({startIndex: range.startIndex ?? 0, endIndex: range.endIndex ?? data.length - 1});
+        };
+        return (
+            <ResponsiveContainer height="100%" width="100%">
+                <LineChart data={data} margin={{left: 0, right: 14, top: 8, bottom: 0}}>
+                    <CartesianGrid stroke="#252a31" strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="date" minTickGap={70} stroke="#747b86" tick={{fontSize: 10}} tickLine={false} />
+                    <YAxis domain={["auto", "auto"]} stroke="#747b86" tick={{fontSize: 10}} tickLine={false} width={58} yAxisId="price" />
+                    {indicatorView !== "price" && hasReplay ? (
+                        <YAxis domain={["auto", "auto"]} orientation="right" stroke="#747b86" tick={{fontSize: 10}} tickLine={false} width={48} yAxisId="indicator" />
+                    ) : null}
+                    <Tooltip contentStyle={{background: "#15191f", border: "1px solid #303640", borderRadius: 8}} />
+                    <Legend wrapperStyle={{fontSize: 11}} />
+                    <Line dataKey="close" dot={false} isAnimationActive={false} name="Close" stroke="#dfe3e8" strokeWidth={1.5} type="monotone" yAxisId="price" />
+                    {hasReplay ? (
+                        <React.Fragment>
+                            <Line connectNulls={false} dataKey="buy" dot={BUY_DOT} isAnimationActive={false} name="Buy" stroke="none" yAxisId="price" />
+                            <Line connectNulls={false} dataKey="sell" dot={SELL_DOT} isAnimationActive={false} name="Sell" stroke="none" yAxisId="price" />
+                        </React.Fragment>
+                    ) : null}
+                    {indicatorView === "price" && hasReplay && parameters ? (
+                        <React.Fragment>
+                            <Line dataKey="smaFast" dot={false} isAnimationActive={false} name={`SMA${parameters.smaFastPeriod}`} stroke="#e7b955" strokeWidth={1} yAxisId="price" />
+                            <Line dataKey="smaSlow" dot={false} isAnimationActive={false} name={`SMA${parameters.smaSlowPeriod}`} stroke="#5da6d9" strokeWidth={1} yAxisId="price" />
+                            <Line dataKey="bollingerUpper" dot={false} isAnimationActive={false} name="BB upper" stroke="#6f7782" strokeDasharray="4 4" strokeWidth={1} yAxisId="price" />
+                            <Line dataKey="bollingerLower" dot={false} isAnimationActive={false} name="BB lower" stroke="#6f7782" strokeDasharray="4 4" strokeWidth={1} yAxisId="price" />
+                        </React.Fragment>
+                    ) : null}
+                    {indicatorView === "momentum" && hasReplay ? (
+                        <React.Fragment>
+                            <Line dataKey="rsi" dot={false} isAnimationActive={false} name="RSI" stroke="#63c6a1" strokeWidth={1} yAxisId="indicator" />
+                            <Line dataKey="williamsR" dot={false} isAnimationActive={false} name="Williams %R" stroke="#e36f5b" strokeWidth={1} yAxisId="indicator" />
+                            <Line dataKey="roc" dot={false} isAnimationActive={false} name="ROC" stroke="#b38bd4" strokeWidth={1} yAxisId="indicator" />
+                        </React.Fragment>
+                    ) : null}
+                    {indicatorView === "macd" && hasReplay ? (
+                        <React.Fragment>
+                            <Line dataKey="macd" dot={false} isAnimationActive={false} name="MACD" stroke="#63c6a1" strokeWidth={1} yAxisId="indicator" />
+                            <Line dataKey="macdSignal" dot={false} isAnimationActive={false} name="Signal" stroke="#e7b955" strokeWidth={1} yAxisId="indicator" />
+                        </React.Fragment>
+                    ) : null}
+                    {indicatorView === "risk" && hasReplay ? (
+                        <React.Fragment>
+                            <Line dataKey="volatility" dot={false} isAnimationActive={false} name="Volatility" stroke="#e36f5b" strokeWidth={1} yAxisId="indicator" />
+                            <Line dataKey="volumeZScore" dot={false} isAnimationActive={false} name="Volume Z" stroke="#5da6d9" strokeWidth={1} yAxisId="indicator" />
+                        </React.Fragment>
+                    ) : null}
+                    {splitDate ? <ReferenceLine label={{value: "TEST", fill: "#e7b955", fontSize: 10}} stroke="#e7b955" strokeDasharray="4 4" x={splitDate} /> : null}
+                    <Brush
+                        ariaLabel="市場日期縮放範圍"
+                        className="market-zoom-brush"
+                        dataKey="date"
+                        endIndex={marketRange.endIndex}
+                        fill="#0d1115"
+                        gap={Math.max(1, Math.floor(data.length / 1000))}
+                        height={28}
+                        onChange={handleBrushChange}
+                        startIndex={marketRange.startIndex}
+                        stroke="#49515b"
+                        tickFormatter={formatBrushDate}
+                        travellerWidth={10}
+                    />
+                </LineChart>
+            </ResponsiveContainer>
+        );
+    },
+    (prev, next) =>
+        prev.data === next.data &&
+        prev.indicatorView === next.indicatorView &&
+        prev.parameters === next.parameters &&
+        prev.replay === next.replay &&
+        prev.splitDate === next.splitDate &&
+        prev.marketRange.startIndex === next.marketRange.startIndex &&
+        prev.marketRange.endIndex === next.marketRange.endIndex &&
+        prev.onRangeChange === next.onRangeChange
+);
+
+const BUY_DOT = {fill: "#58d68d", r: 5, strokeWidth: 0} as const;
+const SELL_DOT = {fill: "#e36f5b", r: 5, strokeWidth: 0} as const;
 
 interface EquityChartProps {
     points: TradingPoint[];
@@ -359,19 +389,22 @@ interface EquityChartProps {
 }
 
 /** Out-of-sample equity curve. Memoized for the same reason as MarketChart. */
-const EquityChart = React.memo<EquityChartProps>(({points, splitDate}) => (
-    <ResponsiveContainer height="100%" width="100%">
-        <LineChart data={points} margin={{left: 0, right: 14, top: 8, bottom: 0}}>
-            <CartesianGrid stroke="#252a31" strokeDasharray="3 3" vertical={false} />
-            <XAxis dataKey="date" minTickGap={70} stroke="#747b86" tick={{fontSize: 10}} tickLine={false} />
-            <YAxis stroke="#747b86" tick={{fontSize: 10}} tickLine={false} width={64} />
-            <Tooltip contentStyle={{background: "#15191f", border: "1px solid #303640", borderRadius: 8}} />
-            <Line dataKey="strategy" dot={false} isAnimationActive={false} name="Strategy" stroke="#58d68d" strokeWidth={2} type="monotone" />
-            <Line dataKey="benchmark" dot={false} isAnimationActive={false} name="Buy & hold" stroke="#e7b955" strokeWidth={1.5} type="monotone" />
-            {splitDate ? <ReferenceLine stroke="#e7b955" strokeDasharray="4 4" x={splitDate} /> : null}
-        </LineChart>
-    </ResponsiveContainer>
-));
+const EquityChart = React.memo<EquityChartProps>(
+    ({points, splitDate}) => (
+        <ResponsiveContainer height="100%" width="100%">
+            <LineChart data={points} margin={{left: 0, right: 14, top: 8, bottom: 0}}>
+                <CartesianGrid stroke="#252a31" strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="date" minTickGap={70} stroke="#747b86" tick={{fontSize: 10}} tickLine={false} />
+                <YAxis stroke="#747b86" tick={{fontSize: 10}} tickLine={false} width={64} />
+                <Tooltip contentStyle={{background: "#15191f", border: "1px solid #303640", borderRadius: 8}} />
+                <Line dataKey="strategy" dot={false} isAnimationActive={false} name="Strategy" stroke="#58d68d" strokeWidth={2} type="monotone" />
+                <Line dataKey="benchmark" dot={false} isAnimationActive={false} name="Buy & hold" stroke="#e7b955" strokeWidth={1.5} type="monotone" />
+                {splitDate ? <ReferenceLine stroke="#e7b955" strokeDasharray="4 4" x={splitDate} /> : null}
+            </LineChart>
+        </ResponsiveContainer>
+    ),
+    (prev, next) => prev.points === next.points && prev.splitDate === next.splitDate
+);
 
 const ParameterValue = React.memo(({label, value}: {label: string; value: string}) => (
     <div>
