@@ -94,7 +94,7 @@ button {
     display: block;
     margin-top: 1px;
     color: #7d858f;
-    font-size: 10px;
+    font-size: 12px;
     letter-spacing: 0;
 }
 .sidebar-nav {
@@ -107,7 +107,7 @@ button {
 .sidebar-note > p {
     margin: 0 10px 8px;
     color: #636b75;
-    font-size: 9px;
+    font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.12em;
 }
@@ -167,7 +167,7 @@ button {
     justify-content: space-between;
     margin: 8px 0;
     color: #707985;
-    font-size: 10px;
+    font-size: 12px;
 }
 .sidebar-note strong {
     color: #aeb4bc;
@@ -179,7 +179,7 @@ button {
     gap: 7px;
     color: #6f7782;
     padding: 7px 10px;
-    font-size: 10px;
+    font-size: 12px;
     text-decoration: none;
 }
 .source-link:hover {
@@ -205,7 +205,7 @@ button {
     display: flex;
     gap: 8px;
     color: #666f79;
-    font-size: 11px;
+    font-size: 13px;
 }
 .breadcrumb strong {
     color: #cdd1d6;
@@ -216,7 +216,7 @@ button {
     align-items: center;
     gap: 8px;
     color: #737b85;
-    font-size: 10px;
+    font-size: 12px;
 }
 .topbar-status .chip {
     border-radius: 5px;
@@ -249,7 +249,7 @@ button {
 .eyebrow {
     margin: 0 0 7px;
     color: #727b85;
-    font-size: 9px;
+    font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.12em;
     text-transform: uppercase;
@@ -292,7 +292,7 @@ button {
 .intro-stat small {
     display: block;
     color: #69727d;
-    font-size: 10px;
+    font-size: 12px;
 }
 .intro-stat strong {
     display: block;
@@ -341,13 +341,13 @@ button {
     background: #14181d;
     padding: 11px 12px;
     color: #c9ced4;
-    font-size: 11px;
+    font-size: 13px;
     white-space: nowrap;
 }
 .flow-stage span {
     color: #66707b;
     font-family: monospace;
-    font-size: 9px;
+    font-size: 11px;
 }
 .theory-grid {
     display: grid;
@@ -372,7 +372,7 @@ button {
 .theory-card p {
     margin: 0;
     color: #7f8893;
-    font-size: 11px;
+    font-size: 13px;
     line-height: 1.65;
 }
 .genome-lab {
@@ -384,7 +384,7 @@ button {
 .section-copy {
     max-width: 760px;
     color: #7f8893;
-    font-size: 11px;
+    font-size: 13px;
     line-height: 1.6;
 }
 .genome-rows {
@@ -400,7 +400,7 @@ button {
 }
 .genome-row > span {
     color: #7b8490;
-    font-size: 10px;
+    font-size: 12px;
 }
 .genome-row > div {
     display: grid;
@@ -413,7 +413,7 @@ button {
     border-radius: 5px;
     padding: 9px 5px;
     color: #cbd1d7;
-    font-size: 10px;
+    font-size: 12px;
     text-align: center;
 }
 .gene-a {
@@ -438,7 +438,7 @@ button {
     justify-content: space-between;
     margin-bottom: 8px;
     color: #808994;
-    font-size: 10px;
+    font-size: 12px;
 }
 .mutation-control strong {
     color: #dfe3e7;
@@ -450,7 +450,7 @@ button {
     gap: 18px;
     margin-top: 14px;
     color: #717a84;
-    font-size: 9px;
+    font-size: 11px;
 }
 .genome-legend span {
     display: inline-flex;
@@ -526,11 +526,11 @@ button {
     margin-bottom: 18px;
 }
 .control-panel .card__description {
-    font-size: 10px;
+    font-size: 12px;
 }
 .control-panel .button {
     border-radius: 6px;
-    font-size: 10px;
+    font-size: 12px;
 }
 .control-field {
     display: block;
@@ -541,7 +541,7 @@ button {
     justify-content: space-between;
     margin-bottom: 8px;
     color: #858e98;
-    font-size: 10px;
+    font-size: 12px;
 }
 .control-toggle {
     display: flex;
@@ -598,7 +598,7 @@ button {
     height: 34px;
     padding: 0 9px;
     font-family: monospace;
-    font-size: 11px;
+    font-size: 13px;
 }
 .number-input:focus,
 .ticker-input:focus,
@@ -608,7 +608,7 @@ button {
 .error-message {
     margin: 0;
     color: #f08b7b;
-    font-size: 10px;
+    font-size: 12px;
     line-height: 1.5;
 }
 .metrics-grid {
@@ -629,7 +629,7 @@ button {
     display: block;
     overflow: hidden;
     color: #6f7883;
-    font-size: 9px;
+    font-size: 11px;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
@@ -663,7 +663,7 @@ button {
     padding: 11px 13px;
     color: #6e7781;
     font-family: monospace;
-    font-size: 9px;
+    font-size: 11px;
 }
 .simulation-canvas {
     display: block;
@@ -712,7 +712,7 @@ button {
 .parameter-grid span {
     display: block;
     color: #737d88;
-    font-size: 9px;
+    font-size: 11px;
 }
 .parameter-grid strong {
     display: block;
@@ -742,14 +742,14 @@ button {
     justify-content: center;
     gap: 9px;
     color: #69727c;
-    font-size: 11px;
+    font-size: 13px;
 }
 .legend-row {
     display: flex;
     align-items: center;
     gap: 6px;
     color: #6e7781;
-    font-size: 9px;
+    font-size: 11px;
 }
 .legend-dot {
     width: 14px;
@@ -781,13 +781,13 @@ button {
 .mapping-grid dt {
     color: #75808b;
     font-family: monospace;
-    font-size: 9px;
+    font-size: 11px;
     text-transform: uppercase;
 }
 .mapping-grid dd {
     margin: 7px 0 0;
     color: #a8afb7;
-    font-size: 10px;
+    font-size: 12px;
     line-height: 1.55;
 }
 
@@ -803,7 +803,7 @@ button {
     display: block;
     margin-bottom: 5px;
     color: #707984;
-    font-size: 9px;
+    font-size: 11px;
 }
 .ticker-input {
     width: 94px;
@@ -819,7 +819,7 @@ button {
 .disclaimer {
     margin-left: auto;
     color: #626b75;
-    font-size: 9px;
+    font-size: 11px;
 }
 .fetch-error {
     display: flex;
@@ -831,7 +831,7 @@ button {
     background: rgba(227, 111, 91, 0.06);
     padding: 9px 12px;
     color: #d98a7d;
-    font-size: 10px;
+    font-size: 12px;
 }
 .fetch-error .button {
     margin-left: auto;
@@ -840,7 +840,7 @@ button {
     width: 176px;
     height: 31px;
     padding: 0 8px;
-    font-size: 10px;
+    font-size: 12px;
 }
 
 @media (max-width: 1160px) {
@@ -922,7 +922,7 @@ button {
         min-width: 0;
         border-radius: 5px;
         color: #78818b;
-        font-size: 9px;
+        font-size: 11px;
         padding-inline: 5px;
     }
     .mobile-nav .button.active {
@@ -1044,6 +1044,6 @@ button {
         font-size: 23px;
     }
     .demo-header > div > p:last-child {
-        font-size: 11px;
+        font-size: 13px;
     }
 }

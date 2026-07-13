@@ -1,6 +1,6 @@
 import React from "react";
 import {Button, Chip} from "@heroui/react";
-import {Blocks, BookOpen, CandlestickChart, Dna, Github, Network} from "lucide-react";
+import {Blocks, BookOpen, CandlestickChart, Dna, Network} from "lucide-react";
 import {Navigate, Route, Routes, useLocation, useNavigate} from "react-router-dom";
 
 const TheoryLab = React.lazy(() => import("./components/TheoryLab").then(module => ({default: module.TheoryLab})));
@@ -42,24 +42,6 @@ export const App = React.memo(() => {
                         </Button>
                     ))}
                 </nav>
-                <div className="sidebar-note">
-                    <p>ENGINE</p>
-                    <div>
-                        <span>Neural network</span>
-                        <strong>Brain.js</strong>
-                    </div>
-                    <div>
-                        <span>Search method</span>
-                        <strong>Genetic Algorithm</strong>
-                    </div>
-                    <div>
-                        <span>Execution</span>
-                        <strong>Web Workers</strong>
-                    </div>
-                </div>
-                <a className="source-link" href="https://github.com/BrainJS/brain.js" rel="noreferrer" target="_blank">
-                    <Github size={15} strokeWidth={1.5} /> Brain.js project
-                </a>
             </aside>
 
             <div className="main-column">

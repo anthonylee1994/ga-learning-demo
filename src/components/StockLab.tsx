@@ -337,13 +337,13 @@ const MarketChart = React.memo<MarketChartProps>(
             <ResponsiveContainer height="100%" width="100%">
                 <LineChart data={data} margin={{left: 0, right: 14, top: 8, bottom: 0}}>
                     <CartesianGrid stroke="#252a31" strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="date" minTickGap={70} stroke="#747b86" tick={{fontSize: 10}} tickLine={false} />
-                    <YAxis domain={["auto", "auto"]} stroke="#747b86" tick={{fontSize: 10}} tickLine={false} width={58} yAxisId="price" />
+                    <XAxis dataKey="date" minTickGap={70} stroke="#747b86" tick={{fontSize: 12}} tickLine={false} />
+                    <YAxis domain={["auto", "auto"]} stroke="#747b86" tick={{fontSize: 12}} tickLine={false} width={58} yAxisId="price" />
                     {(indicatorView === "momentum" || indicatorView === "macd" || indicatorView === "risk" || indicatorView === "newHigh") && hasReplay ? (
-                        <YAxis domain={["auto", "auto"]} orientation="right" stroke="#747b86" tick={{fontSize: 10}} tickLine={false} width={48} yAxisId="indicator" />
+                        <YAxis domain={["auto", "auto"]} orientation="right" stroke="#747b86" tick={{fontSize: 12}} tickLine={false} width={48} yAxisId="indicator" />
                     ) : null}
                     <Tooltip contentStyle={{background: "#15191f", border: "1px solid #303640", borderRadius: 8}} />
-                    <Legend wrapperStyle={{fontSize: 11}} />
+                    <Legend wrapperStyle={{fontSize: 12}} />
                     <Line dataKey="close" dot={false} isAnimationActive={false} name="Close" stroke="#dfe3e8" strokeWidth={1.5} type="monotone" yAxisId="price" />
                     {hasReplay ? (
                         <React.Fragment>
@@ -384,7 +384,7 @@ const MarketChart = React.memo<MarketChartProps>(
                             <Line dataKey="volumeZScore" dot={false} isAnimationActive={false} name="Volume Z" stroke="#5da6d9" strokeWidth={1} yAxisId="indicator" />
                         </React.Fragment>
                     ) : null}
-                    {splitDate ? <ReferenceLine label={{value: "TEST", fill: "#e7b955", fontSize: 10}} stroke="#e7b955" strokeDasharray="4 4" x={splitDate} /> : null}
+                    {splitDate ? <ReferenceLine label={{value: "TEST", fill: "#e7b955", fontSize: 12}} stroke="#e7b955" strokeDasharray="4 4" x={splitDate} /> : null}
                     <Brush
                         ariaLabel="市場日期縮放範圍"
                         className="market-zoom-brush"
@@ -428,8 +428,8 @@ const EquityChart = React.memo<EquityChartProps>(
         <ResponsiveContainer height="100%" width="100%">
             <LineChart data={points} margin={{left: 0, right: 14, top: 8, bottom: 0}}>
                 <CartesianGrid stroke="#252a31" strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="date" minTickGap={70} stroke="#747b86" tick={{fontSize: 10}} tickLine={false} />
-                <YAxis stroke="#747b86" tick={{fontSize: 10}} tickLine={false} width={64} />
+                <XAxis dataKey="date" minTickGap={70} stroke="#747b86" tick={{fontSize: 12}} tickLine={false} />
+                <YAxis stroke="#747b86" tick={{fontSize: 12}} tickLine={false} width={64} />
                 <Tooltip contentStyle={{background: "#15191f", border: "1px solid #303640", borderRadius: 8}} />
                 <Line dataKey="strategy" dot={false} isAnimationActive={false} name="Strategy" stroke="#58d68d" strokeWidth={2} type="monotone" />
                 <Line dataKey="benchmark" dot={false} isAnimationActive={false} name="Buy & hold" stroke="#e7b955" strokeWidth={1.5} type="monotone" />
