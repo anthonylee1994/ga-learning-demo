@@ -15,17 +15,14 @@ export function calculateIndicators(points: MarketDataPoint[], parameters: Optim
     const emaSlow = exponentialMovingAverage(closes, parameters.macdSlowPeriod);
     const macd = closes.map((_, index) => emaFast[index] - emaSlow[index]);
     const macdSignal = exponentialMovingAverage(macd, parameters.macdSignalPeriod);
+    const snapshots: IndicatorSnapshot[] = [];
 
-    return points.flatMap((point, index) => {
-        if (index < warmup) {
-            return [];
-        }
-
-        const smaFast = mean(closes.slice(index - parameters.smaFastPeriod + 1, index + 1));
-        const smaSlow = mean(closes.slice(index - parameters.smaSlowPeriod + 1, index + 1));
-        const bollingerWindow = closes.slice(index - parameters.bollingerPeriod + 1, index + 1);
-        const bollingerBasis = mean(bollingerWindow);
-        const bollingerDeviation = standardDeviation(bollingerWindow);
+    for (let index = warmup; index < points.length; index += 1) {
+        const point = points[index];
+        const smaFast = meanRange(closes, index - parameters.smaFastPeriod + 1, index + 1);
+        const smaSlow = meanRange(closes, index - parameters.smaSlowPeriod + 1, index + 1);
+        const bollingerBasis = meanRange(closes, index - parameters.bollingerPeriod + 1, index + 1);
+        const bollingerDeviation = standardDeviationRange(closes, index - parameters.bollingerPeriod + 1, index + 1, bollingerBasis);
         const bollingerUpper = bollingerBasis + bollingerDeviation * parameters.bollingerMultiplier;
         const bollingerLower = bollingerBasis - bollingerDeviation * parameters.bollingerMultiplier;
         const bollingerRange = Math.max(bollingerUpper - bollingerLower, EPSILON);
@@ -35,49 +32,32 @@ export function calculateIndicators(points: MarketDataPoint[], parameters: Optim
         const roc = point.close / closes[index - parameters.rocPeriod] - 1;
         const rsi = calculateRsi(closes, index, parameters.rsiPeriod);
         const volatility = calculateVolatility(closes, index, parameters.volatilityPeriod);
-        const volumeWindow = volumes.slice(index - parameters.volumeZScorePeriod + 1, index + 1);
-        const volumeDeviation = standardDeviation(volumeWindow);
-        const volumeZScore = (point.volume - mean(volumeWindow)) / Math.max(volumeDeviation, EPSILON);
+        const volumeMean = meanRange(volumes, index - parameters.volumeZScorePeriod + 1, index + 1);
+        const volumeDeviation = standardDeviationRange(volumes, index - parameters.volumeZScorePeriod + 1, index + 1, volumeMean);
+        const volumeZScore = (point.volume - volumeMean) / Math.max(volumeDeviation, EPSILON);
         const macdHistogram = macd[index] - macdSignal[index];
 
-        const features = [
-            clamp((point.close / smaFast - 1) * 10, -1, 1),
-            clamp((point.close / smaSlow - 1) * 10, -1, 1),
-            clamp((smaFast / smaSlow - 1) * 10, -1, 1),
-            clamp((williamsR + 50) / 50, -1, 1),
-            clamp(roc * 5, -1, 1),
-            clamp((rsi - 50) / 50, -1, 1),
-            clamp((macd[index] / point.close) * 25, -1, 1),
-            clamp((macdSignal[index] / point.close) * 25, -1, 1),
-            clamp((macdHistogram / point.close) * 50, -1, 1),
-            clamp((bollingerPercentB - 0.5) * 2, -1, 1),
-            clamp(bollingerBandwidth * 8, -1, 1),
-            clamp(volatility * 5, -1, 1),
-            clamp(volumeZScore / 3, -1, 1),
-        ];
+        snapshots.push({
+            date: point.date,
+            close: point.close,
+            smaFast,
+            smaSlow,
+            williamsR,
+            roc,
+            rsi,
+            macd: macd[index],
+            macdSignal: macdSignal[index],
+            macdHistogram,
+            bollingerUpper,
+            bollingerLower,
+            bollingerPercentB,
+            bollingerBandwidth,
+            volatility,
+            volumeZScore,
+        });
+    }
 
-        return [
-            {
-                date: point.date,
-                close: point.close,
-                smaFast,
-                smaSlow,
-                williamsR,
-                roc,
-                rsi,
-                macd: macd[index],
-                macdSignal: macdSignal[index],
-                macdHistogram,
-                bollingerUpper,
-                bollingerLower,
-                bollingerPercentB,
-                bollingerBandwidth,
-                volatility,
-                volumeZScore,
-                features,
-            },
-        ];
-    });
+    return snapshots;
 }
 
 export function getIndicatorWarmup(parameters: OptimizedIndicatorParameters): number {
@@ -104,17 +84,21 @@ export function splitIndicators(snapshots: IndicatorSnapshot[], trainRatio = 0.8
 
 function exponentialMovingAverage(values: number[], period: number): number[] {
     const multiplier = 2 / (period + 1);
-    const result: number[] = [];
+    const result: number[] = new Array(values.length);
     values.forEach((value, index) => {
-        result.push(index === 0 ? value : value * multiplier + result[index - 1] * (1 - multiplier));
+        result[index] = index === 0 ? value : value * multiplier + result[index - 1] * (1 - multiplier);
     });
     return result;
 }
 
 function calculateWilliamsR(points: MarketDataPoint[], index: number, period: number): number {
-    const window = points.slice(index - period + 1, index + 1);
-    const highestHigh = Math.max(...window.map(point => point.high));
-    const lowestLow = Math.min(...window.map(point => point.low));
+    let highestHigh = -Infinity;
+    let lowestLow = Infinity;
+    for (let cursor = index - period + 1; cursor <= index; cursor += 1) {
+        const point = points[cursor];
+        highestHigh = Math.max(highestHigh, point.high);
+        lowestLow = Math.min(lowestLow, point.low);
+    }
     return ((highestHigh - points[index].close) / Math.max(highestHigh - lowestLow, EPSILON)) * -100;
 }
 
@@ -139,22 +123,31 @@ function calculateRsi(closes: number[], index: number, period: number): number {
 }
 
 function calculateVolatility(closes: number[], index: number, period: number): number {
-    const returns: number[] = [];
+    let sum = 0;
+    let sumSq = 0;
     for (let cursor = index - period + 1; cursor <= index; cursor += 1) {
-        returns.push(closes[cursor] / closes[cursor - 1] - 1);
+        const value = closes[cursor] / closes[cursor - 1] - 1;
+        sum += value;
+        sumSq += value * value;
     }
-    return standardDeviation(returns) * Math.sqrt(252);
+    const meanValue = sum / period;
+    const variance = sumSq / period - meanValue * meanValue;
+    return Math.sqrt(Math.max(0, variance)) * Math.sqrt(252);
 }
 
-function mean(values: number[]): number {
-    return values.reduce((sum, value) => sum + value, 0) / values.length;
+function meanRange(values: number[], start: number, end: number): number {
+    let sum = 0;
+    for (let index = start; index < end; index += 1) {
+        sum += values[index];
+    }
+    return sum / (end - start);
 }
 
-function standardDeviation(values: number[]): number {
-    const average = mean(values);
-    return Math.sqrt(values.reduce((sum, value) => sum + (value - average) ** 2, 0) / values.length);
-}
-
-function clamp(value: number, min: number, max: number): number {
-    return Math.min(max, Math.max(min, Number.isFinite(value) ? value : 0));
+function standardDeviationRange(values: number[], start: number, end: number, average: number): number {
+    let sumSq = 0;
+    for (let index = start; index < end; index += 1) {
+        const delta = values[index] - average;
+        sumSq += delta * delta;
+    }
+    return Math.sqrt(sumSq / (end - start));
 }

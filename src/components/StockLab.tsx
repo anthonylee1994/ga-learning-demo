@@ -5,6 +5,7 @@ import {Brush, CartesianGrid, Legend, Line, LineChart, ReferenceLine, Responsive
 import {useEvolutionDemo} from "../hooks/useEvolutionDemo";
 import type {GAConfig, MarketDataResponse, TradingPoint, TradingReplay} from "../lib/types";
 import {createPineScript} from "../domains/stock/pineScript";
+import {decodeStockGenome} from "../domains/stock/strategyGenome";
 import {ApplicationPanel} from "./ApplicationPanel";
 import {DemoControls} from "./DemoControls";
 import {FitnessChart} from "./FitnessChart";
@@ -12,7 +13,7 @@ import {Metrics} from "./Metrics";
 import {DemoShell} from "./SnakeLab";
 
 const DEFAULT_CONFIG: GAConfig = {
-    populationSize: 12,
+    populationSize: 40,
     mutationRate: 0.1,
     mutationScale: 0.2,
     eliteRate: 0.08,
@@ -69,6 +70,23 @@ export const StockLab = React.memo(() => {
         };
     }, []);
     const replay = demo.champion?.replay;
+    /**
+     * Parameters live in the genome; full chart replay is throttled for memory.
+     * Decode every generation so the champion panel always tracks the live best genome.
+     */
+    const decoded = React.useMemo(() => {
+        const genome = demo.champion?.genome;
+        if (!genome) {
+            return null;
+        }
+        try {
+            return decodeStockGenome(genome);
+        } catch {
+            return null;
+        }
+    }, [demo.champion?.genome]);
+    const parameters = decoded?.parameters ?? replay?.optimizedParameters;
+    const rules = decoded?.rules ?? replay?.optimizedRules;
     const rawChartData = React.useMemo(() => marketData?.points.map(point => ({date: point.date, close: point.close})) ?? [], [marketData]);
     const chartData = React.useMemo(() => {
         if (!replay) {
@@ -146,7 +164,7 @@ export const StockLab = React.memo(() => {
                         ]}
                         stats={demo.stats}
                     />
-                    {replay ? (
+                    {parameters && rules ? (
                         <section className="optimized-panel">
                             <div className="panel-heading">
                                 <div>
@@ -159,23 +177,20 @@ export const StockLab = React.memo(() => {
                                 </Button>
                             </div>
                             <div className="parameter-grid">
-                                <ParameterValue label="SMA" value={`${replay.optimizedParameters.smaFastPeriod} / ${replay.optimizedParameters.smaSlowPeriod}`} />
-                                <ParameterValue label="RSI period" value={String(replay.optimizedParameters.rsiPeriod)} />
-                                <ParameterValue label="Bollinger" value={`${replay.optimizedParameters.bollingerPeriod} / ${replay.optimizedParameters.bollingerMultiplier.toFixed(2)}σ`} />
-                                <ParameterValue label="ROC period" value={String(replay.optimizedParameters.rocPeriod)} />
-                                <ParameterValue label="Williams %R" value={String(replay.optimizedParameters.williamsPeriod)} />
-                                <ParameterValue
-                                    label="MACD"
-                                    value={`${replay.optimizedParameters.macdFastPeriod} / ${replay.optimizedParameters.macdSlowPeriod} / ${replay.optimizedParameters.macdSignalPeriod}`}
-                                />
-                                <ParameterValue label="Volatility" value={String(replay.optimizedParameters.volatilityPeriod)} />
-                                <ParameterValue label="Volume Z" value={String(replay.optimizedParameters.volumeZScorePeriod)} />
-                                <ParameterValue label="RSI buy / sell" value={`${replay.optimizedRules.rsiBuy} / ${replay.optimizedRules.rsiSell}`} />
-                                <ParameterValue label="Williams buy / sell" value={`${replay.optimizedRules.williamsBuy.toFixed(1)} / ${replay.optimizedRules.williamsSell.toFixed(1)}`} />
-                                <ParameterValue label="%B buy / sell" value={`${replay.optimizedRules.bollingerBuy.toFixed(2)} / ${replay.optimizedRules.bollingerSell.toFixed(2)}`} />
-                                <ParameterValue label="Min signals" value={`${replay.optimizedRules.minBuySignals} buy · ${replay.optimizedRules.minSellSignals} sell`} />
-                                <ParameterValue label="Trend filter" value={replay.optimizedRules.useTrendFilter ? "SMA fast > slow" : "Off"} />
-                                <ParameterValue label="ROC buy / sell" value={`${formatSigned(replay.optimizedRules.rocBuy)} / ${formatSigned(replay.optimizedRules.rocSell)}`} />
+                                <ParameterValue label="SMA" value={`${parameters.smaFastPeriod} / ${parameters.smaSlowPeriod}`} />
+                                <ParameterValue label="RSI period" value={String(parameters.rsiPeriod)} />
+                                <ParameterValue label="Bollinger" value={`${parameters.bollingerPeriod} / ${parameters.bollingerMultiplier.toFixed(2)}σ`} />
+                                <ParameterValue label="ROC period" value={String(parameters.rocPeriod)} />
+                                <ParameterValue label="Williams %R" value={String(parameters.williamsPeriod)} />
+                                <ParameterValue label="MACD" value={`${parameters.macdFastPeriod} / ${parameters.macdSlowPeriod} / ${parameters.macdSignalPeriod}`} />
+                                <ParameterValue label="Volatility" value={String(parameters.volatilityPeriod)} />
+                                <ParameterValue label="Volume Z" value={String(parameters.volumeZScorePeriod)} />
+                                <ParameterValue label="RSI buy / sell" value={`${rules.rsiBuy} / ${rules.rsiSell}`} />
+                                <ParameterValue label="Williams buy / sell" value={`${rules.williamsBuy.toFixed(1)} / ${rules.williamsSell.toFixed(1)}`} />
+                                <ParameterValue label="%B buy / sell" value={`${rules.bollingerBuy.toFixed(2)} / ${rules.bollingerSell.toFixed(2)}`} />
+                                <ParameterValue label="Min signals" value={`${rules.minBuySignals} buy · ${rules.minSellSignals} sell`} />
+                                <ParameterValue label="Trend filter" value={rules.useTrendFilter ? "SMA fast > slow" : "Off"} />
+                                <ParameterValue label="ROC buy / sell" value={`${formatSigned(rules.rocBuy)} / ${formatSigned(rules.rocSell)}`} />
                             </div>
                         </section>
                     ) : null}
@@ -199,7 +214,15 @@ export const StockLab = React.memo(() => {
                                     <span>下載 Yahoo Finance 數據...</span>
                                 </div>
                             ) : chartData.length ? (
-                                <MarketChart data={chartData} indicatorView={indicatorView} marketRange={marketRange} onRangeChange={setMarketRange} replay={replay} splitDate={splitDate} />
+                                <MarketChart
+                                    data={chartData}
+                                    indicatorView={indicatorView}
+                                    marketRange={marketRange}
+                                    onRangeChange={setMarketRange}
+                                    parameters={parameters}
+                                    replay={replay}
+                                    splitDate={splitDate}
+                                />
                             ) : (
                                 <div className="empty-chart">未有市場數據。</div>
                             )}
@@ -218,7 +241,7 @@ export const StockLab = React.memo(() => {
                     </section>
                     <FitnessChart history={demo.history} />
                     <ApplicationPanel
-                        fitness="超額回報(vs buy&hold) × 100 − maxDrawdown × 40"
+                        fitness="train 數據分前後兩半各自計分，取最差嗰半：年化超額回報 × 100 + Sharpe × 10 − maxDrawdown × 30（逼策略跨市況都要得）"
                         genome="12 個 indicator period genes + 11 個規則門檻 genes（RSI / Williams / ROC / Bollinger / 最少確認數 / 趨勢過濾）"
                         inputs="SMA 交叉、RSI、Williams %R、ROC、MACD、Bollinger %B（全部由 GA 解碼參數計算）"
                         outputs="多指標投票規則 → long 100% 或 cash 100%（達到 min buy/sell signals 先轉倉）"
@@ -254,6 +277,7 @@ type MarketChartDatum = {
 interface MarketChartProps {
     data: MarketChartDatum[];
     indicatorView: IndicatorView;
+    parameters: TradingReplay["optimizedParameters"] | undefined;
     replay: TradingReplay | undefined;
     splitDate: string | undefined;
     marketRange: {startIndex: number; endIndex: number};
@@ -263,9 +287,9 @@ interface MarketChartProps {
 /**
  * Heavy 15y market chart. Memoized so the ~8/sec generation ticks (which only touch
  * stats/history) do not force recharts to redraw thousands of points every frame —
- * it only re-renders when the champion replay actually refreshes.
+ * series data only re-renders when the champion replay actually refreshes.
  */
-const MarketChart = React.memo<MarketChartProps>(({data, indicatorView, replay, splitDate, marketRange, onRangeChange}) => (
+const MarketChart = React.memo<MarketChartProps>(({data, indicatorView, parameters, replay, splitDate, marketRange, onRangeChange}) => (
     <ResponsiveContainer height="100%" width="100%">
         <LineChart data={data} margin={{left: 0, right: 14, top: 8, bottom: 0}}>
             <CartesianGrid stroke="#252a31" strokeDasharray="3 3" vertical={false} />
@@ -283,10 +307,10 @@ const MarketChart = React.memo<MarketChartProps>(({data, indicatorView, replay, 
                     <Line connectNulls={false} dataKey="sell" dot={{fill: "#e36f5b", r: 5, strokeWidth: 0}} isAnimationActive={false} name="Sell" stroke="none" yAxisId="price" />
                 </React.Fragment>
             ) : null}
-            {indicatorView === "price" && replay ? (
+            {indicatorView === "price" && replay && parameters ? (
                 <React.Fragment>
-                    <Line dataKey="smaFast" dot={false} isAnimationActive={false} name={`SMA${replay.optimizedParameters.smaFastPeriod}`} stroke="#e7b955" strokeWidth={1} yAxisId="price" />
-                    <Line dataKey="smaSlow" dot={false} isAnimationActive={false} name={`SMA${replay.optimizedParameters.smaSlowPeriod}`} stroke="#5da6d9" strokeWidth={1} yAxisId="price" />
+                    <Line dataKey="smaFast" dot={false} isAnimationActive={false} name={`SMA${parameters.smaFastPeriod}`} stroke="#e7b955" strokeWidth={1} yAxisId="price" />
+                    <Line dataKey="smaSlow" dot={false} isAnimationActive={false} name={`SMA${parameters.smaSlowPeriod}`} stroke="#5da6d9" strokeWidth={1} yAxisId="price" />
                     <Line dataKey="bollingerUpper" dot={false} isAnimationActive={false} name="BB upper" stroke="#6f7782" strokeDasharray="4 4" strokeWidth={1} yAxisId="price" />
                     <Line dataKey="bollingerLower" dot={false} isAnimationActive={false} name="BB lower" stroke="#6f7782" strokeDasharray="4 4" strokeWidth={1} yAxisId="price" />
                 </React.Fragment>

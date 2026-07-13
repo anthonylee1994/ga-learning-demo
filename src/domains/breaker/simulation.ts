@@ -10,7 +10,10 @@ export const BREAKER_TOPOLOGY = {
 
 const WIDTH = 560;
 const HEIGHT = 420;
-const MAX_STEPS = 9999;
+/** Cap physics steps so long rallies cannot explode worker memory / postMessage size. */
+const MAX_STEPS = 2_400;
+/** UI playback only needs a short highlight reel. */
+const MAX_REPLAY_FRAMES = 600;
 const PADDLE_WIDTH = 92;
 /** Canonical launch used for champion replay AND as one of the eval seeds. */
 const REPLAY_LAUNCH = 0.86;
@@ -82,6 +85,7 @@ function simulateBreaker(genome: Genome, xVelocityFactor: number, record: boolea
     let trackingReward = 0;
     let terminal: NonNullable<BreakerFrame["terminal"]> = "timeout";
     const frames: BreakerFrame[] = [];
+    const frameStride = record ? Math.max(4, Math.ceil(MAX_STEPS / MAX_REPLAY_FRAMES)) : 4;
 
     const onCollisionStart = (event: Matter.IEventCollision<Matter.Engine>) => {
         event.pairs.forEach(pair => {
@@ -148,7 +152,7 @@ function simulateBreaker(genome: Genome, xVelocityFactor: number, record: boolea
                 });
             }
 
-            if (record && step % 4 === 0) {
+            if (record && step % frameStride === 0 && frames.length < MAX_REPLAY_FRAMES) {
                 frames.push({
                     paddleX: paddle.position.x,
                     ball: {x: ball.position.x, y: ball.position.y},

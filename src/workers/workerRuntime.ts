@@ -22,9 +22,12 @@ export function setupEvolutionWorker<TData, TReplay>(definition: WorkerDefinitio
     let runToken = 0;
     let bestFitnessSeen = Number.NEGATIVE_INFINITY;
     let lastReplayFitness = Number.NEGATIVE_INFINITY;
+    let lastReplayGeneration = Number.NEGATIVE_INFINITY;
     let bestGenome: Genome | null = null;
     let lastStats: GenerationStats | null = null;
     let scheduledHandle: ReturnType<typeof scope.setTimeout> | null = null;
+    /** Avoid structured-cloning huge replays every generation when fitness crawls upward. */
+    const MIN_REPLAY_GENERATION_GAP = 5;
 
     function emit(event: WorkerEvent<TReplay>): void {
         scope.postMessage(event);
@@ -51,6 +54,7 @@ export function setupEvolutionWorker<TData, TReplay>(definition: WorkerDefinitio
         generation = 0;
         bestFitnessSeen = Number.NEGATIVE_INFINITY;
         lastReplayFitness = Number.NEGATIVE_INFINITY;
+        lastReplayGeneration = Number.NEGATIVE_INFINITY;
         bestGenome = null;
         lastStats = null;
     }
@@ -85,7 +89,10 @@ export function setupEvolutionWorker<TData, TReplay>(definition: WorkerDefinitio
             // Tiny survival/noise bumps used to regenerate full replays every few seconds and
             // restart snake/breaker animations while scores looked stuck. Relative to the current
             // fitness scale so it works for both game scores (~hundreds) and Sharpe ratios (~units).
+            // Also require a generation gap — full replays are huge (stock series / snake frames)
+            // and structured-clone via postMessage is a major memory spike.
             const REPLAY_IMPROVEMENT_EPS = Math.max(Math.abs(lastReplayFitness) * 0.02, 0.01);
+            const LARGE_REPLAY_IMPROVEMENT = Math.max(Math.abs(lastReplayFitness) * 0.12, 1);
             if (result.bestFitness > bestFitnessSeen) {
                 bestFitnessSeen = result.bestFitness;
                 bestGenome = [...result.bestGenome];
@@ -94,9 +101,13 @@ export function setupEvolutionWorker<TData, TReplay>(definition: WorkerDefinitio
                 bestFitnessSeen = result.bestFitness;
             }
 
-            const shouldRefreshReplay = lastReplayFitness === Number.NEGATIVE_INFINITY || result.bestFitness >= lastReplayFitness + REPLAY_IMPROVEMENT_EPS;
+            const improved = result.bestFitness >= lastReplayFitness + REPLAY_IMPROVEMENT_EPS;
+            const largeJump = result.bestFitness >= lastReplayFitness + LARGE_REPLAY_IMPROVEMENT;
+            const gapOk = generation - lastReplayGeneration >= MIN_REPLAY_GENERATION_GAP;
+            const shouldRefreshReplay = lastReplayFitness === Number.NEGATIVE_INFINITY || (improved && (gapOk || largeJump));
             if (shouldRefreshReplay) {
                 lastReplayFitness = result.bestFitness;
+                lastReplayGeneration = generation;
             }
 
             lastStats = {generation, ...result.stats};
@@ -139,6 +150,7 @@ export function setupEvolutionWorker<TData, TReplay>(definition: WorkerDefinitio
             },
         });
         lastReplayFitness = fitness;
+        lastReplayGeneration = generation;
     }
 
     scope.onmessage = (message: MessageEvent<WorkerCommand<TData>>) => {
@@ -155,6 +167,7 @@ export function setupEvolutionWorker<TData, TReplay>(definition: WorkerDefinitio
                 generation = 0;
                 bestFitnessSeen = Number.NEGATIVE_INFINITY;
                 lastReplayFitness = Number.NEGATIVE_INFINITY;
+                lastReplayGeneration = Number.NEGATIVE_INFINITY;
                 bestGenome = compatibleChampion ? [...compatibleChampion] : null;
                 lastStats = null;
             }

@@ -13,7 +13,8 @@ describe("block breaker simulation", () => {
     it("records a bounded champion replay", () => {
         const replay = createBreakerReplay(genome);
         expect(replay.frames.length).toBeGreaterThan(0);
-        expect(replay.steps).toBeLessThanOrEqual(600);
+        expect(replay.frames.length).toBeLessThanOrEqual(601);
+        expect(replay.steps).toBeLessThanOrEqual(2_400);
         expect(replay.bricksCleared).toBeGreaterThanOrEqual(0);
         expect(replay.frames.at(-1)?.terminal).toMatch(/lost|cleared|timeout/);
     });

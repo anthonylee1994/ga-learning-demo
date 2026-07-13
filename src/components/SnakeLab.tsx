@@ -54,7 +54,7 @@ export const SnakeLab = React.memo(() => {
                         genome="Brain.js 10 → 12 → 3 network 嘅所有 weights 與 biases"
                         inputs="前、左、右危險；食物相對位置；方向 one-hot；身體長度"
                         outputs="左轉、直行、右轉"
-                        termination="撞牆、撞自己、長時間食唔到食物，或 360 steps"
+                        termination="撞牆、撞自己、長時間食唔到食物，或 2,400 steps 上限"
                     />
                 </main>
                 <aside className="demo-sidebar">
@@ -73,7 +73,7 @@ interface DemoShellProps {
     children: React.ReactNode;
 }
 
-export const DemoShell = React.memo<DemoShellProps>((props) => {
+export const DemoShell = React.memo<DemoShellProps>(props => {
     return (
         <div className={`demo-view accent-${props.accent}`}>
             <header className="demo-header">

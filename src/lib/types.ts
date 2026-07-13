@@ -143,7 +143,6 @@ export interface IndicatorSnapshot {
     bollingerBandwidth: number;
     volatility: number;
     volumeZScore: number;
-    features: number[];
 }
 
 export interface TradeMarker {

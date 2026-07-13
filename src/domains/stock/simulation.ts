@@ -1,9 +1,11 @@
-import type {Genome, IndicatorSnapshot, MarketDataPoint, OptimizedStrategyRules, TradeMarker, TradingPoint, TradingReplay} from "../../lib/types";
+import type {Genome, IndicatorSnapshot, MarketDataPoint, OptimizedIndicatorParameters, OptimizedStrategyRules, TradeMarker, TradingPoint, TradingReplay} from "../../lib/types";
 import {calculateIndicators, splitIndicators} from "./indicators";
 import {decodeStockGenome} from "./strategyGenome";
 
 const STARTING_EQUITY = 10_000;
 const TRANSACTION_COST = 0.001;
+/** Keep a small LRU of indicator series — each entry is ~full market history. */
+const MAX_INDICATOR_CACHE = 24;
 
 /**
  * Cache indicator snapshots by the exact points array reference.
@@ -13,17 +15,19 @@ const TRANSACTION_COST = 0.001;
 let cachedPoints: MarketDataPoint[] | null = null;
 const cachedSnapshots = new Map<string, IndicatorSnapshot[]>();
 
-interface SegmentResult {
-    equityCurve: number[];
-    trades: TradeMarker[];
-    returns: number[];
+interface SegmentMetrics {
     totalReturn: number;
     sharpe: number;
     maxDrawdown: number;
     endingPosition: number;
 }
 
-export function getIndicatorSnapshots(points: MarketDataPoint[], parameters: ReturnType<typeof decodeStockGenome>["parameters"]): IndicatorSnapshot[] {
+interface SegmentResult extends SegmentMetrics {
+    equityCurve: number[];
+    trades: TradeMarker[];
+}
+
+export function getIndicatorSnapshots(points: MarketDataPoint[], parameters: OptimizedIndicatorParameters): IndicatorSnapshot[] {
     if (points !== cachedPoints) {
         cachedPoints = points;
         cachedSnapshots.clear();
@@ -31,11 +35,17 @@ export function getIndicatorSnapshots(points: MarketDataPoint[], parameters: Ret
     const key = Object.values(parameters).join(":");
     const cached = cachedSnapshots.get(key);
     if (cached) {
+        // Refresh LRU order.
+        cachedSnapshots.delete(key);
+        cachedSnapshots.set(key, cached);
         return cached;
     }
     const snapshots = calculateIndicators(points, parameters);
-    if (cachedSnapshots.size >= 256) {
-        cachedSnapshots.clear();
+    if (cachedSnapshots.size >= MAX_INDICATOR_CACHE) {
+        const oldest = cachedSnapshots.keys().next().value;
+        if (oldest !== undefined) {
+            cachedSnapshots.delete(oldest);
+        }
     }
     cachedSnapshots.set(key, snapshots);
     return snapshots;
@@ -49,21 +59,37 @@ export function evaluateStockGenome(genome: Genome, points: MarketDataPoint[]): 
         return -1_000;
     }
 
-    // Fitness: performance (return in excess of buy & hold) minus a max-drawdown penalty.
-    const result = simulateSegment(rules, train, 0);
-    const first = train[0]?.close ?? 1;
-    const last = train.at(-1)?.close ?? first;
-    const benchmarkReturn = last / first - 1;
-    const excessReturn = result.totalReturn - benchmarkReturn;
-    return excessReturn * 100 - result.maxDrawdown * 40;
+    // Robust fitness: score the two halves of the train window separately and keep the
+    // worst one. The old single 15-year score compounded the benchmark to +several hundred
+    // percent, so every "mostly cash" genome collapsed to the same huge negative number
+    // (no gradient) and "never sell" became an unbeatable local optimum. Annualizing keeps
+    // the scale sane, and min() across regimes punishes one-lucky-bull-run overfits.
+    const mid = Math.floor(train.length / 2);
+    const firstHalf = simulateSegmentMetrics(rules, train, 0, 0, mid + 1);
+    const secondHalf = simulateSegmentMetrics(rules, train, firstHalf.endingPosition, mid, train.length);
+    return Math.min(scoreSegment(firstHalf, train, 0, mid + 1), scoreSegment(secondHalf, train, mid, train.length));
+}
+
+/** Annualized excess return vs buy & hold, rewarded for Sharpe, penalized for drawdown. */
+function scoreSegment(metrics: SegmentMetrics, snapshots: IndicatorSnapshot[], start: number, end: number): number {
+    const first = snapshots[start]?.close ?? 1;
+    const last = snapshots[end - 1]?.close ?? first;
+    const years = Math.max((end - start) / 252, 0.5);
+    const strategyCagr = annualize(metrics.totalReturn, years);
+    const benchmarkCagr = annualize(last / first - 1, years);
+    return (strategyCagr - benchmarkCagr) * 100 + metrics.sharpe * 10 - metrics.maxDrawdown * 30;
+}
+
+function annualize(totalReturn: number, years: number): number {
+    return Math.pow(1 + Math.max(totalReturn, -0.99), 1 / years) - 1;
 }
 
 export function createTradingReplay(genome: Genome, points: MarketDataPoint[]): TradingReplay {
     const {parameters, rules} = decodeStockGenome(genome);
     const snapshots = getIndicatorSnapshots(points, parameters);
     const {train, test, splitIndex} = splitIndicators(snapshots);
-    const trainResult = simulateSegment(rules, train, 0);
-    const testResult = simulateSegment(rules, test, trainResult.endingPosition);
+    const trainResult = simulateSegmentReplay(rules, train, 0);
+    const testResult = simulateSegmentReplay(rules, test, trainResult.endingPosition);
     const trainCurve = trainResult.equityCurve;
     const testScale = trainCurve.at(-1) ?? STARTING_EQUITY;
     const normalizedTestCurve = testResult.equityCurve.map(value => (value / STARTING_EQUITY) * testScale);
@@ -159,10 +185,45 @@ export function decidePosition(snapshot: IndicatorSnapshot, rules: OptimizedStra
     return 1;
 }
 
-function simulateSegment(rules: OptimizedStrategyRules, snapshots: IndicatorSnapshot[], startingPosition: number): SegmentResult {
+/** Streaming fitness metrics over snapshots[start, end) — no equity curve / trade list allocations. */
+function simulateSegmentMetrics(rules: OptimizedStrategyRules, snapshots: IndicatorSnapshot[], startingPosition: number, start = 0, end = snapshots.length): SegmentMetrics {
     let equity = STARTING_EQUITY;
     let position = startingPosition;
-    const equityCurve = [equity];
+    let peak = equity;
+    let maxDrawdown = 0;
+    let returnSum = 0;
+    let returnSqSum = 0;
+    let returnCount = 0;
+
+    for (let index = start + 1; index < end; index += 1) {
+        const previous = snapshots[index - 1];
+        const current = snapshots[index];
+        const targetPosition = decidePosition(previous, rules, position);
+        const turnover = Math.abs(targetPosition - position);
+        const priceReturn = current.close / previous.close - 1;
+        const dailyReturn = position * priceReturn - turnover * TRANSACTION_COST;
+        equity *= Math.max(0.01, 1 + dailyReturn);
+        returnSum += dailyReturn;
+        returnSqSum += dailyReturn * dailyReturn;
+        returnCount += 1;
+        peak = Math.max(peak, equity);
+        maxDrawdown = Math.max(maxDrawdown, peak > 0 ? (peak - equity) / peak : 0);
+        position = targetPosition;
+    }
+
+    return {
+        totalReturn: equity / STARTING_EQUITY - 1,
+        sharpe: calculateSharpeFromMoments(returnSum, returnSqSum, returnCount),
+        maxDrawdown,
+        endingPosition: position,
+    };
+}
+
+function simulateSegmentReplay(rules: OptimizedStrategyRules, snapshots: IndicatorSnapshot[], startingPosition: number): SegmentResult {
+    let equity = STARTING_EQUITY;
+    let position = startingPosition;
+    const equityCurve = new Array<number>(snapshots.length);
+    equityCurve[0] = equity;
     const returns: number[] = [];
     const trades: TradeMarker[] = [];
 
@@ -175,7 +236,7 @@ function simulateSegment(rules: OptimizedStrategyRules, snapshots: IndicatorSnap
         const dailyReturn = position * priceReturn - turnover * TRANSACTION_COST;
         equity *= Math.max(0.01, 1 + dailyReturn);
         returns.push(dailyReturn);
-        equityCurve.push(equity);
+        equityCurve[index] = equity;
 
         if (targetPosition !== position) {
             trades.push({
@@ -190,7 +251,6 @@ function simulateSegment(rules: OptimizedStrategyRules, snapshots: IndicatorSnap
     return {
         equityCurve,
         trades,
-        returns,
         totalReturn: equity / STARTING_EQUITY - 1,
         sharpe: calculateSharpe(returns),
         maxDrawdown: calculateMaxDrawdown(equityCurve),
@@ -205,6 +265,16 @@ function calculateSharpe(returns: number[]): number {
     const average = returns.reduce((sum, value) => sum + value, 0) / returns.length;
     const variance = returns.reduce((sum, value) => sum + (value - average) ** 2, 0) / returns.length;
     const deviation = Math.sqrt(variance);
+    return deviation > 1e-9 ? (average / deviation) * Math.sqrt(252) : 0;
+}
+
+function calculateSharpeFromMoments(returnSum: number, returnSqSum: number, returnCount: number): number {
+    if (returnCount < 2) {
+        return 0;
+    }
+    const average = returnSum / returnCount;
+    const variance = returnSqSum / returnCount - average * average;
+    const deviation = Math.sqrt(Math.max(0, variance));
     return deviation > 1e-9 ? (average / deviation) * Math.sqrt(252) : 0;
 }
 

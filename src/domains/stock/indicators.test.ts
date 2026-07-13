@@ -6,7 +6,6 @@ describe("stock indicators", () => {
     it("calculates every requested signal after warm-up", () => {
         const rows = calculateIndicators(createMarketData(120));
         expect(rows).toHaveLength(70);
-        expect(rows[0].features).toHaveLength(13);
         expect(rows[0]).toEqual(
             expect.objectContaining({
                 smaFast: expect.any(Number),
@@ -20,7 +19,7 @@ describe("stock indicators", () => {
                 volumeZScore: expect.any(Number),
             })
         );
-        expect(rows.every(row => row.features.every(Number.isFinite))).toBe(true);
+        expect(rows.every(row => Number.isFinite(row.rsi) && Number.isFinite(row.volumeZScore))).toBe(true);
     });
 
     it("changes indicator output when the GA parameters change", () => {

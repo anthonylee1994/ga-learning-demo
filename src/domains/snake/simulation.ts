@@ -9,7 +9,11 @@ export const SNAKE_TOPOLOGY = {
 };
 
 const GRID_SIZE = 20;
-const MAX_STEPS = 99999;
+/** Hard cap so long-lived champions cannot run the worker / postMessage out of memory. */
+const MAX_STEPS = 2_400;
+/** Cap recorded frames (UI only needs a short playback, not every training step). */
+const MAX_REPLAY_FRAMES = 900;
+
 const DIRECTIONS: Point[] = [
     {x: 0, y: -1},
     {x: 1, y: 0},
@@ -36,7 +40,7 @@ export function createSnakeReplay(genome: Genome): SnakeReplay {
 function simulateSnake(genome: Genome, seed: number, record: boolean): SnakeResult {
     const random = createRandom(seed);
     const runNetwork = networkAdapter.createRunner(genome);
-    let snake: Point[] = [
+    const snake: Point[] = [
         {x: 10, y: 10},
         {x: 9, y: 10},
         {x: 8, y: 10},
@@ -49,10 +53,11 @@ function simulateSnake(genome: Genome, seed: number, record: boolean): SnakeResu
     let executedSteps = 0;
     let terminal: NonNullable<SnakeFrame["terminal"]> = "timeout";
     const frames: SnakeFrame[] = [];
+    const frameStride = record ? Math.max(1, Math.ceil(MAX_STEPS / MAX_REPLAY_FRAMES)) : 1;
 
     for (let step = 0; step < MAX_STEPS; step += 1) {
         executedSteps = step + 1;
-        if (record) {
+        if (record && step % frameStride === 0 && frames.length < MAX_REPLAY_FRAMES) {
             frames.push({snake: snake.map(part => ({...part})), food: {...food}, score, step});
         }
 
@@ -65,7 +70,10 @@ function simulateSnake(genome: Genome, seed: number, record: boolean): SnakeResu
             isDanger(head, DIRECTIONS[rightDirection], snake) ? 1 : -1,
             (food.x - head.x) / GRID_SIZE,
             (food.y - head.y) / GRID_SIZE,
-            ...DIRECTIONS.map((_, index) => (index === directionIndex ? 1 : -1)),
+            directionIndex === 0 ? 1 : -1,
+            directionIndex === 1 ? 1 : -1,
+            directionIndex === 2 ? 1 : -1,
+            directionIndex === 3 ? 1 : -1,
             snake.length / (GRID_SIZE * GRID_SIZE),
         ];
         const action = argMax(runNetwork(input));
@@ -80,7 +88,8 @@ function simulateSnake(genome: Genome, seed: number, record: boolean): SnakeResu
         const previousDistance = manhattanDistance(head, food);
         const nextDistance = manhattanDistance(nextHead, food);
         shapingReward += previousDistance > nextDistance ? 0.16 : -0.2;
-        snake = [nextHead, ...snake];
+        // Mutate in place — avoid O(length) spread allocation every step.
+        snake.unshift(nextHead);
         stepsSinceFood += 1;
 
         if (nextHead.x === food.x && nextHead.y === food.y) {

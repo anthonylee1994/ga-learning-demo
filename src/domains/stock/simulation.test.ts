@@ -46,7 +46,6 @@ describe("stock simulation", () => {
             bollingerBandwidth: 0.2,
             volatility: 0.2,
             volumeZScore: 0,
-            features: [],
         };
         const rules = {...DEFAULT_STRATEGY_RULES, minBuySignals: 3, minSellSignals: 3, useTrendFilter: true};
         expect(decidePosition(bullish, rules, 0)).toBe(1);
