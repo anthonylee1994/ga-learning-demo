@@ -14,13 +14,17 @@ export function createPineScript(genome: Genome, symbol: string, useNetwork = tr
     return `//@version=6
 strategy("EvoLab ${safeSymbol} Evolved Strategy", overlay=true, initial_capital=1000000, default_qty_type=strategy.percent_of_equity, default_qty_value=100, pyramiding=0, commission_type=strategy.commission.percent, commission_value=0.1, process_orders_on_close=true)
 
-// Optimized by EvoLab genetic algorithm — indicator periods + Brain.js network weights.
+// Optimized by EvoLab genetic algorithm — indicator periods, signal thresholds, and Brain.js network weights.
 // Validate this strategy on fresh out-of-sample data before considering any use.
 smaFastPeriod = ${parameters.smaFastPeriod}
 smaSlowPeriod = ${parameters.smaSlowPeriod}
 williamsPeriod = ${parameters.williamsPeriod}
+williamsBuyThreshold = ${parameters.williamsBuyThreshold}
+williamsSellThreshold = ${parameters.williamsSellThreshold}
 rocPeriod = ${parameters.rocPeriod}
 rsiPeriod = ${parameters.rsiPeriod}
+rsiBuyThreshold = ${parameters.rsiBuyThreshold}
+rsiSellThreshold = ${parameters.rsiSellThreshold}
 macdFastPeriod = ${parameters.macdFastPeriod}
 macdSlowPeriod = ${parameters.macdSlowPeriod}
 macdSignalPeriod = ${parameters.macdSignalPeriod}
@@ -100,6 +104,10 @@ function createNetworkDecisionLines(networkGenome: Genome): string[] {
         "f10 = clamp(volumeZScore / 3.0)",
         "f11 = clamp((newHighRatio - 0.95) * 20.0)",
         "f12 = strategy.position_size > 0 ? 1.0 : -1.0",
+        "f13 = clamp((rsiBuyThreshold - rsi) / 20.0)",
+        "f14 = clamp((rsi - rsiSellThreshold) / 20.0)",
+        "f15 = clamp((williamsBuyThreshold - williamsR) / 25.0)",
+        "f16 = clamp((williamsR - williamsSellThreshold) / 25.0)",
         "",
         ...createLayerLines(hiddenNames, inputNames, layers[0]),
         ...createLayerLines(outputNames, hiddenNames, layers[1], false),
@@ -109,15 +117,16 @@ function createNetworkDecisionLines(networkGenome: Genome): string[] {
     ];
 }
 
-/** Rule mode（唔用 NN）：三票取二，同 simulation.ts decidePositionFromRules 保持一致。 */
+/** Rule mode（唔用 NN）：threshold 買賣規則，同 simulation.ts decidePositionFromRules 保持一致。 */
 function createRuleDecisionLines(): string[] {
     return [
         "trendVote = smaFast > smaSlow ? 1 : 0",
-        "momentumVote = rsi > 50.0 ? 1 : 0",
         "macdVote = macdLine > macdSignal ? 1 : 0",
-        "votes = trendVote + momentumVote + macdVote",
-        "buySignal = ready and votes >= 2",
-        "sellSignal = ready and votes <= 1",
+        "rsiBuyVote = rsi <= rsiBuyThreshold ? 1 : 0",
+        "williamsBuyVote = williamsR <= williamsBuyThreshold ? 1 : 0",
+        "buyVotes = trendVote + macdVote + rsiBuyVote + williamsBuyVote",
+        "buySignal = ready and buyVotes >= 2",
+        "sellSignal = ready and (rsi >= rsiSellThreshold or williamsR >= williamsSellThreshold)",
     ];
 }
 

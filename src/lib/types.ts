@@ -101,8 +101,12 @@ export interface OptimizedIndicatorParameters {
     smaFastPeriod: number;
     smaSlowPeriod: number;
     williamsPeriod: number;
+    williamsBuyThreshold: number;
+    williamsSellThreshold: number;
     rocPeriod: number;
     rsiPeriod: number;
+    rsiBuyThreshold: number;
+    rsiSellThreshold: number;
     macdFastPeriod: number;
     macdSlowPeriod: number;
     macdSignalPeriod: number;

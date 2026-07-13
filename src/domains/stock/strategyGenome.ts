@@ -2,24 +2,24 @@ import {calculateGeneCount} from "../../lib/neuralNetwork";
 import type {Genome, NetworkTopology, OptimizedIndicatorParameters} from "../../lib/types";
 
 /**
- * Normalized indicator features + current position → buy / hold / sell.
+ * Normalized indicator features, tuned threshold distances, and current position → buy / hold / sell.
  * Thin decision head on purpose: the GA is steered to spend most of its search
  * budget on indicator periods (see STOCK_MUTATION_PROFILE), not a fat hidden net.
  */
 export const STOCK_TOPOLOGY: NetworkTopology = {
-    inputSize: 13,
+    inputSize: 17,
     hiddenLayers: [4],
     outputSize: 3,
 };
 
-/** Indicator period genes (0–12) + brain.js weights/biases. */
-export const STOCK_PARAMETER_GENE_COUNT = 13;
+/** Indicator period/threshold genes (0–16) + brain.js weights/biases. */
+export const STOCK_PARAMETER_GENE_COUNT = 17;
 export const STOCK_NETWORK_GENE_COUNT = calculateGeneCount(STOCK_TOPOLOGY);
 export const STOCK_GENE_COUNT = STOCK_PARAMETER_GENE_COUNT + STOCK_NETWORK_GENE_COUNT;
 
 /**
- * Period-first mutation: indicator genes flip ~3× more often / harder than the NN tail.
- * Immigrants re-roll only periods so a stable decision head is reused across setups.
+ * Indicator-first mutation: period/threshold genes flip ~3× more often / harder than the NN tail.
+ * Immigrants re-roll only indicator parameters so a stable decision head is reused across setups.
  */
 export const STOCK_MUTATION_PROFILE = {
     headGeneCount: STOCK_PARAMETER_GENE_COUNT,
@@ -34,8 +34,12 @@ export const DEFAULT_INDICATOR_PARAMETERS: OptimizedIndicatorParameters = {
     smaFastPeriod: 20,
     smaSlowPeriod: 50,
     williamsPeriod: 14,
+    williamsBuyThreshold: -80,
+    williamsSellThreshold: -20,
     rocPeriod: 12,
     rsiPeriod: 14,
+    rsiBuyThreshold: 30,
+    rsiSellThreshold: 70,
     macdFastPeriod: 12,
     macdSlowPeriod: 26,
     macdSignalPeriod: 9,
@@ -67,8 +71,12 @@ export function decodeStockGenome(genome: Genome): DecodedStockGenome {
             smaFastPeriod,
             smaSlowPeriod,
             williamsPeriod: value(2, 5, 40),
+            williamsBuyThreshold: value(15, -95, -55),
+            williamsSellThreshold: value(16, -45, -5),
             rocPeriod: value(3, 3, 40),
             rsiPeriod: value(4, 5, 40),
+            rsiBuyThreshold: value(13, 10, 45),
+            rsiSellThreshold: value(14, 55, 90),
             macdFastPeriod,
             macdSlowPeriod,
             macdSignalPeriod: value(7, 3, 15),
@@ -103,19 +111,91 @@ export function encodeGene(value: number, min: number, max: number): number {
 export function createStockSeedGenomes(): Genome[] {
     return [
         seedGenome(
-            {smaFast: 10, smaSlow: 40, williams: 14, roc: 12, rsi: 14, macdFast: 12, macdSlow: 26, macdSignal: 9, bollinger: 20, bollingerMult: 2, volatility: 20, volumeZ: 20, newHigh: 20},
+            {
+                smaFast: 10,
+                smaSlow: 40,
+                williams: 14,
+                williamsBuy: -80,
+                williamsSell: -20,
+                roc: 12,
+                rsi: 14,
+                rsiBuy: 30,
+                rsiSell: 70,
+                macdFast: 12,
+                macdSlow: 26,
+                macdSignal: 9,
+                bollinger: 20,
+                bollingerMult: 2,
+                volatility: 20,
+                volumeZ: 20,
+                newHigh: 20,
+            },
             {buyBias: 1.2, holdBias: 0.2, sellBias: -0.8, weightScale: 0.05}
         ),
         seedGenome(
-            {smaFast: 20, smaSlow: 50, williams: 14, roc: 12, rsi: 14, macdFast: 12, macdSlow: 26, macdSignal: 9, bollinger: 20, bollingerMult: 2, volatility: 20, volumeZ: 20, newHigh: 55},
+            {
+                smaFast: 20,
+                smaSlow: 50,
+                williams: 14,
+                williamsBuy: -80,
+                williamsSell: -20,
+                roc: 12,
+                rsi: 14,
+                rsiBuy: 30,
+                rsiSell: 70,
+                macdFast: 12,
+                macdSlow: 26,
+                macdSignal: 9,
+                bollinger: 20,
+                bollingerMult: 2,
+                volatility: 20,
+                volumeZ: 20,
+                newHigh: 55,
+            },
             {buyBias: 0.4, holdBias: 0.1, sellBias: -0.2, weightScale: 0.12}
         ),
         seedGenome(
-            {smaFast: 12, smaSlow: 36, williams: 14, roc: 10, rsi: 14, macdFast: 8, macdSlow: 21, macdSignal: 5, bollinger: 20, bollingerMult: 2.2, volatility: 14, volumeZ: 20, newHigh: 40},
+            {
+                smaFast: 12,
+                smaSlow: 36,
+                williams: 14,
+                williamsBuy: -85,
+                williamsSell: -15,
+                roc: 10,
+                rsi: 14,
+                rsiBuy: 25,
+                rsiSell: 75,
+                macdFast: 8,
+                macdSlow: 21,
+                macdSignal: 5,
+                bollinger: 20,
+                bollingerMult: 2.2,
+                volatility: 14,
+                volumeZ: 20,
+                newHigh: 40,
+            },
             {buyBias: 0.1, holdBias: 0.3, sellBias: 0.1, weightScale: 0.18}
         ),
         seedGenome(
-            {smaFast: 30, smaSlow: 100, williams: 21, roc: 20, rsi: 21, macdFast: 12, macdSlow: 26, macdSignal: 9, bollinger: 30, bollingerMult: 2.5, volatility: 30, volumeZ: 30, newHigh: 100},
+            {
+                smaFast: 30,
+                smaSlow: 100,
+                williams: 21,
+                williamsBuy: -75,
+                williamsSell: -25,
+                roc: 20,
+                rsi: 21,
+                rsiBuy: 35,
+                rsiSell: 65,
+                macdFast: 12,
+                macdSlow: 26,
+                macdSignal: 9,
+                bollinger: 30,
+                bollingerMult: 2.5,
+                volatility: 30,
+                volumeZ: 30,
+                newHigh: 100,
+            },
             {buyBias: 0.8, holdBias: 0, sellBias: -0.4, weightScale: 0.08}
         ),
     ];
@@ -141,8 +221,12 @@ function seedGenome(
         smaFast: number;
         smaSlow: number;
         williams: number;
+        williamsBuy: number;
+        williamsSell: number;
         roc: number;
         rsi: number;
+        rsiBuy: number;
+        rsiSell: number;
         macdFast: number;
         macdSlow: number;
         macdSignal: number;
@@ -168,6 +252,10 @@ function seedGenome(
     genome[10] = encodeGene(periods.volatility, 10, 60);
     genome[11] = encodeGene(periods.volumeZ, 10, 60);
     genome[12] = encodeGene(periods.newHigh, 10, 120);
+    genome[13] = encodeGene(periods.rsiBuy, 10, 45);
+    genome[14] = encodeGene(periods.rsiSell, 55, 90);
+    genome[15] = encodeGene(periods.williamsBuy, -95, -55);
+    genome[16] = encodeGene(periods.williamsSell, -45, -5);
 
     // Deterministic small weights + explicit output biases (buy / hold / sell).
     const hidden = STOCK_TOPOLOGY.hiddenLayers[0];

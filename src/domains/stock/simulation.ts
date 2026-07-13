@@ -41,7 +41,7 @@ export function getIndicatorColumns(points: MarketDataPoint[], parameters: Optim
         cachedPoints = points;
         cachedColumns.clear();
     }
-    const key = Object.values(parameters).join(":");
+    const key = createIndicatorCacheKey(parameters);
     const cached = cachedColumns.get(key);
     if (cached) {
         // Refresh LRU order.
@@ -72,7 +72,7 @@ export function evaluateStockGenome(genome: Genome, points: MarketDataPoint[], u
         return -1_000;
     }
 
-    const decide = createPositionDecider(columns, networkGenome, useNetwork);
+    const decide = createPositionDecider(columns, parameters, networkGenome, useNetwork);
     const mid = Math.floor(trainLength / 2);
     const full = simulateColumnMetrics(decide, columns, 0, 0, trainLength);
     const firstHalf = simulateColumnMetrics(decide, columns, 0, 0, mid + 1);
@@ -117,7 +117,7 @@ function meanSquare(genome: Genome): number {
 export function createTradingReplay(genome: Genome, points: MarketDataPoint[], useNetwork = true): TradingReplay {
     const {parameters, networkGenome} = decodeStockGenome(genome);
     const columns = getIndicatorColumns(points, parameters);
-    const decide = createPositionDecider(columns, networkGenome, useNetwork);
+    const decide = createPositionDecider(columns, parameters, networkGenome, useNetwork);
     const splitIndex = Math.max(2, Math.floor(columns.length * 0.8));
     const trainResult = simulateColumnReplay(decide, columns, points, 0, splitIndex, 0);
     const testResult = simulateColumnReplay(decide, columns, points, Math.max(0, splitIndex - 1), columns.length, trainResult.endingPosition);
@@ -187,7 +187,13 @@ export function decidePositionFromNetwork(output: number[], position: number): n
 /**
  * Clamp raw indicator ratios into roughly [-1, 1] so tanh units see consistent scale.
  */
-export function buildNetworkFeatures(columns: IndicatorColumns, index: number, position: number, out: number[] = new Array(STOCK_TOPOLOGY.inputSize)): number[] {
+export function buildNetworkFeatures(
+    columns: IndicatorColumns,
+    index: number,
+    position: number,
+    parameters: OptimizedIndicatorParameters,
+    out: number[] = new Array(STOCK_TOPOLOGY.inputSize)
+): number[] {
     const close = Math.max(columns.close[index], 1e-9);
     const smaFast = Math.max(columns.smaFast[index], 1e-9);
     const smaSlow = Math.max(columns.smaSlow[index], 1e-9);
@@ -205,29 +211,55 @@ export function buildNetworkFeatures(columns: IndicatorColumns, index: number, p
     // close / N-day high ≈ 1 at breakout; map ~[0.9, 1.0] into roughly [-1, 1].
     out[11] = clamp((columns.newHighRatio[index] - 0.95) * 20);
     out[12] = position > 0 ? 1 : -1;
+    out[13] = clamp((parameters.rsiBuyThreshold - columns.rsi[index]) / 20);
+    out[14] = clamp((columns.rsi[index] - parameters.rsiSellThreshold) / 20);
+    out[15] = clamp((parameters.williamsBuyThreshold - columns.williamsR[index]) / 25);
+    out[16] = clamp((columns.williamsR[index] - parameters.williamsSellThreshold) / 25);
     return out;
 }
 
 /**
- * NN 關咗時嘅經典基準：三票取二（trend / momentum / MACD），全部用進化出嚟嘅 period。
- * GA 剩返 13 個 period genes 有效——直接同 NN decision head 比較邊個搵錢。
+ * NN 關咗時嘅 threshold 基準：買入要 trend / MACD / RSI oversold / Williams oversold 四票取二；
+ * 持倉後 RSI 或 Williams 任一升穿進化出嚟嘅 sell threshold 就離場。
  */
-export function decidePositionFromRules(columns: IndicatorColumns, index: number): number {
+export function decidePositionFromRules(columns: IndicatorColumns, index: number, position: number, parameters: OptimizedIndicatorParameters): number {
+    if (position > 0 && (columns.rsi[index] >= parameters.rsiSellThreshold || columns.williamsR[index] >= parameters.williamsSellThreshold)) {
+        return 0;
+    }
     const trendVote = columns.smaFast[index] > columns.smaSlow[index] ? 1 : 0;
-    const momentumVote = columns.rsi[index] > 50 ? 1 : 0;
     const macdVote = columns.macd[index] > columns.macdSignal[index] ? 1 : 0;
-    return trendVote + momentumVote + macdVote >= 2 ? 1 : 0;
+    const rsiBuyVote = columns.rsi[index] <= parameters.rsiBuyThreshold ? 1 : 0;
+    const williamsBuyVote = columns.williamsR[index] <= parameters.williamsBuyThreshold ? 1 : 0;
+    return trendVote + macdVote + rsiBuyVote + williamsBuyVote >= 2 ? 1 : position;
 }
 
 type PositionDecider = (index: number, position: number) => number;
 
-function createPositionDecider(columns: IndicatorColumns, networkGenome: Genome, useNetwork: boolean): PositionDecider {
+function createPositionDecider(columns: IndicatorColumns, parameters: OptimizedIndicatorParameters, networkGenome: Genome, useNetwork: boolean): PositionDecider {
     if (!useNetwork) {
-        return index => decidePositionFromRules(columns, index);
+        return (index, position) => decidePositionFromRules(columns, index, position, parameters);
     }
     const runNetwork = networkAdapter.createRunner(networkGenome);
     const features = new Array<number>(STOCK_TOPOLOGY.inputSize);
-    return (index, position) => decidePositionFromNetwork(runNetwork(buildNetworkFeatures(columns, index, position, features)), position);
+    return (index, position) => decidePositionFromNetwork(runNetwork(buildNetworkFeatures(columns, index, position, parameters, features)), position);
+}
+
+function createIndicatorCacheKey(parameters: OptimizedIndicatorParameters): string {
+    return [
+        parameters.smaFastPeriod,
+        parameters.smaSlowPeriod,
+        parameters.williamsPeriod,
+        parameters.rocPeriod,
+        parameters.rsiPeriod,
+        parameters.macdFastPeriod,
+        parameters.macdSlowPeriod,
+        parameters.macdSignalPeriod,
+        parameters.bollingerPeriod,
+        parameters.bollingerMultiplier,
+        parameters.volatilityPeriod,
+        parameters.volumeZScorePeriod,
+        parameters.newHighPeriod,
+    ].join(":");
 }
 
 function simulateColumnMetrics(decide: PositionDecider, columns: IndicatorColumns, startingPosition: number, start: number, end: number): SegmentMetrics {

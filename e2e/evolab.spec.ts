@@ -59,17 +59,24 @@ test("desktop workspace runs all three evolution demos", async ({page}, testInfo
 
     await page.getByRole("button", {name: "Stock Trading"}).click();
     await expect(page).toHaveURL(/\/stock$/);
-    await expect(page.getByText(/QQQ · .* sessions · USD/)).toBeVisible({timeout: 30_000});
+    await expect(page.locator(".market-zoom-brush")).toBeVisible({timeout: 30_000});
     await page.getByRole("textbox", {name: "股票代號"}).fill("AAPL");
     await page.getByRole("button", {name: "載入 Ticker"}).click();
-    await expect(page.getByText(/AAPL · .* sessions · USD/)).toBeVisible({timeout: 30_000});
-    await expect(page.getByText("AAPL · Daily")).toBeVisible();
+    await expect(page.getByText("AAPL · Daily")).toBeVisible({timeout: 30_000});
     await expect(page.locator(".market-zoom-brush")).toBeVisible();
     await page.getByRole("button", {name: "開始"}).click();
     await expectGeneration(page, 45_000);
     await expect(page.getByRole("heading", {name: "Best indicator parameters"})).toBeVisible();
-    await page.getByLabel("技術指標").selectOption("risk");
     const marketPanel = page.locator(".market-panel").filter({has: page.getByRole("heading", {name: "市場與交易訊號"})});
+    await expect(page.getByText(/買 ≤ \d+ · 賣 ≥ \d+/).first()).toBeVisible();
+    await expect(page.getByText(/買 ≤ -\d+ · 賣 ≥ -\d+/)).toBeVisible();
+    await page.getByLabel("技術指標").selectOption("momentum");
+    await expect(marketPanel.getByText(/RSI 買 \d+/)).toBeVisible();
+    await expect(marketPanel.getByText(/RSI 賣 \d+/)).toBeVisible();
+    await expect(marketPanel.getByText(/W%R 買 -\d+/)).toBeVisible();
+    await expect(marketPanel.getByText(/W%R 賣 -\d+/)).toBeVisible();
+    await page.screenshot({fullPage: true, path: testInfo.outputPath("stock-thresholds-desktop.png")});
+    await page.getByLabel("技術指標").selectOption("risk");
     await expect(marketPanel.getByText("Volatility", {exact: true})).toBeVisible();
     await expect(marketPanel.getByText("Volume Z", {exact: true})).toBeVisible();
     await expect(page.getByText("Strategy vs Buy & Hold")).toBeVisible();
@@ -82,6 +89,10 @@ test("desktop workspace runs all three evolution demos", async ({page}, testInfo
     const pineScript = await readFile(downloadPath!, "utf8");
     expect(pineScript).toContain("//@version=6");
     expect(pineScript).toContain("rsiPeriod =");
+    expect(pineScript).toContain("rsiBuyThreshold =");
+    expect(pineScript).toContain("rsiSellThreshold =");
+    expect(pineScript).toContain("williamsBuyThreshold =");
+    expect(pineScript).toContain("williamsSellThreshold =");
     expect(pineScript).toContain("bollingerPeriod =");
     expect(pineScript).toContain("h1_0 = tanh(");
     expect(pineScript).not.toContain("math.tanh");
@@ -102,6 +113,46 @@ test("routing supports direct links and browser history", async ({page}, testInf
     await page.goBack();
     await expect(page).toHaveURL(/\/snake$/);
     await expect(page.getByRole("heading", {name: "Snake Neuroevolution"})).toBeVisible();
+});
+
+test("stock evolution tunes RSI and Williams thresholds", async ({page}, testInfo) => {
+    test.skip(testInfo.project.name !== "desktop", "Desktop-only stock training flow");
+    const consoleErrors: string[] = [];
+    page.on("console", message => {
+        if (message.type() === "error") {
+            consoleErrors.push(message.text());
+        }
+    });
+    page.on("pageerror", error => consoleErrors.push(error.message));
+
+    await page.goto("/stock");
+    await expect(page.locator(".market-zoom-brush")).toBeVisible({timeout: 30_000});
+    await page.getByRole("button", {name: "開始"}).click();
+    await expectGeneration(page, 45_000);
+    await expect(page.getByRole("heading", {name: "Best indicator parameters"})).toBeVisible();
+    await expect(page.getByText(/買 ≤ \d+ · 賣 ≥ \d+/).first()).toBeVisible();
+    await expect(page.getByText(/買 ≤ -\d+ · 賣 ≥ -\d+/)).toBeVisible();
+
+    const marketPanel = page.locator(".market-panel").filter({has: page.getByRole("heading", {name: "市場與交易訊號"})});
+    await page.getByLabel("技術指標").selectOption("momentum");
+    await expect(marketPanel.getByText(/RSI 買 \d+/)).toBeVisible();
+    await expect(marketPanel.getByText(/RSI 賣 \d+/)).toBeVisible();
+    await expect(marketPanel.getByText(/W%R 買 -\d+/)).toBeVisible();
+    await expect(marketPanel.getByText(/W%R 賣 -\d+/)).toBeVisible();
+    await page.getByRole("button", {name: "暫停"}).click();
+    await page.screenshot({fullPage: true, path: testInfo.outputPath("stock-thresholds-desktop.png")});
+
+    const downloadPromise = page.waitForEvent("download");
+    await page.getByRole("button", {name: "匯出 Pine Script"}).click();
+    const download = await downloadPromise;
+    const downloadPath = await download.path();
+    expect(downloadPath).not.toBeNull();
+    const pineScript = await readFile(downloadPath!, "utf8");
+    expect(pineScript).toContain("rsiBuyThreshold =");
+    expect(pineScript).toContain("rsiSellThreshold =");
+    expect(pineScript).toContain("williamsBuyThreshold =");
+    expect(pineScript).toContain("williamsSellThreshold =");
+    expect(consoleErrors).toEqual([]);
 });
 
 test("mobile workspace keeps navigation and theory readable", async ({page}, testInfo) => {

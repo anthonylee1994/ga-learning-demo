@@ -14,7 +14,7 @@ import {DemoShell} from "./SnakeLab";
 
 const DEFAULT_CONFIG: GAConfig = {
     populationSize: 48,
-    // Base rates; stock worker multiplies period genes ~3× and NN genes ~0.35×.
+    // Base rates; stock worker multiplies indicator genes ~3× and NN genes ~0.35×.
     mutationRate: 0.12,
     mutationScale: 0.22,
     eliteRate: 0.08,
@@ -132,7 +132,7 @@ export const StockLab = React.memo(() => {
     return (
         <DemoShell
             accent="stock"
-            description="以 GA 為主進化技術指標週期（SMA / RSI / MACD / Bollinger / N-day High…），搭配一個好細嘅 Brain.js decision head（buy / hold / sell）。mutation 會優先擾動 period genes；80% 訓練、20% out-of-sample。"
+            description="以 GA 為主進化技術指標週期同 RSI / Williams %R 買賣 thresholds，搭配一個好細嘅 Brain.js decision head（buy / hold / sell）。mutation 會優先擾動 indicator genes；80% 訓練、20% out-of-sample。"
             icon={<CandlestickChart size={20} strokeWidth={1.5} />}
             title="Stock Trading Evolution"
         >
@@ -170,8 +170,8 @@ export const StockLab = React.memo(() => {
                         <section className="optimized-panel">
                             <div className="panel-heading">
                                 <div>
-                                    <p className="eyebrow">Champion genome · period-first</p>
-                                    <h3>Best indicator periods</h3>
+                                    <p className="eyebrow">Champion genome · indicator-first</p>
+                                    <h3>Best indicator parameters</h3>
                                 </div>
                                 <Button onPress={() => downloadPineScript(demo.champion!.genome, marketData?.symbol ?? "QQQ", useNetwork)} size="sm" variant="secondary">
                                     <FileDown size={15} strokeWidth={1.5} />
@@ -180,16 +180,16 @@ export const StockLab = React.memo(() => {
                             </div>
                             <div className="parameter-grid">
                                 <ParameterValue label="SMA" value={`${parameters.smaFastPeriod} / ${parameters.smaSlowPeriod}`} />
-                                <ParameterValue label="RSI period" value={String(parameters.rsiPeriod)} />
+                                <ParameterValue label="RSI" value={`${parameters.rsiPeriod}d · 買 ≤ ${parameters.rsiBuyThreshold} · 賣 ≥ ${parameters.rsiSellThreshold}`} />
                                 <ParameterValue label="Bollinger" value={`${parameters.bollingerPeriod} / ${parameters.bollingerMultiplier.toFixed(2)}σ`} />
                                 <ParameterValue label="ROC period" value={String(parameters.rocPeriod)} />
-                                <ParameterValue label="Williams %R" value={String(parameters.williamsPeriod)} />
+                                <ParameterValue label="Williams %R" value={`${parameters.williamsPeriod}d · 買 ≤ ${parameters.williamsBuyThreshold} · 賣 ≥ ${parameters.williamsSellThreshold}`} />
                                 <ParameterValue label="MACD" value={`${parameters.macdFastPeriod} / ${parameters.macdSlowPeriod} / ${parameters.macdSignalPeriod}`} />
                                 <ParameterValue label="Volatility" value={String(parameters.volatilityPeriod)} />
                                 <ParameterValue label="Volume Z" value={String(parameters.volumeZScorePeriod)} />
                                 <ParameterValue label="N-day High" value={String(parameters.newHighPeriod)} />
-                                <ParameterValue label="Period genes" value={`${STOCK_PARAMETER_GENE_COUNT}（mutation ×3）`} />
-                                <ParameterValue label="Decision head" value={useNetwork ? describeStockNetwork() : "規則投票 2/3（SMA / RSI / MACD）"} />
+                                <ParameterValue label="Indicator genes" value={`${STOCK_PARAMETER_GENE_COUNT}（mutation ×3）`} />
+                                <ParameterValue label="Decision head" value={useNetwork ? describeStockNetwork() : "買入 2/4；RSI / Williams 任一過熱賣出"} />
                                 <ParameterValue label="NN genes" value={useNetwork ? `${STOCK_NETWORK_GENE_COUNT}（mutation ×0.35）` : `${STOCK_NETWORK_GENE_COUNT}（rule mode 未使用）`} />
                             </div>
                         </section>
@@ -243,14 +243,14 @@ export const StockLab = React.memo(() => {
                     <FitnessChart history={demo.history} />
                     <ApplicationPanel
                         fitness="70% 全段 train + 30% 最差半段：CAGR×100 + Sharpe×15 − maxDD×40 + 超額回報×35 − 較重 L2；鼓勵靠 period 組合賺錢而唔係肥 NN"
-                        genome={`${STOCK_PARAMETER_GENE_COUNT} 個 period genes（mutation ×3）+ ${STOCK_NETWORK_GENE_COUNT} 個細 decision-head weights（mutation ×0.35；${describeStockNetwork()}）`}
-                        inputs="13 維：價格相對 SMA、Williams、ROC、RSI、MACD、Bollinger %B、波動、成交量 Z、N 日新高 ratio、持倉狀態（全部 normalize 到約 ±1）"
+                        genome={`${STOCK_PARAMETER_GENE_COUNT} 個 indicator period / threshold genes（mutation ×3）+ ${STOCK_NETWORK_GENE_COUNT} 個細 decision-head weights（mutation ×0.35；${describeStockNetwork()}）`}
+                        inputs="17 維：價格相對 SMA、Williams、ROC、RSI、MACD、Bollinger %B、波動、成交量 Z、N 日新高 ratio、持倉狀態，加 RSI / Williams 距離買賣 thresholds（全部 normalize 到約 ±1）"
                         outputs={
                             useNetwork
-                                ? "薄 hidden layer argmax → buy（全倉 long）/ hold / sell（全現金）；搜尋主力喺 indicator periods，唔用 backprop"
-                                : "經典規則三票取二：SMA fast > slow、RSI > 50、MACD > signal → 全倉 long，否則全現金；GA 淨係進化 period genes"
+                                ? "薄 hidden layer argmax → buy（全倉 long）/ hold / sell（全現金）；搜尋主力喺 indicator periods 同 thresholds，唔用 backprop"
+                                : "買入四票取二：SMA trend、MACD、RSI oversold、Williams oversold；持倉後 RSI 或 Williams 任一升穿 sell threshold 就全現金"
                         }
-                        termination="用頭 80% 數據做 selection；最後 20% test data 絕不參與訓練；每代 immigrant 只重抽 period genes"
+                        termination="用頭 80% 數據做 selection；最後 20% test data 絕不參與訓練；每代 immigrant 只重抽 indicator genes"
                     />
                 </main>
                 <aside className="demo-sidebar">
@@ -348,6 +348,42 @@ const MarketChart = React.memo<MarketChartProps>(
                             <Line dataKey="rsi" dot={false} isAnimationActive={false} name="RSI" stroke="#63c6a1" strokeWidth={1} yAxisId="indicator" />
                             <Line dataKey="williamsR" dot={false} isAnimationActive={false} name="Williams %R" stroke="#e36f5b" strokeWidth={1} yAxisId="indicator" />
                             <Line dataKey="roc" dot={false} isAnimationActive={false} name="ROC" stroke="#b38bd4" strokeWidth={1} yAxisId="indicator" />
+                            {parameters ? (
+                                <React.Fragment>
+                                    <ReferenceLine
+                                        label={{value: `RSI 買 ${parameters.rsiBuyThreshold}`, fill: "#63c6a1", fontSize: 10, position: "insideTopRight"}}
+                                        stroke="#63c6a1"
+                                        strokeDasharray="4 4"
+                                        strokeOpacity={0.55}
+                                        y={parameters.rsiBuyThreshold}
+                                        yAxisId="indicator"
+                                    />
+                                    <ReferenceLine
+                                        label={{value: `RSI 賣 ${parameters.rsiSellThreshold}`, fill: "#63c6a1", fontSize: 10, position: "insideTopRight"}}
+                                        stroke="#63c6a1"
+                                        strokeDasharray="4 4"
+                                        strokeOpacity={0.55}
+                                        y={parameters.rsiSellThreshold}
+                                        yAxisId="indicator"
+                                    />
+                                    <ReferenceLine
+                                        label={{value: `W%R 買 ${parameters.williamsBuyThreshold}`, fill: "#e36f5b", fontSize: 10, position: "insideTopRight"}}
+                                        stroke="#e36f5b"
+                                        strokeDasharray="2 4"
+                                        strokeOpacity={0.55}
+                                        y={parameters.williamsBuyThreshold}
+                                        yAxisId="indicator"
+                                    />
+                                    <ReferenceLine
+                                        label={{value: `W%R 賣 ${parameters.williamsSellThreshold}`, fill: "#e36f5b", fontSize: 10, position: "insideTopRight"}}
+                                        stroke="#e36f5b"
+                                        strokeDasharray="2 4"
+                                        strokeOpacity={0.55}
+                                        y={parameters.williamsSellThreshold}
+                                        yAxisId="indicator"
+                                    />
+                                </React.Fragment>
+                            ) : null}
                         </React.Fragment>
                     ) : null}
                     {indicatorView === "macd" && hasReplay ? (

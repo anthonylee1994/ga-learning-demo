@@ -16,6 +16,16 @@ describe("stock strategy genome", () => {
         expect(decoded.parameters.smaSlowPeriod).toBeGreaterThan(decoded.parameters.smaFastPeriod);
         expect(decoded.parameters.rsiPeriod).toBeGreaterThanOrEqual(5);
         expect(decoded.parameters.rsiPeriod).toBeLessThanOrEqual(40);
+        expect(decoded.parameters.rsiBuyThreshold).toBeGreaterThanOrEqual(10);
+        expect(decoded.parameters.rsiBuyThreshold).toBeLessThanOrEqual(45);
+        expect(decoded.parameters.rsiSellThreshold).toBeGreaterThanOrEqual(55);
+        expect(decoded.parameters.rsiSellThreshold).toBeLessThanOrEqual(90);
+        expect(decoded.parameters.rsiBuyThreshold).toBeLessThan(decoded.parameters.rsiSellThreshold);
+        expect(decoded.parameters.williamsBuyThreshold).toBeGreaterThanOrEqual(-95);
+        expect(decoded.parameters.williamsBuyThreshold).toBeLessThanOrEqual(-55);
+        expect(decoded.parameters.williamsSellThreshold).toBeGreaterThanOrEqual(-45);
+        expect(decoded.parameters.williamsSellThreshold).toBeLessThanOrEqual(-5);
+        expect(decoded.parameters.williamsBuyThreshold).toBeLessThan(decoded.parameters.williamsSellThreshold);
         expect(decoded.parameters.bollingerMultiplier).toBeGreaterThanOrEqual(1);
         expect(decoded.parameters.bollingerMultiplier).toBeLessThanOrEqual(3.5);
         expect(decoded.parameters.macdSlowPeriod).toBeGreaterThan(decoded.parameters.macdFastPeriod);

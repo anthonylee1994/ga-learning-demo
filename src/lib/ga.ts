@@ -9,7 +9,7 @@ export interface EvolutionResult {
 }
 
 /**
- * Optional head/tail mutation bias. Stock lab uses this so indicator-period genes
+ * Optional head/tail mutation bias. Stock lab uses this so indicator parameter genes
  * explore more aggressively than the thin NN decision-head weights.
  */
 export interface MutationProfile {
