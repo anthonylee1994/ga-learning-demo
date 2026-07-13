@@ -8,6 +8,8 @@ export interface GAConfig {
     tournamentSize: number;
     seed: number;
     speed: number;
+    /** Stock lab only: false = 用經典規則投票（SMA / RSI / MACD）代替 NN decision head。 */
+    useNeuralNetwork?: boolean;
 }
 
 export type Genome = number[];

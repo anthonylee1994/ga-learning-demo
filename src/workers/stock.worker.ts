@@ -13,10 +13,10 @@ setupEvolutionWorker<MarketDataPoint[], ReturnType<typeof createTradingReplay>>(
     seedGenomes: createStockSeedGenomes(),
     // Period genes explore hard; NN decision head mutates gently.
     mutationProfile: {...STOCK_MUTATION_PROFILE},
-    evaluate(genome, data) {
-        return evaluateStockGenome(genome, data ?? []);
+    evaluate(genome, data, config) {
+        return evaluateStockGenome(genome, data ?? [], config?.useNeuralNetwork !== false);
     },
-    createReplay(genome, data) {
-        return createTradingReplay(genome, data ?? []);
+    createReplay(genome, data, config) {
+        return createTradingReplay(genome, data ?? [], config?.useNeuralNetwork !== false);
     },
 });

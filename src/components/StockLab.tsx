@@ -1,6 +1,6 @@
 import React from "react";
-import {Button, Chip, Spinner} from "@heroui/react";
-import {CandlestickChart, Download, FileDown, TriangleAlert} from "lucide-react";
+import {Button, Chip, Spinner, Tooltip as UiTooltip} from "@heroui/react";
+import {CandlestickChart, Download, FileDown, Info, TriangleAlert} from "lucide-react";
 import {Brush, CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis} from "recharts";
 import {useEvolutionDemo} from "../hooks/useEvolutionDemo";
 import type {GAConfig, MarketDataResponse, TradingPoint, TradingReplay} from "../lib/types";
@@ -21,6 +21,7 @@ const DEFAULT_CONFIG: GAConfig = {
     tournamentSize: 4,
     seed: 420,
     speed: 3,
+    useNeuralNetwork: true,
 };
 
 type IndicatorView = "price" | "momentum" | "macd" | "risk" | "newHigh";
@@ -70,6 +71,7 @@ export const StockLab = React.memo(() => {
             requestIdRef.current += 1;
         };
     }, []);
+    const useNetwork = demo.config.useNeuralNetwork !== false;
     const replay = demo.champion?.replay;
     /**
      * Parameters live in the genome; full chart replay is throttled for memory.
@@ -181,7 +183,7 @@ export const StockLab = React.memo(() => {
                                     <p className="eyebrow">Champion genome · period-first</p>
                                     <h3>Best indicator periods</h3>
                                 </div>
-                                <Button onPress={() => downloadPineScript(demo.champion!.genome, marketData?.symbol ?? "QQQ")} size="sm" variant="secondary">
+                                <Button onPress={() => downloadPineScript(demo.champion!.genome, marketData?.symbol ?? "QQQ", useNetwork)} size="sm" variant="secondary">
                                     <FileDown size={15} strokeWidth={1.5} />
                                     匯出 Pine Script
                                 </Button>
@@ -197,8 +199,8 @@ export const StockLab = React.memo(() => {
                                 <ParameterValue label="Volume Z" value={String(parameters.volumeZScorePeriod)} />
                                 <ParameterValue label="N-day High" value={String(parameters.newHighPeriod)} />
                                 <ParameterValue label="Period genes" value={`${STOCK_PARAMETER_GENE_COUNT}（mutation ×3）`} />
-                                <ParameterValue label="Decision head" value={describeStockNetwork()} />
-                                <ParameterValue label="NN genes" value={`${STOCK_NETWORK_GENE_COUNT}（mutation ×0.35）`} />
+                                <ParameterValue label="Decision head" value={useNetwork ? describeStockNetwork() : "規則投票 2/3（SMA / RSI / MACD）"} />
+                                <ParameterValue label="NN genes" value={useNetwork ? `${STOCK_NETWORK_GENE_COUNT}（mutation ×0.35）` : `${STOCK_NETWORK_GENE_COUNT}（rule mode 未使用）`} />
                             </div>
                         </section>
                     ) : null}
@@ -253,12 +255,37 @@ export const StockLab = React.memo(() => {
                         fitness="70% 全段 train + 30% 最差半段：CAGR×100 + Sharpe×15 − maxDD×40 + 超額回報×35 − 較重 L2；鼓勵靠 period 組合賺錢而唔係肥 NN"
                         genome={`${STOCK_PARAMETER_GENE_COUNT} 個 period genes（mutation ×3）+ ${STOCK_NETWORK_GENE_COUNT} 個細 decision-head weights（mutation ×0.35；${describeStockNetwork()}）`}
                         inputs="13 維：價格相對 SMA、Williams、ROC、RSI、MACD、Bollinger %B、波動、成交量 Z、N 日新高 ratio、持倉狀態（全部 normalize 到約 ±1）"
-                        outputs="薄 hidden layer argmax → buy（全倉 long）/ hold / sell（全現金）；搜尋主力喺 indicator periods，唔用 backprop"
+                        outputs={
+                            useNetwork
+                                ? "薄 hidden layer argmax → buy（全倉 long）/ hold / sell（全現金）；搜尋主力喺 indicator periods，唔用 backprop"
+                                : "經典規則三票取二：SMA fast > slow、RSI > 50、MACD > signal → 全倉 long，否則全現金；GA 淨係進化 period genes"
+                        }
                         termination="用頭 80% 數據做 selection；最後 20% test data 絕不參與訓練；每代 immigrant 只重抽 period genes"
                     />
                 </main>
                 <aside className="demo-sidebar">
-                    <DemoControls demo={demo} disabled={!marketData || loading} />
+                    <DemoControls demo={demo} disabled={!marketData || loading}>
+                        <label className="control-toggle">
+                            <span className="control-label">
+                                <span>使用神經網絡</span>
+                                <UiTooltip delay={250}>
+                                    <span aria-label="使用神經網絡說明" className="help-icon" role="button" tabIndex={0}>
+                                        <Info size={13} strokeWidth={1.5} />
+                                    </span>
+                                    <UiTooltip.Content showArrow className="max-w-60 text-xs">
+                                        關閉後改用經典規則三票取二（SMA fast &gt; slow、RSI &gt; 50、MACD &gt; signal），GA 淨係進化 indicator periods。
+                                    </UiTooltip.Content>
+                                </UiTooltip>
+                            </span>
+                            <input
+                                aria-label="使用神經網絡"
+                                checked={useNetwork}
+                                className="toggle-input"
+                                onChange={event => demo.setConfig(current => ({...current, useNeuralNetwork: event.target.checked}))}
+                                type="checkbox"
+                            />
+                        </label>
+                    </DemoControls>
                 </aside>
             </div>
         </DemoShell>
@@ -438,8 +465,8 @@ function formatBrushDate(value: string): string {
     return value.slice(0, 7);
 }
 
-function downloadPineScript(genome: number[], symbol: string): void {
-    const script = createPineScript(genome, symbol);
+function downloadPineScript(genome: number[], symbol: string, useNetwork: boolean): void {
+    const script = createPineScript(genome, symbol, useNetwork);
     const blob = new Blob([script], {type: "text/plain;charset=utf-8"});
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");

@@ -64,7 +64,7 @@ export function getIndicatorSnapshots(points: MarketDataPoint[], parameters: Opt
     return columnsToSnapshots(points, getIndicatorColumns(points, parameters));
 }
 
-export function evaluateStockGenome(genome: Genome, points: MarketDataPoint[]): number {
+export function evaluateStockGenome(genome: Genome, points: MarketDataPoint[], useNetwork = true): number {
     const {parameters, networkGenome} = decodeStockGenome(genome);
     const columns = getIndicatorColumns(points, parameters);
     const trainLength = Math.max(2, Math.floor(columns.length * 0.8));
@@ -72,14 +72,15 @@ export function evaluateStockGenome(genome: Genome, points: MarketDataPoint[]): 
         return -1_000;
     }
 
-    const runNetwork = networkAdapter.createRunner(networkGenome);
+    const decide = createPositionDecider(columns, networkGenome, useNetwork);
     const mid = Math.floor(trainLength / 2);
-    const full = simulateColumnMetrics(runNetwork, columns, 0, 0, trainLength);
-    const firstHalf = simulateColumnMetrics(runNetwork, columns, 0, 0, mid + 1);
-    const secondHalf = simulateColumnMetrics(runNetwork, columns, firstHalf.endingPosition, mid, trainLength);
+    const full = simulateColumnMetrics(decide, columns, 0, 0, trainLength);
+    const firstHalf = simulateColumnMetrics(decide, columns, 0, 0, mid + 1);
+    const secondHalf = simulateColumnMetrics(decide, columns, firstHalf.endingPosition, mid, trainLength);
     const fullScore = scoreSegment(full, columns, 0, trainLength);
     const robustScore = Math.min(scoreSegment(firstHalf, columns, 0, mid + 1), scoreSegment(secondHalf, columns, mid, trainLength));
-    const regularization = WEIGHT_L2_PENALTY * meanSquare(networkGenome);
+    // Rule mode ignores the NN tail entirely — penalizing unused weights would just add noise.
+    const regularization = useNetwork ? WEIGHT_L2_PENALTY * meanSquare(networkGenome) : 0;
     return fullScore * 0.7 + robustScore * 0.3 - regularization;
 }
 
@@ -113,13 +114,13 @@ function meanSquare(genome: Genome): number {
     return sum / genome.length;
 }
 
-export function createTradingReplay(genome: Genome, points: MarketDataPoint[]): TradingReplay {
+export function createTradingReplay(genome: Genome, points: MarketDataPoint[], useNetwork = true): TradingReplay {
     const {parameters, networkGenome} = decodeStockGenome(genome);
     const columns = getIndicatorColumns(points, parameters);
-    const runNetwork = networkAdapter.createRunner(networkGenome);
+    const decide = createPositionDecider(columns, networkGenome, useNetwork);
     const splitIndex = Math.max(2, Math.floor(columns.length * 0.8));
-    const trainResult = simulateColumnReplay(runNetwork, columns, points, 0, splitIndex, 0);
-    const testResult = simulateColumnReplay(runNetwork, columns, points, Math.max(0, splitIndex - 1), columns.length, trainResult.endingPosition);
+    const trainResult = simulateColumnReplay(decide, columns, points, 0, splitIndex, 0);
+    const testResult = simulateColumnReplay(decide, columns, points, Math.max(0, splitIndex - 1), columns.length, trainResult.endingPosition);
     const trainCurve = trainResult.equityCurve;
     const testScale = trainCurve.at(-1) ?? STARTING_EQUITY;
     const fullCurve = new Array<number>(columns.length);
@@ -207,9 +208,29 @@ export function buildNetworkFeatures(columns: IndicatorColumns, index: number, p
     return out;
 }
 
-type NetworkRunner = (input: number[]) => number[];
+/**
+ * NN 關咗時嘅經典基準：三票取二（trend / momentum / MACD），全部用進化出嚟嘅 period。
+ * GA 剩返 13 個 period genes 有效——直接同 NN decision head 比較邊個搵錢。
+ */
+export function decidePositionFromRules(columns: IndicatorColumns, index: number): number {
+    const trendVote = columns.smaFast[index] > columns.smaSlow[index] ? 1 : 0;
+    const momentumVote = columns.rsi[index] > 50 ? 1 : 0;
+    const macdVote = columns.macd[index] > columns.macdSignal[index] ? 1 : 0;
+    return trendVote + momentumVote + macdVote >= 2 ? 1 : 0;
+}
 
-function simulateColumnMetrics(runNetwork: NetworkRunner, columns: IndicatorColumns, startingPosition: number, start: number, end: number): SegmentMetrics {
+type PositionDecider = (index: number, position: number) => number;
+
+function createPositionDecider(columns: IndicatorColumns, networkGenome: Genome, useNetwork: boolean): PositionDecider {
+    if (!useNetwork) {
+        return index => decidePositionFromRules(columns, index);
+    }
+    const runNetwork = networkAdapter.createRunner(networkGenome);
+    const features = new Array<number>(STOCK_TOPOLOGY.inputSize);
+    return (index, position) => decidePositionFromNetwork(runNetwork(buildNetworkFeatures(columns, index, position, features)), position);
+}
+
+function simulateColumnMetrics(decide: PositionDecider, columns: IndicatorColumns, startingPosition: number, start: number, end: number): SegmentMetrics {
     let equity = STARTING_EQUITY;
     let position = startingPosition;
     let peak = equity;
@@ -217,12 +238,10 @@ function simulateColumnMetrics(runNetwork: NetworkRunner, columns: IndicatorColu
     let returnSum = 0;
     let returnSqSum = 0;
     let returnCount = 0;
-    const features = new Array<number>(STOCK_TOPOLOGY.inputSize);
 
     for (let index = start + 1; index < end; index += 1) {
         const previous = index - 1;
-        buildNetworkFeatures(columns, previous, position, features);
-        const targetPosition = decidePositionFromNetwork(runNetwork(features), position);
+        const targetPosition = decide(previous, position);
         const turnover = Math.abs(targetPosition - position);
         const priceReturn = columns.close[index] / columns.close[previous] - 1;
         const dailyReturn = position * priceReturn - turnover * TRANSACTION_COST;
@@ -243,7 +262,7 @@ function simulateColumnMetrics(runNetwork: NetworkRunner, columns: IndicatorColu
     };
 }
 
-function simulateColumnReplay(runNetwork: NetworkRunner, columns: IndicatorColumns, points: MarketDataPoint[], start: number, end: number, startingPosition: number): SegmentResult {
+function simulateColumnReplay(decide: PositionDecider, columns: IndicatorColumns, points: MarketDataPoint[], start: number, end: number, startingPosition: number): SegmentResult {
     const length = Math.max(0, end - start);
     let equity = STARTING_EQUITY;
     let position = startingPosition;
@@ -257,12 +276,10 @@ function simulateColumnReplay(runNetwork: NetworkRunner, columns: IndicatorColum
         equityCurve[0] = equity;
     }
     const trades: TradeMarker[] = [];
-    const features = new Array<number>(STOCK_TOPOLOGY.inputSize);
 
     for (let index = start + 1; index < end; index += 1) {
         const previous = index - 1;
-        buildNetworkFeatures(columns, previous, position, features);
-        const targetPosition = decidePositionFromNetwork(runNetwork(features), position);
+        const targetPosition = decide(previous, position);
         const turnover = Math.abs(targetPosition - position);
         const priceReturn = columns.close[index] / columns.close[previous] - 1;
         const dailyReturn = position * priceReturn - turnover * TRANSACTION_COST;

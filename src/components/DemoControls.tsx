@@ -6,9 +6,11 @@ import type {EvolutionDemoState} from "../hooks/useEvolutionDemo";
 interface DemoControlsProps {
     demo: EvolutionDemoState<unknown>;
     disabled?: boolean;
+    /** Lab-specific extra controls (e.g. stock lab's NN toggle)，排喺隨機種子之後。 */
+    children?: React.ReactNode;
 }
 
-export const DemoControls = React.memo<DemoControlsProps>(({demo, disabled}) => {
+export const DemoControls = React.memo<DemoControlsProps>(({demo, disabled, children}) => {
     const updateNumber = (key: "populationSize" | "mutationRate" | "speed", value: number) => {
         demo.setConfig(current => ({...current, [key]: value}));
     };
@@ -81,6 +83,7 @@ export const DemoControls = React.memo<DemoControlsProps>(({demo, disabled}) => 
                         value={demo.config.seed}
                     />
                 </label>
+                {children}
                 {demo.error ? <p className="error-message">{demo.error}</p> : null}
             </Card.Content>
         </Card>
@@ -97,7 +100,7 @@ interface ControlSliderProps {
     onChange: (value: number) => void;
 }
 
-const ControlSlider = React.memo<ControlSliderProps>((props) => {
+const ControlSlider = React.memo<ControlSliderProps>(props => {
     return (
         <label className="control-field">
             <span className="control-label">

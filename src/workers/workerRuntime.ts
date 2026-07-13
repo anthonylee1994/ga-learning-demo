@@ -16,8 +16,8 @@ interface WorkerDefinition<TData, TReplay> {
     seedGenomes?: Genome[];
     /** Optional head/tail mutation bias (stock lab prioritizes indicator periods). */
     mutationProfile?: MutationProfile;
-    evaluate(genome: Genome, data: TData | undefined): number;
-    createReplay(genome: Genome, data: TData | undefined): TReplay;
+    evaluate(genome: Genome, data: TData | undefined, config: GAConfig | null): number;
+    createReplay(genome: Genome, data: TData | undefined, config: GAConfig | null): TReplay;
 }
 
 export function setupEvolutionWorker<TData, TReplay>(definition: WorkerDefinition<TData, TReplay>): void {
@@ -58,6 +58,18 @@ export function setupEvolutionWorker<TData, TReplay>(definition: WorkerDefinitio
         }, delay);
     }
 
+    /**
+     * Flipping the decision mode (NN ↔ rules) rescales fitness entirely — stale
+     * bests would block replay refreshes, so reset the gates but keep the population.
+     */
+    function resetGatesIfModeChanged(next: GAConfig): void {
+        if (config && config.useNeuralNetwork !== next.useNeuralNetwork) {
+            bestFitnessSeen = Number.NEGATIVE_INFINITY;
+            lastReplayFitness = Number.NEGATIVE_INFINITY;
+            lastReplayGeneration = Number.NEGATIVE_INFINITY;
+        }
+    }
+
     function resetEvolutionState(): void {
         population = [];
         generation = 0;
@@ -79,7 +91,7 @@ export function setupEvolutionWorker<TData, TReplay>(definition: WorkerDefinitio
         }
 
         try {
-            const fitnesses = population.map(genome => definition.evaluate(genome, data));
+            const fitnesses = population.map(genome => definition.evaluate(genome, data, config));
             // User may have paused mid-evaluation; keep population as-is and wait for pause handler
             // to emit the showcase champion.
             if (!running || token !== runToken || !config) {
@@ -128,7 +140,7 @@ export function setupEvolutionWorker<TData, TReplay>(definition: WorkerDefinitio
                 champion: {
                     genome: result.bestGenome,
                     fitness: result.bestFitness,
-                    ...(shouldRefreshReplay ? {replay: definition.createReplay(result.bestGenome, data)} : {}),
+                    ...(shouldRefreshReplay ? {replay: definition.createReplay(result.bestGenome, data, config)} : {}),
                 },
             });
             scheduleNext(token);
@@ -157,7 +169,7 @@ export function setupEvolutionWorker<TData, TReplay>(definition: WorkerDefinitio
                 genome: bestGenome,
                 fitness,
                 // Always rebuild so pause shows the true latest optimized network end-to-end.
-                replay: definition.createReplay(bestGenome, data),
+                replay: definition.createReplay(bestGenome, data, config),
             },
         });
         lastReplayFitness = fitness;
@@ -169,6 +181,7 @@ export function setupEvolutionWorker<TData, TReplay>(definition: WorkerDefinitio
         if (command.type === "start") {
             runToken += 1;
             clearScheduled();
+            resetGatesIfModeChanged(command.config);
             config = command.config;
             data = command.data ?? data;
             random = createRandom(config.seed + generation * 7919);
@@ -221,6 +234,7 @@ export function setupEvolutionWorker<TData, TReplay>(definition: WorkerDefinitio
             emit({type: "status", status: "idle"});
             return;
         }
+        resetGatesIfModeChanged(command.config);
         config = command.config;
     };
 }
