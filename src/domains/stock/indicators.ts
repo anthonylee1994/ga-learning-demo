@@ -3,10 +3,55 @@ import {DEFAULT_INDICATOR_PARAMETERS} from "./strategyGenome";
 
 const EPSILON = 1e-9;
 
-export function calculateIndicators(points: MarketDataPoint[], parameters: OptimizedIndicatorParameters = DEFAULT_INDICATOR_PARAMETERS): IndicatorSnapshot[] {
+/**
+ * Column-major indicator series aligned to points[warmup..]. The GA fitness path evaluates
+ * thousands of genomes per second — Float64Array columns keep that path free of per-bar
+ * object allocations (a per-genome IndicatorSnapshot[] was ~MBs of GC churn each).
+ */
+export interface IndicatorColumns {
+    warmup: number;
+    length: number;
+    close: Float64Array;
+    smaFast: Float64Array;
+    smaSlow: Float64Array;
+    williamsR: Float64Array;
+    roc: Float64Array;
+    rsi: Float64Array;
+    macd: Float64Array;
+    macdSignal: Float64Array;
+    macdHistogram: Float64Array;
+    bollingerUpper: Float64Array;
+    bollingerLower: Float64Array;
+    bollingerPercentB: Float64Array;
+    bollingerBandwidth: Float64Array;
+    volatility: Float64Array;
+    volumeZScore: Float64Array;
+}
+
+export function calculateIndicatorColumns(points: MarketDataPoint[], parameters: OptimizedIndicatorParameters = DEFAULT_INDICATOR_PARAMETERS): IndicatorColumns {
     const warmup = getIndicatorWarmup(parameters);
-    if (points.length <= warmup) {
-        return [];
+    const length = Math.max(0, points.length - warmup);
+    const columns: IndicatorColumns = {
+        warmup,
+        length,
+        close: new Float64Array(length),
+        smaFast: new Float64Array(length),
+        smaSlow: new Float64Array(length),
+        williamsR: new Float64Array(length),
+        roc: new Float64Array(length),
+        rsi: new Float64Array(length),
+        macd: new Float64Array(length),
+        macdSignal: new Float64Array(length),
+        macdHistogram: new Float64Array(length),
+        bollingerUpper: new Float64Array(length),
+        bollingerLower: new Float64Array(length),
+        bollingerPercentB: new Float64Array(length),
+        bollingerBandwidth: new Float64Array(length),
+        volatility: new Float64Array(length),
+        volumeZScore: new Float64Array(length),
+    };
+    if (length === 0) {
+        return columns;
     }
 
     const closes = points.map(point => point.close);
@@ -15,49 +60,66 @@ export function calculateIndicators(points: MarketDataPoint[], parameters: Optim
     const emaSlow = exponentialMovingAverage(closes, parameters.macdSlowPeriod);
     const macd = closes.map((_, index) => emaFast[index] - emaSlow[index]);
     const macdSignal = exponentialMovingAverage(macd, parameters.macdSignalPeriod);
-    const snapshots: IndicatorSnapshot[] = [];
 
     for (let index = warmup; index < points.length; index += 1) {
         const point = points[index];
-        const smaFast = meanRange(closes, index - parameters.smaFastPeriod + 1, index + 1);
-        const smaSlow = meanRange(closes, index - parameters.smaSlowPeriod + 1, index + 1);
+        const cursor = index - warmup;
         const bollingerBasis = meanRange(closes, index - parameters.bollingerPeriod + 1, index + 1);
         const bollingerDeviation = standardDeviationRange(closes, index - parameters.bollingerPeriod + 1, index + 1, bollingerBasis);
         const bollingerUpper = bollingerBasis + bollingerDeviation * parameters.bollingerMultiplier;
         const bollingerLower = bollingerBasis - bollingerDeviation * parameters.bollingerMultiplier;
         const bollingerRange = Math.max(bollingerUpper - bollingerLower, EPSILON);
-        const bollingerPercentB = (point.close - bollingerLower) / bollingerRange;
-        const bollingerBandwidth = bollingerRange / Math.max(bollingerBasis, EPSILON);
-        const williamsR = calculateWilliamsR(points, index, parameters.williamsPeriod);
-        const roc = point.close / closes[index - parameters.rocPeriod] - 1;
-        const rsi = calculateRsi(closes, index, parameters.rsiPeriod);
-        const volatility = calculateVolatility(closes, index, parameters.volatilityPeriod);
         const volumeMean = meanRange(volumes, index - parameters.volumeZScorePeriod + 1, index + 1);
         const volumeDeviation = standardDeviationRange(volumes, index - parameters.volumeZScorePeriod + 1, index + 1, volumeMean);
-        const volumeZScore = (point.volume - volumeMean) / Math.max(volumeDeviation, EPSILON);
-        const macdHistogram = macd[index] - macdSignal[index];
 
-        snapshots.push({
-            date: point.date,
-            close: point.close,
-            smaFast,
-            smaSlow,
-            williamsR,
-            roc,
-            rsi,
-            macd: macd[index],
-            macdSignal: macdSignal[index],
-            macdHistogram,
-            bollingerUpper,
-            bollingerLower,
-            bollingerPercentB,
-            bollingerBandwidth,
-            volatility,
-            volumeZScore,
-        });
+        columns.close[cursor] = point.close;
+        columns.smaFast[cursor] = meanRange(closes, index - parameters.smaFastPeriod + 1, index + 1);
+        columns.smaSlow[cursor] = meanRange(closes, index - parameters.smaSlowPeriod + 1, index + 1);
+        columns.williamsR[cursor] = calculateWilliamsR(points, index, parameters.williamsPeriod);
+        columns.roc[cursor] = point.close / closes[index - parameters.rocPeriod] - 1;
+        columns.rsi[cursor] = calculateRsi(closes, index, parameters.rsiPeriod);
+        columns.macd[cursor] = macd[index];
+        columns.macdSignal[cursor] = macdSignal[index];
+        columns.macdHistogram[cursor] = macd[index] - macdSignal[index];
+        columns.bollingerUpper[cursor] = bollingerUpper;
+        columns.bollingerLower[cursor] = bollingerLower;
+        columns.bollingerPercentB[cursor] = (point.close - bollingerLower) / bollingerRange;
+        columns.bollingerBandwidth[cursor] = bollingerRange / Math.max(bollingerBasis, EPSILON);
+        columns.volatility[cursor] = calculateVolatility(closes, index, parameters.volatilityPeriod);
+        columns.volumeZScore[cursor] = (point.volume - volumeMean) / Math.max(volumeDeviation, EPSILON);
     }
 
+    return columns;
+}
+
+/** Object snapshots for the replay/chart path — built on demand from the column series. */
+export function columnsToSnapshots(points: MarketDataPoint[], columns: IndicatorColumns): IndicatorSnapshot[] {
+    const snapshots: IndicatorSnapshot[] = new Array(columns.length);
+    for (let cursor = 0; cursor < columns.length; cursor += 1) {
+        snapshots[cursor] = {
+            date: points[columns.warmup + cursor].date,
+            close: columns.close[cursor],
+            smaFast: columns.smaFast[cursor],
+            smaSlow: columns.smaSlow[cursor],
+            williamsR: columns.williamsR[cursor],
+            roc: columns.roc[cursor],
+            rsi: columns.rsi[cursor],
+            macd: columns.macd[cursor],
+            macdSignal: columns.macdSignal[cursor],
+            macdHistogram: columns.macdHistogram[cursor],
+            bollingerUpper: columns.bollingerUpper[cursor],
+            bollingerLower: columns.bollingerLower[cursor],
+            bollingerPercentB: columns.bollingerPercentB[cursor],
+            bollingerBandwidth: columns.bollingerBandwidth[cursor],
+            volatility: columns.volatility[cursor],
+            volumeZScore: columns.volumeZScore[cursor],
+        };
+    }
     return snapshots;
+}
+
+export function calculateIndicators(points: MarketDataPoint[], parameters: OptimizedIndicatorParameters = DEFAULT_INDICATOR_PARAMETERS): IndicatorSnapshot[] {
+    return columnsToSnapshots(points, calculateIndicatorColumns(points, parameters));
 }
 
 export function getIndicatorWarmup(parameters: OptimizedIndicatorParameters): number {

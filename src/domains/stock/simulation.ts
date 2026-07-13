@@ -1,19 +1,20 @@
 import type {Genome, IndicatorSnapshot, MarketDataPoint, OptimizedIndicatorParameters, OptimizedStrategyRules, TradeMarker, TradingPoint, TradingReplay} from "../../lib/types";
-import {calculateIndicators, splitIndicators} from "./indicators";
+import type {IndicatorColumns} from "./indicators";
+import {calculateIndicatorColumns, columnsToSnapshots, splitIndicators} from "./indicators";
 import {decodeStockGenome} from "./strategyGenome";
 
 const STARTING_EQUITY = 10_000;
 const TRANSACTION_COST = 0.001;
-/** Keep a small LRU of indicator series — each entry is ~full market history. */
+/** Keep a small LRU of indicator series — Float64Array columns, ~1MB per full history entry. */
 const MAX_INDICATOR_CACHE = 24;
 
 /**
- * Cache indicator snapshots by the exact points array reference.
+ * Cache indicator columns by the exact points array reference.
  * evaluate() used to recompute indicators for every genome every generation —
- * with ~2.5k daily bars that was a large allocation storm.
+ * with full daily history that was a large allocation storm.
  */
 let cachedPoints: MarketDataPoint[] | null = null;
-const cachedSnapshots = new Map<string, IndicatorSnapshot[]>();
+const cachedColumns = new Map<string, IndicatorColumns>();
 
 interface SegmentMetrics {
     totalReturn: number;
@@ -27,53 +28,58 @@ interface SegmentResult extends SegmentMetrics {
     trades: TradeMarker[];
 }
 
-export function getIndicatorSnapshots(points: MarketDataPoint[], parameters: OptimizedIndicatorParameters): IndicatorSnapshot[] {
+export function getIndicatorColumns(points: MarketDataPoint[], parameters: OptimizedIndicatorParameters): IndicatorColumns {
     if (points !== cachedPoints) {
         cachedPoints = points;
-        cachedSnapshots.clear();
+        cachedColumns.clear();
     }
     const key = Object.values(parameters).join(":");
-    const cached = cachedSnapshots.get(key);
+    const cached = cachedColumns.get(key);
     if (cached) {
         // Refresh LRU order.
-        cachedSnapshots.delete(key);
-        cachedSnapshots.set(key, cached);
+        cachedColumns.delete(key);
+        cachedColumns.set(key, cached);
         return cached;
     }
-    const snapshots = calculateIndicators(points, parameters);
-    if (cachedSnapshots.size >= MAX_INDICATOR_CACHE) {
-        const oldest = cachedSnapshots.keys().next().value;
+    const columns = calculateIndicatorColumns(points, parameters);
+    if (cachedColumns.size >= MAX_INDICATOR_CACHE) {
+        const oldest = cachedColumns.keys().next().value;
         if (oldest !== undefined) {
-            cachedSnapshots.delete(oldest);
+            cachedColumns.delete(oldest);
         }
     }
-    cachedSnapshots.set(key, snapshots);
-    return snapshots;
+    cachedColumns.set(key, columns);
+    return columns;
+}
+
+export function getIndicatorSnapshots(points: MarketDataPoint[], parameters: OptimizedIndicatorParameters): IndicatorSnapshot[] {
+    return columnsToSnapshots(points, getIndicatorColumns(points, parameters));
 }
 
 export function evaluateStockGenome(genome: Genome, points: MarketDataPoint[]): number {
     const {parameters, rules} = decodeStockGenome(genome);
-    const snapshots = getIndicatorSnapshots(points, parameters);
-    const {train} = splitIndicators(snapshots);
-    if (train.length < 100) {
+    const columns = getIndicatorColumns(points, parameters);
+    // Same boundary as splitIndicators(snapshots) so fitness and replay agree.
+    const trainLength = Math.max(2, Math.floor(columns.length * 0.8));
+    if (trainLength < 100) {
         return -1_000;
     }
 
     // Robust fitness: score the two halves of the train window separately and keep the
-    // worst one. The old single 15-year score compounded the benchmark to +several hundred
+    // worst one. A single full-history score compounded the benchmark to +several hundred
     // percent, so every "mostly cash" genome collapsed to the same huge negative number
     // (no gradient) and "never sell" became an unbeatable local optimum. Annualizing keeps
     // the scale sane, and min() across regimes punishes one-lucky-bull-run overfits.
-    const mid = Math.floor(train.length / 2);
-    const firstHalf = simulateSegmentMetrics(rules, train, 0, 0, mid + 1);
-    const secondHalf = simulateSegmentMetrics(rules, train, firstHalf.endingPosition, mid, train.length);
-    return Math.min(scoreSegment(firstHalf, train, 0, mid + 1), scoreSegment(secondHalf, train, mid, train.length));
+    const mid = Math.floor(trainLength / 2);
+    const firstHalf = simulateColumnMetrics(rules, columns, 0, 0, mid + 1);
+    const secondHalf = simulateColumnMetrics(rules, columns, firstHalf.endingPosition, mid, trainLength);
+    return Math.min(scoreSegment(firstHalf, columns, 0, mid + 1), scoreSegment(secondHalf, columns, mid, trainLength));
 }
 
 /** Annualized excess return vs buy & hold, rewarded for Sharpe, penalized for drawdown. */
-function scoreSegment(metrics: SegmentMetrics, snapshots: IndicatorSnapshot[], start: number, end: number): number {
-    const first = snapshots[start]?.close ?? 1;
-    const last = snapshots[end - 1]?.close ?? first;
+function scoreSegment(metrics: SegmentMetrics, columns: IndicatorColumns, start: number, end: number): number {
+    const first = columns.close[start] || 1;
+    const last = columns.close[end - 1] || first;
     const years = Math.max((end - start) / 252, 0.5);
     const strategyCagr = annualize(metrics.totalReturn, years);
     const benchmarkCagr = annualize(last / first - 1, years);
@@ -127,11 +133,14 @@ export function createTradingReplay(genome: Genome, points: MarketDataPoint[]): 
     };
 }
 
+/** The subset of indicator fields the voting rules actually read. */
+export type StrategySignals = Pick<IndicatorSnapshot, "smaFast" | "smaSlow" | "rsi" | "williamsR" | "roc" | "bollingerPercentB" | "macd" | "macdSignal">;
+
 /**
  * Multi-indicator voting rules evolved by GA.
  * buy / hold / sell → target long (1) or cash (0); never short.
  */
-export function decidePosition(snapshot: IndicatorSnapshot, rules: OptimizedStrategyRules, position: number): number {
+export function decidePosition(snapshot: StrategySignals, rules: OptimizedStrategyRules, position: number): number {
     const trendUp = snapshot.smaFast > snapshot.smaSlow;
     let buySignals = 0;
     let sellSignals = 0;
@@ -185,8 +194,11 @@ export function decidePosition(snapshot: IndicatorSnapshot, rules: OptimizedStra
     return 1;
 }
 
-/** Streaming fitness metrics over snapshots[start, end) — no equity curve / trade list allocations. */
-function simulateSegmentMetrics(rules: OptimizedStrategyRules, snapshots: IndicatorSnapshot[], startingPosition: number, start = 0, end = snapshots.length): SegmentMetrics {
+/**
+ * Streaming fitness metrics over columns[start, end) — the hot GA path. Reads Float64Array
+ * columns through one reused view object so evaluating a genome allocates nothing per bar.
+ */
+function simulateColumnMetrics(rules: OptimizedStrategyRules, columns: IndicatorColumns, startingPosition: number, start: number, end: number): SegmentMetrics {
     let equity = STARTING_EQUITY;
     let position = startingPosition;
     let peak = equity;
@@ -194,13 +206,21 @@ function simulateSegmentMetrics(rules: OptimizedStrategyRules, snapshots: Indica
     let returnSum = 0;
     let returnSqSum = 0;
     let returnCount = 0;
+    const view: StrategySignals = {smaFast: 0, smaSlow: 0, rsi: 0, williamsR: 0, roc: 0, bollingerPercentB: 0, macd: 0, macdSignal: 0};
 
     for (let index = start + 1; index < end; index += 1) {
-        const previous = snapshots[index - 1];
-        const current = snapshots[index];
-        const targetPosition = decidePosition(previous, rules, position);
+        const previous = index - 1;
+        view.smaFast = columns.smaFast[previous];
+        view.smaSlow = columns.smaSlow[previous];
+        view.rsi = columns.rsi[previous];
+        view.williamsR = columns.williamsR[previous];
+        view.roc = columns.roc[previous];
+        view.bollingerPercentB = columns.bollingerPercentB[previous];
+        view.macd = columns.macd[previous];
+        view.macdSignal = columns.macdSignal[previous];
+        const targetPosition = decidePosition(view, rules, position);
         const turnover = Math.abs(targetPosition - position);
-        const priceReturn = current.close / previous.close - 1;
+        const priceReturn = columns.close[index] / columns.close[previous] - 1;
         const dailyReturn = position * priceReturn - turnover * TRANSACTION_COST;
         equity *= Math.max(0.01, 1 + dailyReturn);
         returnSum += dailyReturn;
