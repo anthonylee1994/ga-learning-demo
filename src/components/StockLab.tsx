@@ -132,7 +132,7 @@ export const StockLab = React.memo(() => {
     return (
         <DemoShell
             accent="stock"
-            description="以 GA 為主進化技術指標週期（SMA / RSI / MACD / Bollinger / N-day High…），搭配一個好細嘅 Brain.js decision head（buy / hold / sell）。mutation 會優先擾動 period genes；80% 訓練、20% out-of-sample。QQQ 強牛市好難贏 buy & hold。"
+            description="以 GA 為主進化技術指標週期（SMA / RSI / MACD / Bollinger / N-day High…），搭配一個好細嘅 Brain.js decision head（buy / hold / sell）。mutation 會優先擾動 period genes；80% 訓練、20% out-of-sample。"
             icon={<CandlestickChart size={20} strokeWidth={1.5} />}
             title="Stock Trading Evolution"
         >
