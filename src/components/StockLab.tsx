@@ -1,6 +1,6 @@
 import React from "react";
-import {Button, Chip, Spinner, Tooltip as UiTooltip} from "@heroui/react";
-import {CandlestickChart, Download, FileDown, Info, TriangleAlert} from "lucide-react";
+import {Button, Spinner, Switch} from "@heroui/react";
+import {CandlestickChart, FileDown, TriangleAlert} from "lucide-react";
 import {Brush, CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis} from "recharts";
 import {useEvolutionDemo} from "../hooks/useEvolutionDemo";
 import type {GAConfig, MarketDataResponse, TradingPoint, TradingReplay} from "../lib/types";
@@ -153,15 +153,6 @@ export const StockLab = React.memo(() => {
                         value={tickerInput}
                     />
                 </label>
-                <Button isDisabled={!tickerInput.trim()} onPress={() => load(tickerInput)} size="sm" variant="secondary">
-                    {loading ? <Spinner color="current" size="sm" /> : <Download size={15} strokeWidth={1.5} />}
-                    載入 Ticker
-                </Button>
-                {marketData ? (
-                    <Chip color="success" size="sm" variant="soft">
-                        {marketData.symbol} · {marketData.points.length.toLocaleString()} sessions · {marketData.currency}
-                    </Chip>
-                ) : null}
                 <span className="disclaimer">只作教育用途，並非投資建議。</span>
             </div>
             {fetchError ? (
@@ -265,26 +256,14 @@ export const StockLab = React.memo(() => {
                 </main>
                 <aside className="demo-sidebar">
                     <DemoControls demo={demo} disabled={!marketData || loading}>
-                        <label className="control-toggle">
-                            <span className="control-label">
-                                <span>使用神經網絡</span>
-                                <UiTooltip delay={250}>
-                                    <span aria-label="使用神經網絡說明" className="help-icon" role="button" tabIndex={0}>
-                                        <Info size={13} strokeWidth={1.5} />
-                                    </span>
-                                    <UiTooltip.Content showArrow className="max-w-60 text-xs">
-                                        關閉後改用經典規則三票取二（SMA fast &gt; slow、RSI &gt; 50、MACD &gt; signal），GA 淨係進化 indicator periods。
-                                    </UiTooltip.Content>
-                                </UiTooltip>
-                            </span>
-                            <input
-                                aria-label="使用神經網絡"
-                                checked={useNetwork}
-                                className="toggle-input"
-                                onChange={event => demo.setConfig(current => ({...current, useNeuralNetwork: event.target.checked}))}
-                                type="checkbox"
-                            />
-                        </label>
+                        <Switch isSelected={useNetwork} onChange={checked => demo.setConfig(current => ({...current, useNeuralNetwork: checked}))}>
+                            <Switch.Content>
+                                <Switch.Control>
+                                    <Switch.Thumb />
+                                </Switch.Control>
+                                使用神經網絡
+                            </Switch.Content>
+                        </Switch>
                     </DemoControls>
                 </aside>
             </div>
