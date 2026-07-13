@@ -5,7 +5,7 @@ import {Brush, CartesianGrid, Legend, Line, LineChart, ReferenceLine, Responsive
 import {useEvolutionDemo} from "../hooks/useEvolutionDemo";
 import type {GAConfig, MarketDataResponse, TradingPoint, TradingReplay} from "../lib/types";
 import {createPineScript} from "../domains/stock/pineScript";
-import {decodeStockGenome, describeStockNetwork, STOCK_NETWORK_GENE_COUNT, STOCK_TOPOLOGY} from "../domains/stock/strategyGenome";
+import {decodeStockGenome, describeStockNetwork, STOCK_NETWORK_GENE_COUNT, STOCK_PARAMETER_GENE_COUNT} from "../domains/stock/strategyGenome";
 import {ApplicationPanel} from "./ApplicationPanel";
 import {DemoControls} from "./DemoControls";
 import {FitnessChart} from "./FitnessChart";
@@ -13,16 +13,17 @@ import {Metrics} from "./Metrics";
 import {DemoShell} from "./SnakeLab";
 
 const DEFAULT_CONFIG: GAConfig = {
-    populationSize: 40,
-    mutationRate: 0.1,
-    mutationScale: 0.2,
+    populationSize: 48,
+    // Base rates; stock worker multiplies period genes ~3× and NN genes ~0.35×.
+    mutationRate: 0.12,
+    mutationScale: 0.22,
     eliteRate: 0.08,
     tournamentSize: 4,
     seed: 420,
     speed: 3,
 };
 
-type IndicatorView = "price" | "momentum" | "macd" | "risk";
+type IndicatorView = "price" | "momentum" | "macd" | "risk" | "newHigh";
 
 export const StockLab = React.memo(() => {
     const [tickerInput, setTickerInput] = React.useState("QQQ");
@@ -130,7 +131,7 @@ export const StockLab = React.memo(() => {
     return (
         <DemoShell
             accent="stock"
-            description="用日線歷史以 GA 同時進化技術指標參數同 Brain.js 神經網絡權重（buy / hold / sell）；80% 訓練，最後 20% out-of-sample。QQQ 強牛市好難贏 buy & hold，fitness 會同時睇回報、Sharpe、回撤。"
+            description="以 GA 為主進化技術指標週期（SMA / RSI / MACD / Bollinger / N-day High…），搭配一個好細嘅 Brain.js decision head（buy / hold / sell）。mutation 會優先擾動 period genes；80% 訓練、20% out-of-sample。QQQ 強牛市好難贏 buy & hold。"
             icon={<CandlestickChart size={20} strokeWidth={1.5} />}
             title="Stock Trading Evolution"
         >
@@ -177,8 +178,8 @@ export const StockLab = React.memo(() => {
                         <section className="optimized-panel">
                             <div className="panel-heading">
                                 <div>
-                                    <p className="eyebrow">Champion genome</p>
-                                    <h3>Best indicator periods & network</h3>
+                                    <p className="eyebrow">Champion genome · period-first</p>
+                                    <h3>Best indicator periods</h3>
                                 </div>
                                 <Button onPress={() => downloadPineScript(demo.champion!.genome, marketData?.symbol ?? "QQQ")} size="sm" variant="secondary">
                                     <FileDown size={15} strokeWidth={1.5} />
@@ -194,10 +195,10 @@ export const StockLab = React.memo(() => {
                                 <ParameterValue label="MACD" value={`${parameters.macdFastPeriod} / ${parameters.macdSlowPeriod} / ${parameters.macdSignalPeriod}`} />
                                 <ParameterValue label="Volatility" value={String(parameters.volatilityPeriod)} />
                                 <ParameterValue label="Volume Z" value={String(parameters.volumeZScorePeriod)} />
-                                <ParameterValue label="Network" value={describeStockNetwork()} />
-                                <ParameterValue label="Inputs" value={`${STOCK_TOPOLOGY.inputSize} features + position`} />
-                                <ParameterValue label="Outputs" value="buy · hold · sell" />
-                                <ParameterValue label="NN genes" value={String(STOCK_NETWORK_GENE_COUNT)} />
+                                <ParameterValue label="N-day High" value={String(parameters.newHighPeriod)} />
+                                <ParameterValue label="Period genes" value={`${STOCK_PARAMETER_GENE_COUNT}（mutation ×3）`} />
+                                <ParameterValue label="Decision head" value={describeStockNetwork()} />
+                                <ParameterValue label="NN genes" value={`${STOCK_NETWORK_GENE_COUNT}（mutation ×0.35）`} />
                             </div>
                         </section>
                     ) : null}
@@ -212,6 +213,7 @@ export const StockLab = React.memo(() => {
                                 <option value="momentum">RSI + Williams %R + ROC</option>
                                 <option value="macd">MACD</option>
                                 <option value="risk">Volatility + Volume Z</option>
+                                <option value="newHigh">N-day High</option>
                             </select>
                         </div>
                         <div className="chart-height-lg">
@@ -248,11 +250,11 @@ export const StockLab = React.memo(() => {
                     </section>
                     <FitnessChart history={demo.history} />
                     <ApplicationPanel
-                        fitness="70% 全段 train + 30% 最差半段：CAGR×100 + Sharpe×15 − maxDD×40 + 超額回報×35 − 網絡 L2；鼓勵賺錢同泛化"
-                        genome={`12 個 indicator period genes + ${STOCK_NETWORK_GENE_COUNT} 個 Brain.js weights/biases（${describeStockNetwork()}）`}
-                        inputs="12 維：價格相對 SMA、Williams、ROC、RSI、MACD、Bollinger %B、波動、成交量 Z、持倉狀態（全部 normalize 到約 ±1）"
-                        outputs="網絡 argmax → buy（全倉 long）/ hold / sell（全現金）；GA 進化權重，唔用 backprop"
-                        termination="用頭 80% 數據做 selection；最後 20% test data 絕不參與訓練，用嚟審視 out-of-sample 表現"
+                        fitness="70% 全段 train + 30% 最差半段：CAGR×100 + Sharpe×15 − maxDD×40 + 超額回報×35 − 較重 L2；鼓勵靠 period 組合賺錢而唔係肥 NN"
+                        genome={`${STOCK_PARAMETER_GENE_COUNT} 個 period genes（mutation ×3）+ ${STOCK_NETWORK_GENE_COUNT} 個細 decision-head weights（mutation ×0.35；${describeStockNetwork()}）`}
+                        inputs="13 維：價格相對 SMA、Williams、ROC、RSI、MACD、Bollinger %B、波動、成交量 Z、N 日新高 ratio、持倉狀態（全部 normalize 到約 ±1）"
+                        outputs="薄 hidden layer argmax → buy（全倉 long）/ hold / sell（全現金）；搜尋主力喺 indicator periods，唔用 backprop"
+                        termination="用頭 80% 數據做 selection；最後 20% test data 絕不參與訓練；每代 immigrant 只重抽 period genes"
                     />
                 </main>
                 <aside className="demo-sidebar">
@@ -279,6 +281,8 @@ type MarketChartDatum = {
     bollingerLower?: number;
     volatility?: number;
     volumeZScore?: number;
+    nDayHigh?: number;
+    newHighRatio?: number;
 };
 
 interface MarketChartProps {
@@ -308,7 +312,7 @@ const MarketChart = React.memo<MarketChartProps>(
                     <CartesianGrid stroke="#252a31" strokeDasharray="3 3" vertical={false} />
                     <XAxis dataKey="date" minTickGap={70} stroke="#747b86" tick={{fontSize: 10}} tickLine={false} />
                     <YAxis domain={["auto", "auto"]} stroke="#747b86" tick={{fontSize: 10}} tickLine={false} width={58} yAxisId="price" />
-                    {indicatorView !== "price" && hasReplay ? (
+                    {(indicatorView === "momentum" || indicatorView === "macd" || indicatorView === "risk" || indicatorView === "newHigh") && hasReplay ? (
                         <YAxis domain={["auto", "auto"]} orientation="right" stroke="#747b86" tick={{fontSize: 10}} tickLine={false} width={48} yAxisId="indicator" />
                     ) : null}
                     <Tooltip contentStyle={{background: "#15191f", border: "1px solid #303640", borderRadius: 8}} />
@@ -326,6 +330,12 @@ const MarketChart = React.memo<MarketChartProps>(
                             <Line dataKey="smaSlow" dot={false} isAnimationActive={false} name={`SMA${parameters.smaSlowPeriod}`} stroke="#5da6d9" strokeWidth={1} yAxisId="price" />
                             <Line dataKey="bollingerUpper" dot={false} isAnimationActive={false} name="BB upper" stroke="#6f7782" strokeDasharray="4 4" strokeWidth={1} yAxisId="price" />
                             <Line dataKey="bollingerLower" dot={false} isAnimationActive={false} name="BB lower" stroke="#6f7782" strokeDasharray="4 4" strokeWidth={1} yAxisId="price" />
+                        </React.Fragment>
+                    ) : null}
+                    {indicatorView === "newHigh" && hasReplay && parameters ? (
+                        <React.Fragment>
+                            <Line dataKey="nDayHigh" dot={false} isAnimationActive={false} name={`${parameters.newHighPeriod}d High`} stroke="#d48bd4" strokeWidth={1.5} yAxisId="price" />
+                            <Line dataKey="newHighRatio" dot={false} isAnimationActive={false} name="Close / N-high" stroke="#63c6a1" strokeWidth={1} yAxisId="indicator" />
                         </React.Fragment>
                     ) : null}
                     {indicatorView === "momentum" && hasReplay ? (

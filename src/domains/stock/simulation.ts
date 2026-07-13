@@ -10,8 +10,8 @@ const STARTING_EQUITY = 10_000;
 const TRANSACTION_COST = 0.001;
 /** Keep a small LRU of indicator series — Float64Array columns, ~1MB per full history entry. */
 const MAX_INDICATOR_CACHE = 16;
-/** Mild weight decay so the GA prefers smaller, more generalizable networks. */
-const WEIGHT_L2_PENALTY = 1.5;
+/** Stronger weight decay so fitness gains come from indicator periods, not overweight nets. */
+const WEIGHT_L2_PENALTY = 2.5;
 
 /** Shared adapter — avoid allocating a fresh brain.js graph per genome. */
 const networkAdapter = new NeuralNetworkAdapter(STOCK_TOPOLOGY);
@@ -151,6 +151,8 @@ export function createTradingReplay(genome: Genome, points: MarketDataPoint[]): 
             bollingerLower: columns.bollingerLower[index],
             volatility: columns.volatility[index],
             volumeZScore: columns.volumeZScore[index],
+            nDayHigh: columns.nDayHigh[index],
+            newHighRatio: columns.newHighRatio[index],
         };
     }
 
@@ -199,7 +201,9 @@ export function buildNetworkFeatures(columns: IndicatorColumns, index: number, p
     out[8] = clamp((columns.bollingerPercentB[index] - 0.5) * 2);
     out[9] = clamp(columns.volatility[index] * 5);
     out[10] = clamp(columns.volumeZScore[index] / 3);
-    out[11] = position > 0 ? 1 : -1;
+    // close / N-day high ≈ 1 at breakout; map ~[0.9, 1.0] into roughly [-1, 1].
+    out[11] = clamp((columns.newHighRatio[index] - 0.95) * 20);
+    out[12] = position > 0 ? 1 : -1;
     return out;
 }
 

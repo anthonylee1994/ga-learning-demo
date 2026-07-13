@@ -26,6 +26,8 @@ export interface IndicatorColumns {
     bollingerBandwidth: Float64Array;
     volatility: Float64Array;
     volumeZScore: Float64Array;
+    nDayHigh: Float64Array;
+    newHighRatio: Float64Array;
 }
 
 export function calculateIndicatorColumns(points: MarketDataPoint[], parameters: OptimizedIndicatorParameters = DEFAULT_INDICATOR_PARAMETERS): IndicatorColumns {
@@ -49,6 +51,8 @@ export function calculateIndicatorColumns(points: MarketDataPoint[], parameters:
         bollingerBandwidth: new Float64Array(length),
         volatility: new Float64Array(length),
         volumeZScore: new Float64Array(length),
+        nDayHigh: new Float64Array(length),
+        newHighRatio: new Float64Array(length),
     };
     if (length === 0) {
         return columns;
@@ -71,6 +75,7 @@ export function calculateIndicatorColumns(points: MarketDataPoint[], parameters:
         const bollingerRange = Math.max(bollingerUpper - bollingerLower, EPSILON);
         const volumeMean = meanRange(volumes, index - parameters.volumeZScorePeriod + 1, index + 1);
         const volumeDeviation = standardDeviationRange(volumes, index - parameters.volumeZScorePeriod + 1, index + 1, volumeMean);
+        const nDayHigh = highestHighRange(points, index - parameters.newHighPeriod + 1, index + 1);
 
         columns.close[cursor] = point.close;
         columns.smaFast[cursor] = meanRange(closes, index - parameters.smaFastPeriod + 1, index + 1);
@@ -87,6 +92,8 @@ export function calculateIndicatorColumns(points: MarketDataPoint[], parameters:
         columns.bollingerBandwidth[cursor] = bollingerRange / Math.max(bollingerBasis, EPSILON);
         columns.volatility[cursor] = calculateVolatility(closes, index, parameters.volatilityPeriod);
         columns.volumeZScore[cursor] = (point.volume - volumeMean) / Math.max(volumeDeviation, EPSILON);
+        columns.nDayHigh[cursor] = nDayHigh;
+        columns.newHighRatio[cursor] = point.close / Math.max(nDayHigh, EPSILON);
     }
 
     return columns;
@@ -113,6 +120,8 @@ export function columnsToSnapshots(points: MarketDataPoint[], columns: Indicator
             bollingerBandwidth: columns.bollingerBandwidth[cursor],
             volatility: columns.volatility[cursor],
             volumeZScore: columns.volumeZScore[cursor],
+            nDayHigh: columns.nDayHigh[cursor],
+            newHighRatio: columns.newHighRatio[cursor],
         };
     }
     return snapshots;
@@ -131,7 +140,8 @@ export function getIndicatorWarmup(parameters: OptimizedIndicatorParameters): nu
         parameters.macdSlowPeriod + parameters.macdSignalPeriod,
         parameters.bollingerPeriod,
         parameters.volatilityPeriod,
-        parameters.volumeZScorePeriod
+        parameters.volumeZScorePeriod,
+        parameters.newHighPeriod
     );
 }
 
@@ -195,6 +205,14 @@ function calculateVolatility(closes: number[], index: number, period: number): n
     const meanValue = sum / period;
     const variance = sumSq / period - meanValue * meanValue;
     return Math.sqrt(Math.max(0, variance)) * Math.sqrt(252);
+}
+
+function highestHighRange(points: MarketDataPoint[], start: number, end: number): number {
+    let highest = -Infinity;
+    for (let index = start; index < end; index += 1) {
+        highest = Math.max(highest, points[index].high);
+    }
+    return highest;
 }
 
 function meanRange(values: number[], start: number, end: number): number {

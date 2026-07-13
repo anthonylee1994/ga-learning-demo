@@ -15,6 +15,8 @@ describe("Pine Script export", () => {
         expect(script).toContain(`williamsPeriod = ${parameters.williamsPeriod}`);
         expect(script).toContain(`volatilityPeriod = ${parameters.volatilityPeriod}`);
         expect(script).toContain(`volumeZScorePeriod = ${parameters.volumeZScorePeriod}`);
+        expect(script).toContain(`newHighPeriod = ${parameters.newHighPeriod}`);
+        expect(script).toContain("nDayHigh = ta.highest(high, newHighPeriod)");
         expect(script).toContain("tanh(value) =>");
         expect(script).toContain("outBuy");
         expect(script).toContain("outHold");

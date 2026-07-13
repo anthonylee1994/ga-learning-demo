@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 
-import {createPopulation, evolvePopulation} from "../lib/ga";
+import {createPopulation, evolvePopulation, type MutationProfile} from "../lib/ga";
 import {createRandom} from "../lib/random";
 import type {GAConfig, GenerationStats, Genome, WorkerCommand, WorkerEvent} from "../lib/types";
 
@@ -14,6 +14,8 @@ interface WorkerDefinition<TData, TReplay> {
     minReplayGenerationGap?: number;
     /** Optional classic baselines inserted into a fresh population (e.g. SMA cross). */
     seedGenomes?: Genome[];
+    /** Optional head/tail mutation bias (stock lab prioritizes indicator periods). */
+    mutationProfile?: MutationProfile;
     evaluate(genome: Genome, data: TData | undefined): number;
     createReplay(genome: Genome, data: TData | undefined): TReplay;
 }
@@ -84,7 +86,9 @@ export function setupEvolutionWorker<TData, TReplay>(definition: WorkerDefinitio
                 return;
             }
 
-            const result = evolvePopulation(population, fitnesses, config, random);
+            const result = evolvePopulation(population, fitnesses, config, random, {
+                mutationProfile: definition.mutationProfile,
+            });
             population = result.population;
             generation += 1;
 

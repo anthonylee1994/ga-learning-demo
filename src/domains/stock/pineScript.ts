@@ -32,6 +32,7 @@ bollingerPeriod = ${parameters.bollingerPeriod}
 bollingerMultiplier = ${formatNumber(parameters.bollingerMultiplier)}
 volatilityPeriod = ${parameters.volatilityPeriod}
 volumeZScorePeriod = ${parameters.volumeZScorePeriod}
+newHighPeriod = ${parameters.newHighPeriod}
 
 clamp(value) => math.min(1.0, math.max(-1.0, nz(value)))
 tanh(value) =>
@@ -62,6 +63,8 @@ volatility = ta.stdev(dailyReturn, volatilityPeriod) * math.sqrt(252.0)
 volumeAverage = ta.sma(volume, volumeZScorePeriod)
 volumeDeviation = ta.stdev(volume, volumeZScorePeriod)
 volumeZScore = (volume - volumeAverage) / math.max(volumeDeviation, 0.000000001)
+nDayHigh = ta.highest(high, newHighPeriod)
+newHighRatio = close / math.max(nDayHigh, 0.000000001)
 
 f0 = clamp((close / smaFast - 1.0) * 10.0)
 f1 = clamp((close / smaSlow - 1.0) * 10.0)
@@ -74,11 +77,12 @@ f7 = clamp(macdSignal / close * 25.0)
 f8 = clamp((bollingerPercentB - 0.5) * 2.0)
 f9 = clamp(volatility * 5.0)
 f10 = clamp(volumeZScore / 3.0)
-f11 = strategy.position_size > 0 ? 1.0 : -1.0
+f11 = clamp((newHighRatio - 0.95) * 20.0)
+f12 = strategy.position_size > 0 ? 1.0 : -1.0
 
 ${networkLines.join("\n")}
 
-ready = not na(smaSlow) and not na(williamsR) and not na(roc) and not na(rsi) and not na(macdSignal) and not na(bollingerUpper) and not na(volatility) and not na(volumeZScore)
+ready = not na(smaSlow) and not na(williamsR) and not na(roc) and not na(rsi) and not na(macdSignal) and not na(bollingerUpper) and not na(volatility) and not na(volumeZScore) and not na(nDayHigh)
 buySignal = ready and outBuy >= outHold and outBuy >= outSell
 sellSignal = ready and outSell > outBuy and outSell > outHold
 
@@ -89,6 +93,7 @@ if sellSignal and strategy.position_size > 0
 
 plot(smaFast, "Optimized SMA Fast", color=color.yellow)
 plot(smaSlow, "Optimized SMA Slow", color=color.blue)
+plot(nDayHigh, "N-day High", color=color.fuchsia)
 upperPlot = plot(bollingerUpper, "Optimized BB Upper", color=color.new(color.gray, 35))
 lowerPlot = plot(bollingerLower, "Optimized BB Lower", color=color.new(color.gray, 35))
 fill(upperPlot, lowerPlot, color=color.new(color.gray, 92))

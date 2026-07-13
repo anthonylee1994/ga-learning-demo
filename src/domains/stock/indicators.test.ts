@@ -1,11 +1,12 @@
 import {createMarketData} from "../../test/marketFixture";
-import {calculateIndicators, splitIndicators} from "./indicators";
+import {calculateIndicators, getIndicatorWarmup, splitIndicators} from "./indicators";
 import {DEFAULT_INDICATOR_PARAMETERS} from "./strategyGenome";
 
 describe("stock indicators", () => {
     it("calculates every requested signal after warm-up", () => {
-        const rows = calculateIndicators(createMarketData(120));
-        expect(rows).toHaveLength(70);
+        const points = createMarketData(120);
+        const rows = calculateIndicators(points);
+        expect(rows).toHaveLength(points.length - getIndicatorWarmup(DEFAULT_INDICATOR_PARAMETERS));
         expect(rows[0]).toEqual(
             expect.objectContaining({
                 smaFast: expect.any(Number),
@@ -17,9 +18,12 @@ describe("stock indicators", () => {
                 bollingerPercentB: expect.any(Number),
                 volatility: expect.any(Number),
                 volumeZScore: expect.any(Number),
+                nDayHigh: expect.any(Number),
+                newHighRatio: expect.any(Number),
             })
         );
-        expect(rows.every(row => Number.isFinite(row.rsi) && Number.isFinite(row.volumeZScore))).toBe(true);
+        expect(rows.every(row => Number.isFinite(row.rsi) && Number.isFinite(row.volumeZScore) && Number.isFinite(row.newHighRatio))).toBe(true);
+        expect(rows.every(row => row.newHighRatio > 0 && row.newHighRatio <= 1 + 1e-9)).toBe(true);
     });
 
     it("changes indicator output when the GA parameters change", () => {
@@ -33,12 +37,34 @@ describe("stock indicators", () => {
             bollingerMultiplier: 3,
             volatilityPeriod: 10,
             volumeZScorePeriod: 10,
+            newHighPeriod: 15,
         });
         expect(optimized.at(-1)?.rsi).not.toBe(baseline.at(-1)?.rsi);
         expect(optimized.at(-1)?.roc).not.toBe(baseline.at(-1)?.roc);
         expect(optimized.at(-1)?.bollingerUpper).not.toBe(baseline.at(-1)?.bollingerUpper);
         expect(optimized.at(-1)?.volatility).not.toBe(baseline.at(-1)?.volatility);
         expect(optimized.at(-1)?.volumeZScore).not.toBe(baseline.at(-1)?.volumeZScore);
+    });
+
+    it("marks a rising series near the N-day high", () => {
+        const points = createMarketData(120);
+        const rows = calculateIndicators(points, {...DEFAULT_INDICATOR_PARAMETERS, newHighPeriod: 20});
+        const last = rows.at(-1);
+        expect(last).toBeDefined();
+        expect(last!.newHighRatio).toBeGreaterThan(0.95);
+        expect(last!.nDayHigh).toBeGreaterThanOrEqual(last!.close);
+    });
+
+    it("forgets an older peak when the N-day lookback is shorter", () => {
+        const points = createMarketData(200);
+        // Spike ~50 bars before the end: long (80) still sees it, short (20) does not.
+        const spikeIndex = points.length - 50;
+        points[spikeIndex] = {...points[spikeIndex], high: 500, close: 400};
+        const longLookback = calculateIndicators(points, {...DEFAULT_INDICATOR_PARAMETERS, newHighPeriod: 80});
+        const shortLookback = calculateIndicators(points, {...DEFAULT_INDICATOR_PARAMETERS, newHighPeriod: 20});
+        expect(longLookback.at(-1)?.nDayHigh).toBe(500);
+        expect(shortLookback.at(-1)?.nDayHigh).toBeLessThan(500);
+        expect(shortLookback.at(-1)?.newHighRatio).toBeGreaterThan(longLookback.at(-1)?.newHighRatio ?? 0);
     });
 
     it("does not leak a future price into earlier indicators", () => {

@@ -109,6 +109,8 @@ export interface OptimizedIndicatorParameters {
     bollingerMultiplier: number;
     volatilityPeriod: number;
     volumeZScorePeriod: number;
+    /** Lookback for N-day highest high (breakout / new-high signal). */
+    newHighPeriod: number;
 }
 
 export interface IndicatorSnapshot {
@@ -128,6 +130,10 @@ export interface IndicatorSnapshot {
     bollingerBandwidth: number;
     volatility: number;
     volumeZScore: number;
+    /** Rolling N-day highest high. */
+    nDayHigh: number;
+    /** close / nDayHigh — 1.0 means at the N-day high. */
+    newHighRatio: number;
 }
 
 export interface TradeMarker {
@@ -153,6 +159,8 @@ export interface TradingPoint {
     bollingerLower: number;
     volatility: number;
     volumeZScore: number;
+    nDayHigh: number;
+    newHighRatio: number;
 }
 
 export interface TradingReplay {

@@ -36,7 +36,7 @@ describe("stock simulation", () => {
             expect(value).toBeGreaterThanOrEqual(-1);
             expect(value).toBeLessThanOrEqual(1);
         });
-        expect(features[11]).toBe(1);
+        expect(features[12]).toBe(1);
     });
 
     it("scores seed genomes finitely on a rising market", () => {

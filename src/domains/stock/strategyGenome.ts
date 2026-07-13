@@ -3,18 +3,32 @@ import type {Genome, NetworkTopology, OptimizedIndicatorParameters} from "../../
 
 /**
  * Normalized indicator features + current position → buy / hold / sell.
- * Kept compact so GA can search the weight space (snake/breaker use similar scale).
+ * Thin decision head on purpose: the GA is steered to spend most of its search
+ * budget on indicator periods (see STOCK_MUTATION_PROFILE), not a fat hidden net.
  */
 export const STOCK_TOPOLOGY: NetworkTopology = {
-    inputSize: 12,
-    hiddenLayers: [10],
+    inputSize: 13,
+    hiddenLayers: [4],
     outputSize: 3,
 };
 
-/** Indicator period genes (0–11) + brain.js weights/biases. */
-export const STOCK_PARAMETER_GENE_COUNT = 12;
+/** Indicator period genes (0–12) + brain.js weights/biases. */
+export const STOCK_PARAMETER_GENE_COUNT = 13;
 export const STOCK_NETWORK_GENE_COUNT = calculateGeneCount(STOCK_TOPOLOGY);
 export const STOCK_GENE_COUNT = STOCK_PARAMETER_GENE_COUNT + STOCK_NETWORK_GENE_COUNT;
+
+/**
+ * Period-first mutation: indicator genes flip ~3× more often / harder than the NN tail.
+ * Immigrants re-roll only periods so a stable decision head is reused across setups.
+ */
+export const STOCK_MUTATION_PROFILE = {
+    headGeneCount: STOCK_PARAMETER_GENE_COUNT,
+    headRateMultiplier: 3,
+    headScaleMultiplier: 1.5,
+    tailRateMultiplier: 0.35,
+    tailScaleMultiplier: 0.45,
+    immigrantHeadOnly: true,
+} as const;
 
 export const DEFAULT_INDICATOR_PARAMETERS: OptimizedIndicatorParameters = {
     smaFastPeriod: 20,
@@ -29,6 +43,7 @@ export const DEFAULT_INDICATOR_PARAMETERS: OptimizedIndicatorParameters = {
     bollingerMultiplier: 2,
     volatilityPeriod: 20,
     volumeZScorePeriod: 20,
+    newHighPeriod: 55,
 };
 
 export interface DecodedStockGenome {
@@ -61,6 +76,7 @@ export function decodeStockGenome(genome: Genome): DecodedStockGenome {
             bollingerMultiplier: decodeFloat(genome[9], 1, 3.5, 2),
             volatilityPeriod: value(10, 10, 60),
             volumeZScorePeriod: value(11, 10, 60),
+            newHighPeriod: value(12, 10, 120),
         },
         networkGenome: genome.slice(STOCK_PARAMETER_GENE_COUNT),
     };
@@ -87,19 +103,19 @@ export function encodeGene(value: number, min: number, max: number): number {
 export function createStockSeedGenomes(): Genome[] {
     return [
         seedGenome(
-            {smaFast: 10, smaSlow: 40, williams: 14, roc: 12, rsi: 14, macdFast: 12, macdSlow: 26, macdSignal: 9, bollinger: 20, bollingerMult: 2, volatility: 20, volumeZ: 20},
+            {smaFast: 10, smaSlow: 40, williams: 14, roc: 12, rsi: 14, macdFast: 12, macdSlow: 26, macdSignal: 9, bollinger: 20, bollingerMult: 2, volatility: 20, volumeZ: 20, newHigh: 20},
             {buyBias: 1.2, holdBias: 0.2, sellBias: -0.8, weightScale: 0.05}
         ),
         seedGenome(
-            {smaFast: 20, smaSlow: 50, williams: 14, roc: 12, rsi: 14, macdFast: 12, macdSlow: 26, macdSignal: 9, bollinger: 20, bollingerMult: 2, volatility: 20, volumeZ: 20},
+            {smaFast: 20, smaSlow: 50, williams: 14, roc: 12, rsi: 14, macdFast: 12, macdSlow: 26, macdSignal: 9, bollinger: 20, bollingerMult: 2, volatility: 20, volumeZ: 20, newHigh: 55},
             {buyBias: 0.4, holdBias: 0.1, sellBias: -0.2, weightScale: 0.12}
         ),
         seedGenome(
-            {smaFast: 12, smaSlow: 36, williams: 14, roc: 10, rsi: 14, macdFast: 8, macdSlow: 21, macdSignal: 5, bollinger: 20, bollingerMult: 2.2, volatility: 14, volumeZ: 20},
+            {smaFast: 12, smaSlow: 36, williams: 14, roc: 10, rsi: 14, macdFast: 8, macdSlow: 21, macdSignal: 5, bollinger: 20, bollingerMult: 2.2, volatility: 14, volumeZ: 20, newHigh: 40},
             {buyBias: 0.1, holdBias: 0.3, sellBias: 0.1, weightScale: 0.18}
         ),
         seedGenome(
-            {smaFast: 30, smaSlow: 100, williams: 21, roc: 20, rsi: 21, macdFast: 12, macdSlow: 26, macdSignal: 9, bollinger: 30, bollingerMult: 2.5, volatility: 30, volumeZ: 30},
+            {smaFast: 30, smaSlow: 100, williams: 21, roc: 20, rsi: 21, macdFast: 12, macdSlow: 26, macdSignal: 9, bollinger: 30, bollingerMult: 2.5, volatility: 30, volumeZ: 30, newHigh: 100},
             {buyBias: 0.8, holdBias: 0, sellBias: -0.4, weightScale: 0.08}
         ),
     ];
@@ -134,6 +150,7 @@ function seedGenome(
         bollingerMult: number;
         volatility: number;
         volumeZ: number;
+        newHigh: number;
     },
     network: {buyBias: number; holdBias: number; sellBias: number; weightScale: number}
 ): Genome {
@@ -150,6 +167,7 @@ function seedGenome(
     genome[9] = encodeGene(periods.bollingerMult, 1, 3.5);
     genome[10] = encodeGene(periods.volatility, 10, 60);
     genome[11] = encodeGene(periods.volumeZ, 10, 60);
+    genome[12] = encodeGene(periods.newHigh, 10, 120);
 
     // Deterministic small weights + explicit output biases (buy / hold / sell).
     const hidden = STOCK_TOPOLOGY.hiddenLayers[0];

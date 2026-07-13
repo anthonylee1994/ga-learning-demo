@@ -68,6 +68,7 @@
 ### Stock Trading
 
 - 預設 `QQQ`、十年日線，按時間順序分為 80% training、20% out-of-sample test。
+- **Period-first evolution**：GA 主力搜尋 technical indicator periods；NN 只係薄 decision head（`13 → 4 → 3`）。period genes mutation ×3、NN weights ×0.35；每代 immigrant 只重抽 periods。
 - Inputs 只使用當日及之前嘅 OHLCV：
     - SMA20、SMA50、close-to-SMA distance、SMA spread。
     - Williams %R 14。
@@ -77,6 +78,7 @@
     - Bollinger Bands 20/2：`%B`、bandwidth。
     - 20 日 rolling volatility。
     - 20 日 volume z-score。
+    - N 日最高價（new high ratio：close / N-day high）。
     - 目前持倉比例。
 - Warm-up 未完成嘅日期不參與訓練或測試；所有 inputs 會正規化及限制極端值。
 - Brain.js outputs 為買入、持有、賣出，對應 100% long、保持倉位、100% cash；不做 short selling或 leverage。

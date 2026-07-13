@@ -1,5 +1,5 @@
 import {calculateGeneCount} from "../../lib/neuralNetwork";
-import {createStockSeedGenomes, decodeStockGenome, encodeGene, STOCK_GENE_COUNT, STOCK_NETWORK_GENE_COUNT, STOCK_PARAMETER_GENE_COUNT, STOCK_TOPOLOGY} from "./strategyGenome";
+import {createStockSeedGenomes, decodeStockGenome, encodeGene, STOCK_GENE_COUNT, STOCK_MUTATION_PROFILE, STOCK_NETWORK_GENE_COUNT, STOCK_PARAMETER_GENE_COUNT, STOCK_TOPOLOGY} from "./strategyGenome";
 
 describe("stock strategy genome", () => {
     it("decodes indicator parameters and network weights", () => {
@@ -7,6 +7,11 @@ describe("stock strategy genome", () => {
         const decoded = decodeStockGenome(genome);
         expect(STOCK_GENE_COUNT).toBe(STOCK_PARAMETER_GENE_COUNT + STOCK_NETWORK_GENE_COUNT);
         expect(STOCK_NETWORK_GENE_COUNT).toBe(calculateGeneCount(STOCK_TOPOLOGY));
+        // Thin decision head: periods should not be drowned by a fat hidden layer.
+        expect(STOCK_TOPOLOGY.hiddenLayers).toEqual([4]);
+        expect(STOCK_NETWORK_GENE_COUNT).toBeLessThan(100);
+        expect(STOCK_MUTATION_PROFILE.headGeneCount).toBe(STOCK_PARAMETER_GENE_COUNT);
+        expect(STOCK_MUTATION_PROFILE.headRateMultiplier).toBeGreaterThan(STOCK_MUTATION_PROFILE.tailRateMultiplier);
         expect(decoded.parameters.smaFastPeriod).toBeGreaterThanOrEqual(5);
         expect(decoded.parameters.smaSlowPeriod).toBeGreaterThan(decoded.parameters.smaFastPeriod);
         expect(decoded.parameters.rsiPeriod).toBeGreaterThanOrEqual(5);
@@ -14,6 +19,8 @@ describe("stock strategy genome", () => {
         expect(decoded.parameters.bollingerMultiplier).toBeGreaterThanOrEqual(1);
         expect(decoded.parameters.bollingerMultiplier).toBeLessThanOrEqual(3.5);
         expect(decoded.parameters.macdSlowPeriod).toBeGreaterThan(decoded.parameters.macdFastPeriod);
+        expect(decoded.parameters.newHighPeriod).toBeGreaterThanOrEqual(10);
+        expect(decoded.parameters.newHighPeriod).toBeLessThanOrEqual(120);
         expect(decoded.networkGenome).toHaveLength(STOCK_NETWORK_GENE_COUNT);
     });
 

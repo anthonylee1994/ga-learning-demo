@@ -44,4 +44,42 @@ describe("genetic algorithm", () => {
         expect(result.population).toHaveLength(10);
         expect(result.stats.diversity).toBeGreaterThan(0);
     });
+
+    it("mutates head genes more than the tail when a profile is set", () => {
+        const genome = Array.from({length: 20}, () => 0);
+        const random = createRandom(99);
+        let headChanges = 0;
+        let tailChanges = 0;
+        for (let trial = 0; trial < 200; trial += 1) {
+            const mutated = mutateGenome(genome, 0.2, 0.3, random, {
+                headGeneCount: 5,
+                headRateMultiplier: 3,
+                tailRateMultiplier: 0.2,
+            });
+            for (let index = 0; index < mutated.length; index += 1) {
+                if (mutated[index] === genome[index]) {
+                    continue;
+                }
+                if (index < 5) {
+                    headChanges += 1;
+                } else {
+                    tailChanges += 1;
+                }
+            }
+        }
+        expect(headChanges).toBeGreaterThan(tailChanges);
+    });
+
+    it("re-rolls only head genes for head-only immigrants", () => {
+        const population = Array.from({length: 8}, (_, index) => Array.from({length: 6}, (__, gene) => index * 10 + gene));
+        const fitnesses = population.map((_, index) => index);
+        const result = evolvePopulation(population, fitnesses, CONFIG, createRandom(3), {
+            mutationProfile: {headGeneCount: 2, immigrantHeadOnly: true},
+        });
+        const immigrant = result.population[result.population.length - 1];
+        const elite = result.bestGenome;
+        // Tail genes should match the elite template; head genes were re-sampled.
+        expect(immigrant.slice(2)).toEqual(elite.slice(2));
+        expect(immigrant.slice(0, 2)).not.toEqual(elite.slice(0, 2));
+    });
 });
