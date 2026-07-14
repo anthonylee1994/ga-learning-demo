@@ -306,6 +306,49 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
                         </div>
                         <StockPlaybackCanvas loop onDayChange={handleDayChange} playing={Boolean(replay)} replay={replay} restartKey={demo.showcaseEpoch} speed={demo.config.speed} />
                     </div>
+                    {useNetwork ? (
+                        <NetworkPanel
+                            genome={networkGenome}
+                            input={networkPreview?.input ?? null}
+                            inputLabels={STOCK_INPUT_LABELS}
+                            outputLabels={STOCK_OUTPUT_LABELS}
+                            subtitle="只顯示決策頭（週期基因另見下方參數表）。節點亮度跟住下方逐日重播；亦可拖滑桿手動 scrub。"
+                            title="股票決策頭"
+                            topology={STOCK_TOPOLOGY}
+                        >
+                            {networkPreview ? (
+                                <label className="network-scrub control-field">
+                                    <span className="control-label">
+                                        <span>網絡預覽日</span>
+                                        <strong className="font-mono text-xs">
+                                            {networkPreview.date || "—"} · {networkPreview.segment}
+                                            {liveDay?.trade ? ` · ${liveDay.trade.action === "buy" ? "買" : "賣"}` : ""}
+                                        </strong>
+                                    </span>
+                                    <input
+                                        aria-label="網絡預覽日"
+                                        className="range-input"
+                                        max={networkPreview.maxIndex}
+                                        min={0}
+                                        onChange={event => setPreviewIndex(Number(event.target.value))}
+                                        step={1}
+                                        type="range"
+                                        value={Math.min(previewIndex, networkPreview.maxIndex)}
+                                    />
+                                </label>
+                            ) : null}
+                        </NetworkPanel>
+                    ) : (
+                        <section className="network-panel">
+                            <div className="panel-heading">
+                                <div>
+                                    <p className="eyebrow">神經演化大腦</p>
+                                    <h3>股票決策頭</h3>
+                                </div>
+                            </div>
+                            <div className="empty-chart network-empty">規則模式開啟中 — 決策用移動平均線 / MACD / RSI / 威廉指標投票，決策頭權重未使用。</div>
+                        </section>
+                    )}
                     {parameters ? (
                         <section className="optimized-panel">
                             <div className="panel-heading">
@@ -455,49 +498,6 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
                         </div>
                         <div className="chart-height-md">{replay ? <EquityChart points={replay.points} splitDate={splitDate} /> : <div className="empty-chart">訓練出冠軍後會顯示權益曲線。</div>}</div>
                     </section>
-                    {useNetwork ? (
-                        <NetworkPanel
-                            genome={networkGenome}
-                            input={networkPreview?.input ?? null}
-                            inputLabels={STOCK_INPUT_LABELS}
-                            outputLabels={STOCK_OUTPUT_LABELS}
-                            subtitle="只顯示決策頭（週期基因另見上方參數表）。節點亮度跟住上方逐日重播；亦可拖滑桿手動 scrub。"
-                            title="股票決策頭"
-                            topology={STOCK_TOPOLOGY}
-                        >
-                            {networkPreview ? (
-                                <label className="network-scrub control-field">
-                                    <span className="control-label">
-                                        <span>網絡預覽日</span>
-                                        <strong className="font-mono text-xs">
-                                            {networkPreview.date || "—"} · {networkPreview.segment}
-                                            {liveDay?.trade ? ` · ${liveDay.trade.action === "buy" ? "買" : "賣"}` : ""}
-                                        </strong>
-                                    </span>
-                                    <input
-                                        aria-label="網絡預覽日"
-                                        className="range-input"
-                                        max={networkPreview.maxIndex}
-                                        min={0}
-                                        onChange={event => setPreviewIndex(Number(event.target.value))}
-                                        step={1}
-                                        type="range"
-                                        value={Math.min(previewIndex, networkPreview.maxIndex)}
-                                    />
-                                </label>
-                            ) : null}
-                        </NetworkPanel>
-                    ) : (
-                        <section className="network-panel">
-                            <div className="panel-heading">
-                                <div>
-                                    <p className="eyebrow">神經演化大腦</p>
-                                    <h3>股票決策頭</h3>
-                                </div>
-                            </div>
-                            <div className="empty-chart network-empty">規則模式開啟中 — 決策用移動平均線 / MACD / RSI / 威廉指標投票，決策頭權重未使用。</div>
-                        </section>
-                    )}
                     <FitnessChart eyebrow={isMonteCarlo ? "搜尋訊號" : "演化訊號"} history={demo.history} title={isMonteCarlo ? "批次適應度趨勢" : "適應度趨勢"} />
                     <ApplicationPanel
                         eyebrow={isMonteCarlo ? "蒙地卡羅對應" : "GA 對應"}
