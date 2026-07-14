@@ -3,8 +3,11 @@ import {Button, Card, Chip, Tooltip} from "@heroui/react";
 import {Info, Pause, Play, RotateCcw} from "lucide-react";
 import type {EvolutionDemoState} from "../hooks/useEvolutionDemo";
 
+/** Only the fields DemoControls actually touches — keeps labs free of loadChampion variance issues. */
+type DemoControlsDemo = Pick<EvolutionDemoState<unknown>, "config" | "setConfig" | "status" | "error" | "start" | "pause" | "reset">;
+
 interface DemoControlsProps {
-    demo: EvolutionDemoState<unknown>;
+    demo: DemoControlsDemo;
     disabled?: boolean;
     /** Lab-specific extra controls (e.g. stock lab's NN toggle)，排喺隨機種子之後。 */
     children?: React.ReactNode;

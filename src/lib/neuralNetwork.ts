@@ -1,6 +1,27 @@
 import {NeuralNetwork} from "brain.js";
 import type {Genome, NetworkTopology} from "./types";
 
+export interface LayerParams {
+    /** Bias per neuron in this layer. */
+    biases: number[];
+    /** weights[node][prevNode] — incoming edges into each neuron. */
+    weights: number[][];
+}
+
+export interface NetworkInspection {
+    sizes: number[];
+    /** One entry per non-input layer (hidden…output). */
+    layers: LayerParams[];
+}
+
+export interface NetworkForwardPass {
+    /** Activations for every layer, including the input layer at index 0. */
+    activations: number[][];
+    outputs: number[];
+    /** argMax of outputs. */
+    decision: number;
+}
+
 export class NeuralNetworkAdapter {
     readonly topology: NetworkTopology;
     readonly geneCount: number;
@@ -13,6 +34,18 @@ export class NeuralNetworkAdapter {
 
     run(genome: Genome, input: number[]): number[] {
         return this.createRunner(genome)(input);
+    }
+
+    /**
+     * Pure forward pass that also returns per-layer activations.
+     * Used by UI visualizers — keeps brain.js graph out of the animation path.
+     */
+    runDetailed(genome: Genome, input: number[]): NetworkForwardPass {
+        return forwardWithActivations(genome, this.topology, input);
+    }
+
+    inspect(genome: Genome): NetworkInspection {
+        return inspectGenome(genome, this.topology);
     }
 
     createRunner(genome: Genome): (input: number[]) => number[] {
@@ -44,13 +77,73 @@ export class NeuralNetworkAdapter {
 }
 
 export function calculateGeneCount(topology: NetworkTopology): number {
-    const sizes = [topology.inputSize, ...topology.hiddenLayers, topology.outputSize];
+    const sizes = layerSizes(topology);
     let count = 0;
     for (let layer = 1; layer < sizes.length; layer += 1) {
         count += sizes[layer];
         count += sizes[layer] * sizes[layer - 1];
     }
     return count;
+}
+
+export function layerSizes(topology: NetworkTopology): number[] {
+    return [topology.inputSize, ...topology.hiddenLayers, topology.outputSize];
+}
+
+/** Decode a flat genome into per-layer biases + weight matrices. */
+export function inspectGenome(genome: Genome, topology: NetworkTopology): NetworkInspection {
+    const sizes = layerSizes(topology);
+    const expected = calculateGeneCount(topology);
+    if (genome.length !== expected) {
+        throw new Error(`Genome length ${genome.length} does not match ${expected}`);
+    }
+
+    const layers: LayerParams[] = [];
+    let cursor = 0;
+    for (let layer = 1; layer < sizes.length; layer += 1) {
+        const nodeCount = sizes[layer];
+        const prevCount = sizes[layer - 1];
+        const biases = genome.slice(cursor, cursor + nodeCount);
+        cursor += nodeCount;
+        const weights: number[][] = [];
+        for (let node = 0; node < nodeCount; node += 1) {
+            weights.push(genome.slice(cursor, cursor + prevCount));
+            cursor += prevCount;
+        }
+        layers.push({biases, weights});
+    }
+
+    return {sizes, layers};
+}
+
+/**
+ * Feed-forward with tanh, matching brain.js layout used by `applyGenome`.
+ * Returns activations for every layer so the UI can light up nodes live.
+ */
+export function forwardWithActivations(genome: Genome, topology: NetworkTopology, input: number[]): NetworkForwardPass {
+    if (input.length !== topology.inputSize) {
+        throw new Error(`Input length ${input.length} does not match ${topology.inputSize}`);
+    }
+
+    const inspection = inspectGenome(genome, topology);
+    const activations: number[][] = [Array.from(input)];
+
+    for (let layerIndex = 0; layerIndex < inspection.layers.length; layerIndex += 1) {
+        const prev = activations[layerIndex];
+        const {biases, weights} = inspection.layers[layerIndex];
+        const next = biases.map((bias, node) => {
+            let sum = bias;
+            const inbound = weights[node];
+            for (let prevNode = 0; prevNode < prev.length; prevNode += 1) {
+                sum += inbound[prevNode] * prev[prevNode];
+            }
+            return Math.tanh(sum);
+        });
+        activations.push(next);
+    }
+
+    const outputs = activations[activations.length - 1];
+    return {activations, outputs, decision: argMax(outputs)};
 }
 
 function applyGenome(network: NeuralNetwork<number[], number[]>, genome: Genome): void {

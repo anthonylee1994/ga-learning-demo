@@ -1,11 +1,14 @@
 import React from "react";
 import {Dna} from "lucide-react";
+import {buildSnakeInputFromFrame, createSnakeReplay, evaluateSnakeGenome, SNAKE_INPUT_LABELS, SNAKE_OUTPUT_LABELS, SNAKE_TOPOLOGY} from "../domains/snake/simulation";
 import {useEvolutionDemo} from "../hooks/useEvolutionDemo";
-import type {GAConfig, SnakeReplay} from "../lib/types";
+import type {GAConfig, Genome, SnakeFrame, SnakeReplay} from "../lib/types";
 import {ApplicationPanel} from "./ApplicationPanel";
 import {DemoControls} from "./DemoControls";
 import {FitnessChart} from "./FitnessChart";
+import {GenomeTransfer} from "./GenomeTransfer";
 import {Metrics} from "./Metrics";
+import {NetworkPanel} from "./NetworkPanel";
 import {SnakeCanvas} from "./SnakeCanvas";
 
 const DEFAULT_CONFIG: GAConfig = {
@@ -26,6 +29,30 @@ export const SnakeLab = React.memo(() => {
             seed: Math.round(Math.random() * 1_000_000),
         },
     });
+    const [liveInput, setLiveInput] = React.useState<number[] | null>(null);
+    const [transferMessage, setTransferMessage] = React.useState<{type: "status" | "error"; text: string} | null>(null);
+
+    const handleFrameChange = (frame: SnakeFrame | null) => {
+        if (!frame || frame.snake.length === 0) {
+            setLiveInput(null);
+            return;
+        }
+        setLiveInput(buildSnakeInputFromFrame(frame));
+    };
+
+    const handleImportGenome = (genome: Genome) => {
+        const replay = createSnakeReplay(genome);
+        const fitness = evaluateSnakeGenome(genome);
+        demo.loadChampion({genome, replay, fitness});
+    };
+
+    // Drop stale activations when the champion genome is cleared / replaced without frames.
+    React.useEffect(() => {
+        if (!demo.champion) {
+            setLiveInput(null);
+        }
+    }, [demo.champion]);
+
     return (
         <DemoShell accent="snake" description="一個 10 → 12 → 3 嘅 Brain.js network，靠食物、存活同距離 shaping 學識轉彎。" icon={<Dna size={20} strokeWidth={1.5} />} title="Snake Neuroevolution">
             <div className="workspace-grid">
@@ -44,12 +71,22 @@ export const SnakeLab = React.memo(() => {
                         </div>
                         <SnakeCanvas
                             loop={demo.status === "paused"}
+                            onFrameChange={handleFrameChange}
                             playing={demo.status === "running" || demo.status === "paused"}
                             replay={demo.champion?.replay}
                             restartKey={demo.showcaseEpoch}
                             speed={demo.config.speed}
                         />
                     </div>
+                    <NetworkPanel
+                        genome={demo.champion?.genome}
+                        input={liveInput}
+                        inputLabels={SNAKE_INPUT_LABELS}
+                        outputLabels={SNAKE_OUTPUT_LABELS}
+                        subtitle="節點亮度跟住 replay 每一 frame 嘅 forward pass；heatmap 係 champion weights。"
+                        title="Snake network"
+                        topology={SNAKE_TOPOLOGY}
+                    />
                     <FitnessChart history={demo.history} />
                     <ApplicationPanel
                         fitness="食物平方獎勵 + 存活步數 + 接近食物 shaping"
@@ -60,7 +97,19 @@ export const SnakeLab = React.memo(() => {
                     />
                 </main>
                 <aside className="demo-sidebar">
-                    <DemoControls demo={demo} />
+                    <DemoControls demo={demo}>
+                        <GenomeTransfer
+                            fitness={demo.champion?.fitness}
+                            genome={demo.champion?.genome}
+                            onImport={handleImportGenome}
+                            onMessage={setTransferMessage}
+                            score={demo.champion?.replay.score}
+                            steps={demo.champion?.replay.steps}
+                            topic="snake"
+                            topology={SNAKE_TOPOLOGY}
+                        />
+                        {transferMessage ? <p className={transferMessage.type === "error" ? "error-message" : "status-message"}>{transferMessage.text}</p> : null}
+                    </DemoControls>
                 </aside>
             </div>
         </DemoShell>

@@ -11,6 +11,12 @@ interface EvolutionDemoOptions<TData> {
     data?: TData;
 }
 
+export interface LoadChampionPayload<TReplay> {
+    genome: number[];
+    replay: TReplay;
+    fitness?: number;
+}
+
 export interface EvolutionDemoState<TReplay> {
     config: GAConfig;
     setConfig: React.Dispatch<React.SetStateAction<GAConfig>>;
@@ -24,6 +30,11 @@ export interface EvolutionDemoState<TReplay> {
     start: () => void;
     pause: () => void;
     reset: () => void;
+    /**
+     * Inject a champion genome + replay (e.g. imported weights).
+     * Locks champion updates until the next start() so pause-showcase cannot overwrite it.
+     */
+    loadChampion: (payload: LoadChampionPayload<TReplay>) => void;
 }
 
 const STORAGE_KEY = "evolab-state-v1";
@@ -48,6 +59,8 @@ export function useEvolutionDemo<TData, TReplay>(options: EvolutionDemoOptions<T
     const suppressChampionUpdatesRef = React.useRef(false);
     /** Next generation payload with a full replay is the pause showcase snapshot. */
     const awaitingPauseShowcaseRef = React.useRef(false);
+    /** Hard-lock champion after import until the user starts training again. */
+    const lockChampionRef = React.useRef(false);
 
     configRef.current = config;
 
@@ -74,6 +87,7 @@ export function useEvolutionDemo<TData, TReplay>(options: EvolutionDemoOptions<T
                 if (event.status === "running") {
                     suppressChampionUpdatesRef.current = false;
                     awaitingPauseShowcaseRef.current = false;
+                    lockChampionRef.current = false;
                 }
                 if (event.status === "paused" && awaitingPauseShowcaseRef.current) {
                     // No champion yet (paused before first generation) — stop waiting.
@@ -90,6 +104,10 @@ export function useEvolutionDemo<TData, TReplay>(options: EvolutionDemoOptions<T
                 React.startTransition(() => {
                     setStats(event.stats);
                     setHistory(current => [...current.slice(-79), event.stats]);
+
+                    if (lockChampionRef.current) {
+                        return;
+                    }
 
                     const isPauseShowcase = event.reason === "pause-showcase" && event.champion.replay !== undefined;
                     if (suppressChampionUpdatesRef.current && !isPauseShowcase) {
@@ -153,6 +171,7 @@ export function useEvolutionDemo<TData, TReplay>(options: EvolutionDemoOptions<T
         setError(null);
         suppressChampionUpdatesRef.current = false;
         awaitingPauseShowcaseRef.current = false;
+        lockChampionRef.current = false;
         const command: WorkerCommand<TData> = {
             type: "start",
             config,
@@ -172,6 +191,7 @@ export function useEvolutionDemo<TData, TReplay>(options: EvolutionDemoOptions<T
     const reset = () => {
         suppressChampionUpdatesRef.current = false;
         awaitingPauseShowcaseRef.current = false;
+        lockChampionRef.current = false;
         workerRef.current?.postMessage({type: "reset"} satisfies WorkerCommand<TData>);
         storedChampionRef.current = undefined;
         setStatus("idle");
@@ -186,8 +206,29 @@ export function useEvolutionDemo<TData, TReplay>(options: EvolutionDemoOptions<T
         writeStoredDemo(topic, defaultConfig);
         setConfig(defaultConfig);
     };
+    const loadChampion = (payload: LoadChampionPayload<TReplay>) => {
+        // If training is mid-flight, stop accepting worker champion updates (including
+        // pause-showcase) so the imported brain is not immediately overwritten.
+        if (status === "running") {
+            awaitingPauseShowcaseRef.current = false;
+            suppressChampionUpdatesRef.current = true;
+            workerRef.current?.postMessage({type: "pause"} satisfies WorkerCommand<TData>);
+        }
+        lockChampionRef.current = true;
+        awaitingPauseShowcaseRef.current = false;
+        suppressChampionUpdatesRef.current = true;
 
-    return {config, setConfig, status, stats, history, champion, error, showcaseEpoch, start, pause, reset};
+        const fitness = payload.fitness ?? 0;
+        storedChampionRef.current = payload.genome;
+        setChampion({genome: payload.genome, fitness, replay: payload.replay});
+        setShowcaseEpoch(value => value + 1);
+        // Paused so canvas loops the imported champion (idle would freeze playback).
+        setStatus("paused");
+        setError(null);
+        schedulePersist(configRef.current, payload.genome, fitness);
+    };
+
+    return {config, setConfig, status, stats, history, champion, error, showcaseEpoch, start, pause, reset, loadChampion};
 }
 
 function readStoredDemo(topic: DemoTopic) {

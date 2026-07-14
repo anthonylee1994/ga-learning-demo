@@ -37,6 +37,48 @@ export function createSnakeReplay(genome: Genome): SnakeReplay {
     return simulateSnake(genome, 137, true).replay;
 }
 
+export const SNAKE_INPUT_LABELS = ["前危險", "左危險", "右危險", "食物 Δx", "食物 Δy", "向上", "向右", "向下", "向左", "身長"] as const;
+
+export const SNAKE_OUTPUT_LABELS = ["左轉", "直行", "右轉"] as const;
+
+/**
+ * Rebuild the network input vector from a recorded frame so the UI can show
+ * live activations without re-simulating the whole game.
+ */
+export function buildSnakeInputFromFrame(frame: SnakeFrame): number[] {
+    const snake = frame.snake;
+    const head = snake[0];
+    const directionIndex = directionIndexFromSnake(snake);
+    const leftDirection = (directionIndex + 3) % 4;
+    const rightDirection = (directionIndex + 1) % 4;
+    return [
+        isDanger(head, DIRECTIONS[directionIndex], snake) ? 1 : -1,
+        isDanger(head, DIRECTIONS[leftDirection], snake) ? 1 : -1,
+        isDanger(head, DIRECTIONS[rightDirection], snake) ? 1 : -1,
+        (frame.food.x - head.x) / GRID_SIZE,
+        (frame.food.y - head.y) / GRID_SIZE,
+        directionIndex === 0 ? 1 : -1,
+        directionIndex === 1 ? 1 : -1,
+        directionIndex === 2 ? 1 : -1,
+        directionIndex === 3 ? 1 : -1,
+        snake.length / (GRID_SIZE * GRID_SIZE),
+    ];
+}
+
+function directionIndexFromSnake(snake: Point[]): number {
+    if (snake.length < 2) {
+        return 1;
+    }
+    const dx = snake[0].x - snake[1].x;
+    const dy = snake[0].y - snake[1].y;
+    for (let index = 0; index < DIRECTIONS.length; index += 1) {
+        if (DIRECTIONS[index].x === dx && DIRECTIONS[index].y === dy) {
+            return index;
+        }
+    }
+    return 1;
+}
+
 function simulateSnake(genome: Genome, seed: number, record: boolean): SnakeResult {
     const random = createRandom(seed);
     const runNetwork = networkAdapter.createRunner(genome);
