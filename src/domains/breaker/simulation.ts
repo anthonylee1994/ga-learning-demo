@@ -11,9 +11,9 @@ export const BREAKER_TOPOLOGY = {
 const WIDTH = 560;
 const HEIGHT = 420;
 /** Cap physics steps so long rallies cannot explode worker memory / postMessage size. */
-const MAX_STEPS = 2_400;
+const MAX_STEPS = 9_999;
 /** UI playback only needs a short highlight reel. */
-const MAX_REPLAY_FRAMES = 600;
+const MAX_REPLAY_FRAMES = MAX_STEPS * 2;
 const PADDLE_WIDTH = 92;
 /** Canonical launch used for champion replay AND as one of the eval seeds. */
 const REPLAY_LAUNCH = 0.86;

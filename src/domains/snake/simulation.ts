@@ -10,7 +10,7 @@ export const SNAKE_TOPOLOGY = {
 
 const GRID_SIZE = 20;
 /** Hard cap so long-lived champions cannot run the worker / postMessage out of memory. */
-const MAX_STEPS = 2_400;
+const MAX_STEPS = 9_999;
 /** Cap recorded frames (UI only needs a short playback, not every training step). */
 const MAX_REPLAY_FRAMES = 900;
 

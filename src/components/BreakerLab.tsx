@@ -14,7 +14,7 @@ const DEFAULT_CONFIG: GAConfig = {
     mutationRate: 0.14,
     mutationScale: 0.26,
     eliteRate: 0.1,
-    seed: 281,
+    seed: Math.round(Math.random() * 1_000_000),
     speed: 3,
 };
 
@@ -22,7 +22,10 @@ export const BreakerLab = React.memo(() => {
     const demo = useEvolutionDemo<undefined, BreakerReplay>({
         topic: "breaker",
         createWorker: () => new Worker(new URL("../workers/breaker.worker.ts", import.meta.url), {type: "module"}),
-        defaultConfig: DEFAULT_CONFIG,
+        defaultConfig: {
+            ...DEFAULT_CONFIG,
+            seed: Math.round(Math.random() * 1_000_000),
+        },
     });
     return (
         <DemoShell

@@ -13,7 +13,7 @@ const DEFAULT_CONFIG: GAConfig = {
     mutationRate: 0.12,
     mutationScale: 0.24,
     eliteRate: 0.08,
-    seed: 137,
+    seed: Math.round(Math.random() * 1_000_000),
     speed: 3,
 };
 
@@ -21,7 +21,10 @@ export const SnakeLab = React.memo(() => {
     const demo = useEvolutionDemo<undefined, SnakeReplay>({
         topic: "snake",
         createWorker: () => new Worker(new URL("../workers/snake.worker.ts", import.meta.url), {type: "module"}),
-        defaultConfig: DEFAULT_CONFIG,
+        defaultConfig: {
+            ...DEFAULT_CONFIG,
+            seed: Math.round(Math.random() * 1_000_000),
+        },
     });
     return (
         <DemoShell accent="snake" description="一個 10 → 12 → 3 嘅 Brain.js network，靠食物、存活同距離 shaping 學識轉彎。" icon={<Dna size={20} strokeWidth={1.5} />} title="Snake Neuroevolution">

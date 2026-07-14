@@ -18,7 +18,7 @@ const DEFAULT_CONFIG: GAConfig = {
     mutationRate: 0.12,
     mutationScale: 0.22,
     eliteRate: 0.08,
-    seed: 420,
+    seed: Math.round(Math.random() * 1_000_000),
     speed: 3,
     useNeuralNetwork: true,
 };
@@ -35,7 +35,10 @@ export const StockLab = React.memo(() => {
     const demo = useEvolutionDemo<MarketDataResponse["points"], TradingReplay>({
         topic: "stock",
         createWorker: () => new Worker(new URL("../workers/stock.worker.ts", import.meta.url), {type: "module"}),
-        defaultConfig: DEFAULT_CONFIG,
+        defaultConfig: {
+            ...DEFAULT_CONFIG,
+            seed: Math.round(Math.random() * 1_000_000),
+        },
         data: marketData?.points,
     });
 
