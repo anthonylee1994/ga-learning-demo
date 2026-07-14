@@ -1,18 +1,20 @@
 import React from "react";
 import {Button, Chip} from "@heroui/react";
-import {Blocks, BookOpen, CandlestickChart, Dna, Network} from "lucide-react";
+import {Blocks, BookOpen, CandlestickChart, Dices, Dna, Network} from "lucide-react";
 import {Navigate, Route, Routes, useLocation, useNavigate} from "react-router-dom";
 
 const TheoryLab = React.lazy(() => import("./components/TheoryLab").then(module => ({default: module.TheoryLab})));
 const SnakeLab = React.lazy(() => import("./components/SnakeLab").then(module => ({default: module.SnakeLab})));
 const BreakerLab = React.lazy(() => import("./components/BreakerLab").then(module => ({default: module.BreakerLab})));
 const StockLab = React.lazy(() => import("./components/StockLab").then(module => ({default: module.StockLab})));
+const StockMonteCarloLab = React.lazy(() => import("./components/StockLab").then(module => ({default: module.StockMonteCarloLab})));
 
 const NAV_ITEMS = [
     {id: "theory" as const, path: "/theory", label: "演算法原理", icon: BookOpen, color: "neutral"},
     {id: "snake" as const, path: "/snake", label: "貪食蛇", icon: Dna, color: "snake"},
     {id: "breaker" as const, path: "/breaker", label: "撞磚", icon: Blocks, color: "breaker"},
-    {id: "stock" as const, path: "/stock", label: "股票交易", icon: CandlestickChart, color: "stock"},
+    {id: "stock" as const, path: "/stock", label: "股票交易 (GA)", icon: CandlestickChart, color: "stock"},
+    {id: "stock-mc" as const, path: "/stock-mc", label: "股票交易 (MC)", icon: Dices, color: "stock-mc"},
 ];
 
 export const App = React.memo(() => {
@@ -67,6 +69,7 @@ export const App = React.memo(() => {
                             <Route element={<SnakeLab />} path="/snake" />
                             <Route element={<BreakerLab />} path="/breaker" />
                             <Route element={<StockLab />} path="/stock" />
+                            <Route element={<StockMonteCarloLab />} path="/stock-mc" />
                             <Route element={<Navigate replace to="/theory" />} path="*" />
                         </Routes>
                     </React.Suspense>

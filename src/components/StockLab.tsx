@@ -1,9 +1,9 @@
 import React from "react";
 import {Button, Spinner, Switch} from "@heroui/react";
-import {CandlestickChart, FileDown, TriangleAlert} from "lucide-react";
+import {CandlestickChart, Dices, FileDown, TriangleAlert} from "lucide-react";
 import {Brush, CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis} from "recharts";
 import {useEvolutionDemo} from "../hooks/useEvolutionDemo";
-import type {GAConfig, Genome, MarketDataResponse, TradingPoint, TradingReplay} from "../lib/types";
+import type {GAConfig, Genome, MarketDataResponse, TopicId, TradingPoint, TradingReplay} from "../lib/types";
 import {createPineScript} from "../domains/stock/pineScript";
 import {
     ablateIndicatorMasks,
@@ -36,7 +36,10 @@ import {NetworkPanel} from "./NetworkPanel";
 import {DemoShell} from "./SnakeLab";
 import {StockPlaybackCanvas, type StockPlaybackDay} from "./StockPlaybackCanvas";
 
-const DEFAULT_CONFIG: GAConfig = {
+type StockOptimizer = "ga" | "montecarlo";
+type StockTopic = Extract<TopicId, "stock" | "stock-mc">;
+
+const GA_DEFAULT_CONFIG: GAConfig = {
     // Slightly leaner default — stock fitness walks multi-year bars per genome.
     populationSize: 36,
     // Base rates; stock worker multiplies indicator genes ~3× and NN genes ~0.35×.
@@ -49,9 +52,28 @@ const DEFAULT_CONFIG: GAConfig = {
     useNeuralNetwork: true,
 };
 
+/** 蒙地卡羅：較大批次、較高冠軍附近局部遊走比例。 */
+const MC_DEFAULT_CONFIG: GAConfig = {
+    populationSize: 40,
+    mutationRate: 0.35,
+    mutationScale: 0.28,
+    eliteRate: 0,
+    seed: Math.round(Math.random() * 1_000_000),
+    speed: 5,
+    useNeuralNetwork: true,
+};
+
 type IndicatorView = "price" | "momentum" | "macd" | "risk" | "newHigh";
 
-export const StockLab = React.memo(() => {
+export const StockLab = React.memo(() => <StockLabView optimizer="ga" />);
+
+/** 同一交易 lab，參數搜尋改用蒙地卡羅隨機抽樣。 */
+export const StockMonteCarloLab = React.memo(() => <StockLabView optimizer="montecarlo" />);
+
+const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
+    const isMonteCarlo = optimizer === "montecarlo";
+    const topic: StockTopic = isMonteCarlo ? "stock-mc" : "stock";
+    const defaultConfig = isMonteCarlo ? MC_DEFAULT_CONFIG : GA_DEFAULT_CONFIG;
     const [tickerInput, setTickerInput] = React.useState("QQQ");
     const [marketData, setMarketData] = React.useState<MarketDataResponse | null>(null);
     const [loading, setLoading] = React.useState(true);
@@ -60,10 +82,13 @@ export const StockLab = React.memo(() => {
     const [transferMessage, setTransferMessage] = React.useState<{type: "status" | "error"; text: string} | null>(null);
     const requestIdRef = React.useRef(0);
     const demo = useEvolutionDemo<MarketDataResponse["points"], TradingReplay>({
-        topic: "stock",
-        createWorker: () => new Worker(new URL("../workers/stock.worker.ts", import.meta.url), {type: "module"}),
+        topic,
+        createWorker: () =>
+            isMonteCarlo
+                ? new Worker(new URL("../workers/stockMonteCarlo.worker.ts", import.meta.url), {type: "module"})
+                : new Worker(new URL("../workers/stock.worker.ts", import.meta.url), {type: "module"}),
         defaultConfig: {
-            ...DEFAULT_CONFIG,
+            ...defaultConfig,
             seed: Math.round(Math.random() * 1_000_000),
         },
         data: marketData?.points,
@@ -235,10 +260,14 @@ export const StockLab = React.memo(() => {
 
     return (
         <DemoShell
-            accent="stock"
-            description="以遺傳演算法同時進化指標 on/off（feature selection）、週期 / 門檻，同薄 Brain.js 決策頭。Sparsity 懲罰多餘指標；冠軍會做 ablation 睇邊個真正有用。80% 訓練、20% 樣本外。"
-            icon={<CandlestickChart size={20} strokeWidth={1.5} />}
-            title="股票交易 · 神經演化"
+            accent={isMonteCarlo ? "stock-mc" : "stock"}
+            description={
+                isMonteCarlo
+                    ? "以蒙地卡羅隨機抽樣搜尋同一套交易基因體：每批混合全域均勻抽樣同冠軍附近局部遊走。指標 on/off、週期 / 門檻、薄 Brain.js 決策頭一齊優化。80% 訓練、20% 樣本外。"
+                    : "以遺傳演算法同時進化指標 on/off（feature selection）、週期 / 門檻，同薄 Brain.js 決策頭。Sparsity 懲罰多餘指標；冠軍會做 ablation 睇邊個真正有用。80% 訓練、20% 樣本外。"
+            }
+            icon={isMonteCarlo ? <Dices size={20} strokeWidth={1.5} /> : <CandlestickChart size={20} strokeWidth={1.5} />}
+            title={isMonteCarlo ? "股票交易 · 蒙地卡羅" : "股票交易 · 神經演化"}
         >
             <div className="stock-toolbar">
                 <label>
@@ -269,11 +298,11 @@ export const StockLab = React.memo(() => {
             ) : null}
             <div className="workspace-grid">
                 <main className="demo-main">
-                    <Metrics extra={metricsExtra} stats={demo.stats} />
+                    <Metrics extra={metricsExtra} generationLabel={isMonteCarlo ? "批次" : "世代"} stats={demo.stats} />
                     <div className="simulation-stage stock-stage">
                         <div className="stage-overlay">
                             <span>{marketData?.symbol ?? "QQQ"} · 逐日重播</span>
-                            <span>{replay ? (demo.status === "running" ? "冠軍循環重播 · 進化中" : "冠軍循環重播") : "未有冠軍"}</span>
+                            <span>{replay ? (demo.status === "running" ? (isMonteCarlo ? "冠軍循環重播 · 抽樣中" : "冠軍循環重播 · 進化中") : "冠軍循環重播") : "未有冠軍"}</span>
                         </div>
                         <StockPlaybackCanvas loop onDayChange={handleDayChange} playing={Boolean(replay)} replay={replay} restartKey={demo.showcaseEpoch} speed={demo.config.speed} />
                     </div>
@@ -469,21 +498,41 @@ export const StockLab = React.memo(() => {
                             <div className="empty-chart network-empty">規則模式開啟中 — 決策用移動平均線 / MACD / RSI / 威廉指標投票，決策頭權重未使用。</div>
                         </section>
                     )}
-                    <FitnessChart history={demo.history} />
+                    <FitnessChart eyebrow={isMonteCarlo ? "搜尋訊號" : "演化訊號"} history={demo.history} title={isMonteCarlo ? "批次適應度趨勢" : "適應度趨勢"} />
                     <ApplicationPanel
+                        eyebrow={isMonteCarlo ? "蒙地卡羅對應" : "GA 對應"}
                         fitness="82% 全段 + 18% soft-robust 半段：年化×130 + 累積回報×55 + Sharpe×10 − 回撤×22 + 超額×22 + 倉位暴露×8 − 閒置/低倉罰 − 輕 L2 − soft sparsity（超過 5 個各 −0.65）；主力係推高訓練回報，唔係避風險躺平"
-                        genome={`${STOCK_PARAMETER_GENE_COUNT} 週期/門檻 + ${STOCK_MASK_GENE_COUNT} 個 on/off mask（一齊突變 ×3）+ ${STOCK_NETWORK_GENE_COUNT} 決策頭權重（×0.35；${describeStockNetwork()}）`}
+                        genome={
+                            isMonteCarlo
+                                ? `${STOCK_PARAMETER_GENE_COUNT} 週期/門檻 + ${STOCK_MASK_GENE_COUNT} mask + ${STOCK_NETWORK_GENE_COUNT} 決策頭；每批混合全域隨機抽樣 + 冠軍附近局部遊走（局部比例 = 滑桿）`
+                                : `${STOCK_PARAMETER_GENE_COUNT} 週期/門檻 + ${STOCK_MASK_GENE_COUNT} 個 on/off mask（一齊突變 ×3）+ ${STOCK_NETWORK_GENE_COUNT} 決策頭權重（×0.35；${describeStockNetwork()}）`
+                        }
+                        genomeLabel={isMonteCarlo ? "參數向量" : "基因體"}
                         inputs="17 維特徵；被 mask 關掉嘅指標家族會強制填 0。持倉狀態永遠開啟。"
                         outputs={
                             useNetwork
                                 ? "薄隱藏層取最大 → 買 / 持 / 賣；搜尋主力喺 mask + 週期 / 門檻"
                                 : "啟用中嘅 SMA / MACD / RSI / 威廉 多數票買入；RSI / 威廉過熱賣出（兩者都關則買入條件失敗就離場）"
                         }
-                        termination="頭 80% 做選擇；尾 20% 唔入訓練；移民只重抽 head（參數 + mask）"
+                        termination={isMonteCarlo ? "頭 80% 做選擇；尾 20% 唔入訓練；每批保留全域最佳，暫停時重播冠軍" : "頭 80% 做選擇；尾 20% 唔入訓練；移民只重抽 head（參數 + mask）"}
+                        title={isMonteCarlo ? "點樣套用蒙地卡羅優化" : "點樣套用遺傳演算法"}
                     />
                 </main>
                 <aside className="demo-sidebar">
-                    <DemoControls demo={demo} disabled={!marketData || loading}>
+                    <DemoControls
+                        demo={demo}
+                        disabled={!marketData || loading}
+                        labels={
+                            isMonteCarlo
+                                ? {
+                                      title: "蒙地卡羅控制",
+                                      description: "每批隨機樣本 + 冠軍附近局部遊走",
+                                      populationSize: "每批樣本數",
+                                      mutationRate: "局部探索比例",
+                                  }
+                                : undefined
+                        }
+                    >
                         <Switch isSelected={useNetwork} onChange={checked => demo.setConfig(current => ({...current, useNeuralNetwork: checked}))}>
                             <Switch.Content>
                                 <Switch.Control>
@@ -500,7 +549,7 @@ export const StockLab = React.memo(() => {
                             onImport={handleImportGenome}
                             onMessage={setTransferMessage}
                             score={replay ? Math.round(replay.trainReturn * 1000) / 10 : undefined}
-                            topic="stock"
+                            topic={topic}
                             topology={STOCK_TOPOLOGY}
                         />
                         {transferMessage ? <p className={transferMessage.type === "error" ? "error-message" : "status-message"}>{transferMessage.text}</p> : null}

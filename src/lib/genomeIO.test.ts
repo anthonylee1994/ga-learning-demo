@@ -65,4 +65,24 @@ describe("genomeIO", () => {
         expect(parseGenomeFile(file, {topic: "stock", topology, geneCount: compositeCount})).toEqual(composite);
         expect(() => parseGenomeFile(file, {topic: "stock", topology})).toThrow(/長度/);
     });
+
+    it("allows stock ↔ stock-mc genome interchange", () => {
+        const topology = {inputSize: 2, hiddenLayers: [2], outputSize: 1};
+        const composite = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9];
+        const file = buildGenomeFile({
+            topic: "stock",
+            topology,
+            geneCount: composite.length,
+            genome: composite,
+        });
+        expect(parseGenomeFile(file, {topic: "stock-mc", topology, geneCount: composite.length})).toEqual(composite);
+
+        const mcFile = buildGenomeFile({
+            topic: "stock-mc",
+            topology,
+            geneCount: composite.length,
+            genome: composite,
+        });
+        expect(parseGenomeFile(mcFile, {topic: "stock", topology, geneCount: composite.length})).toEqual(composite);
+    });
 });

@@ -24,6 +24,7 @@
     --snake: #58d68d;
     --breaker: #e7b955;
     --stock: #e36f5b;
+    --stock-mc: #d48bd4;
     --blue: #5da6d9;
     --violet: #b38bd4;
 }
@@ -155,6 +156,9 @@ button {
 }
 .nav-stock i {
     background: var(--stock);
+}
+.nav-stock-mc i {
+    background: var(--stock-mc);
 }
 .sidebar-note {
     margin-top: auto;
@@ -495,6 +499,9 @@ button {
 }
 .accent-stock {
     --accent-color: var(--stock);
+}
+.accent-stock-mc {
+    --accent-color: var(--stock-mc);
 }
 .workspace-grid {
     display: grid;

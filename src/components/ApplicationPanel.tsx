@@ -6,6 +6,10 @@ interface ApplicationPanelProps {
     outputs: string;
     fitness: string;
     termination: string;
+    eyebrow?: string;
+    title?: string;
+    /** First row label — defaults to 基因體. */
+    genomeLabel?: string;
 }
 
 export const ApplicationPanel = React.memo<ApplicationPanelProps>(props => {
@@ -13,13 +17,13 @@ export const ApplicationPanel = React.memo<ApplicationPanelProps>(props => {
         <section className="application-panel">
             <div className="panel-heading">
                 <div>
-                    <p className="eyebrow">GA 對應</p>
-                    <h3>點樣套用遺傳演算法</h3>
+                    <p className="eyebrow">{props.eyebrow ?? "GA 對應"}</p>
+                    <h3>{props.title ?? "點樣套用遺傳演算法"}</h3>
                 </div>
             </div>
             <dl className="mapping-grid">
                 <div>
-                    <dt>基因體</dt>
+                    <dt>{props.genomeLabel ?? "基因體"}</dt>
                     <dd>{props.genome}</dd>
                 </div>
                 <div>

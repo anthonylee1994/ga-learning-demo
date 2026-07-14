@@ -6,15 +6,17 @@ interface Props {
     history: GenerationStats[];
     /** When true, plot population diversity on a second Y axis. */
     showDiversity?: boolean;
+    eyebrow?: string;
+    title?: string;
 }
 
-export const FitnessChart = React.memo<Props>(({history, showDiversity = true}) => {
+export const FitnessChart = React.memo<Props>(({history, showDiversity = true, eyebrow = "演化訊號", title = "適應度趨勢"}) => {
     return (
         <div className="chart-panel">
             <div className="panel-heading">
                 <div>
-                    <p className="eyebrow">演化訊號</p>
-                    <h3>適應度趨勢</h3>
+                    <p className="eyebrow">{eyebrow}</p>
+                    <h3>{title}</h3>
                 </div>
                 <div className="legend-row">
                     <span className="legend-dot best" />

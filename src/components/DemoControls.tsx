@@ -11,9 +11,16 @@ interface DemoControlsProps {
     disabled?: boolean;
     /** Lab-specific extra controls (e.g. stock lab's NN toggle)，排喺隨機種子之後。 */
     children?: React.ReactNode;
+    /** Optional copy overrides for non-GA labs (e.g. 蒙地卡羅). */
+    labels?: {
+        title?: string;
+        description?: string;
+        populationSize?: string;
+        mutationRate?: string;
+    };
 }
 
-export const DemoControls = React.memo<DemoControlsProps>(({demo, disabled, children}) => {
+export const DemoControls = React.memo<DemoControlsProps>(({demo, disabled, children, labels}) => {
     const updateNumber = (key: "populationSize" | "mutationRate" | "speed", value: number) => {
         demo.setConfig(current => ({...current, [key]: value}));
     };
@@ -22,8 +29,8 @@ export const DemoControls = React.memo<DemoControlsProps>(({demo, disabled, chil
         <Card className="control-panel rounded-lg" variant="default">
             <Card.Header className="flex-row items-center justify-between">
                 <div>
-                    <Card.Title className="text-base">訓練控制</Card.Title>
-                    <Card.Description>調整下一代嘅演化壓力</Card.Description>
+                    <Card.Title className="text-base">{labels?.title ?? "訓練控制"}</Card.Title>
+                    <Card.Description>{labels?.description ?? "調整下一代嘅演化壓力"}</Card.Description>
                 </div>
                 <Chip color={demo.status === "running" ? "success" : demo.status === "paused" ? "warning" : "default"} size="sm" variant="soft">
                     {demo.status === "running" ? "運行中" : demo.status === "paused" ? "已暫停" : "待機"}
@@ -48,8 +55,8 @@ export const DemoControls = React.memo<DemoControlsProps>(({demo, disabled, chil
                     </Tooltip>
                 </div>
 
-                <ControlSlider label="族群大小" max={80} min={12} onChange={value => updateNumber("populationSize", value)} step={2} value={demo.config.populationSize} />
-                <ControlSlider label="突變率" max={0.4} min={0.01} onChange={value => updateNumber("mutationRate", value)} step={0.01} value={demo.config.mutationRate} />
+                <ControlSlider label={labels?.populationSize ?? "族群大小"} max={80} min={12} onChange={value => updateNumber("populationSize", value)} step={2} value={demo.config.populationSize} />
+                <ControlSlider label={labels?.mutationRate ?? "突變率"} max={0.4} min={0.01} onChange={value => updateNumber("mutationRate", value)} step={0.01} value={demo.config.mutationRate} />
                 <ControlSlider label="播放速度" max={5} min={1} onChange={value => updateNumber("speed", value)} step={1} value={demo.config.speed} />
                 <label className="control-field">
                     <span className="control-label">隨機種子</span>

@@ -1,4 +1,4 @@
-export type TopicId = "theory" | "snake" | "breaker" | "stock";
+export type TopicId = "theory" | "snake" | "breaker" | "stock" | "stock-mc";
 
 export interface GAConfig {
     populationSize: number;

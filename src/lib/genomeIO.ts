@@ -101,7 +101,7 @@ export function parseGenomeFile(raw: unknown, expected: GenomeParseExpectation):
     if (file.version !== EVOLAB_GENOME_VERSION) {
         throw new Error(`不支援嘅 version（需要 ${EVOLAB_GENOME_VERSION}）。`);
     }
-    if (file.topic !== undefined && file.topic !== expected.topic) {
+    if (file.topic !== undefined && file.topic !== expected.topic && !topicsCompatible(file.topic, expected.topic)) {
         throw new Error(`呢個檔係 ${file.topic} lab 嘅 weights，唔適合 ${expected.topic}。`);
     }
     if (file.topology && !topologiesMatch(file.topology, expected.topology)) {
@@ -157,6 +157,12 @@ function validateGenomeArray(values: unknown[], geneCount: number): Genome {
         genome.push(value);
     }
     return genome;
+}
+
+/** Stock GA and 蒙地卡羅 labs share the same composite genome layout. */
+function topicsCompatible(fileTopic: GenomeFileTopic, expectedTopic: GenomeFileTopic): boolean {
+    const stockFamily = new Set<GenomeFileTopic>(["stock", "stock-mc"]);
+    return stockFamily.has(fileTopic) && stockFamily.has(expectedTopic);
 }
 
 function topologiesMatch(a: NetworkTopology, b: NetworkTopology): boolean {
