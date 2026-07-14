@@ -15,7 +15,7 @@ export const STOCK_INPUT_LABELS = [
     "RSI",
     "MACD",
     "MACD訊",
-    "BB%",
+    "BB通道",
     "波動率",
     "成交量",
     "N日新高",
@@ -24,8 +24,6 @@ export const STOCK_INPUT_LABELS = [
     "RSI賣距",
     "W%買距",
     "W%賣距",
-    "BB寬",
-    "Squeeze",
 ] as const;
 
 export const STOCK_OUTPUT_LABELS = ["買入", "持有", "賣出"] as const;
@@ -256,9 +254,6 @@ export function createTradingReplay(genome: Genome, points: MarketDataPoint[], u
             macdSignal: columns.macdSignal[index],
             bollingerUpper: columns.bollingerUpper[index],
             bollingerLower: columns.bollingerLower[index],
-            bollingerPercentB: columns.bollingerPercentB[index],
-            bollingerBandwidth: columns.bollingerBandwidth[index],
-            bollingerSqueezeRatio: columns.bollingerSqueezeRatio[index],
             volatility: columns.volatility[index],
             volumeZScore: columns.volumeZScore[index],
             nDayHigh: columns.nDayHigh[index],
@@ -332,7 +327,6 @@ export function buildNetworkFeatures(
     out[5] = masks.rsi ? clamp((columns.rsi[index] - 50) / 50) : 0;
     out[6] = masks.macd ? clamp((columns.macd[index] / close) * 25) : 0;
     out[7] = masks.macd ? clamp((columns.macdSignal[index] / close) * 25) : 0;
-    // Bollinger family: %B + Width + Squeeze release (volatility breakout), NOT fade the bands.
     out[8] = masks.bollinger ? clamp((columns.bollingerPercentB[index] - 0.5) * 2) : 0;
     out[9] = masks.volatility ? clamp(columns.volatility[index] * 5) : 0;
     out[10] = masks.volume ? clamp(columns.volumeZScore[index] / 3) : 0;
@@ -343,38 +337,12 @@ export function buildNetworkFeatures(
     out[14] = masks.rsi ? clamp((columns.rsi[index] - parameters.rsiSellThreshold) / 20) : 0;
     out[15] = masks.williams ? clamp((parameters.williamsBuyThreshold - columns.williamsR[index]) / 25) : 0;
     out[16] = masks.williams ? clamp((columns.williamsR[index] - parameters.williamsSellThreshold) / 25) : 0;
-    // Typical equity bandwidth ~0.02–0.15; scale into roughly [-1, 1].
-    out[17] = masks.bollinger ? clamp(columns.bollingerBandwidth[index] * 20 - 0.5) : 0;
-    // squeezeRatio≈1 at compression low; >1 when bands expand after squeeze.
-    out[18] = masks.bollinger ? clamp((columns.bollingerSqueezeRatio[index] - 1) * 2) : 0;
     return out;
-}
-
-/** Bands expanding off a recent squeeze low (BB Width rising from multi-bar minimum). */
-const SQUEEZE_EXPAND_RATIO = 1.12;
-/** Price in upper half of channel — long-only directional bias after expansion. */
-const SQUEEZE_LONG_PERCENT_B = 0.5;
-/** Price shifted to lower half during expansion → exit long (downside breakout bias). */
-const SQUEEZE_EXIT_PERCENT_B = 0.45;
-
-/**
- * Bollinger Bands Squeeze long signal (rule mode).
- * Not mean-reversion: only fires when width expands after compression AND price is above the mid band.
- */
-export function isBollingerSqueezeLong(columns: IndicatorColumns, index: number): boolean {
-    return columns.bollingerSqueezeRatio[index] >= SQUEEZE_EXPAND_RATIO && columns.bollingerPercentB[index] > SQUEEZE_LONG_PERCENT_B;
-}
-
-export function isBollingerSqueezeExit(columns: IndicatorColumns, index: number): boolean {
-    return columns.bollingerSqueezeRatio[index] >= SQUEEZE_EXPAND_RATIO && columns.bollingerPercentB[index] < SQUEEZE_EXIT_PERCENT_B;
 }
 
 /**
  * Rule mode: only enabled families cast votes.
- * Buy = majority of active buy votes (min 1). Sell = any enabled overbought / down-squeeze exit,
- * else fail-to-buy majority when long.
- *
- * Bollinger votes use Squeeze breakout (width expand + %B location), not "touch lower band → buy".
+ * Buy = majority of active buy votes (min 1). Sell = any enabled overbought exit, else fail-to-buy majority when long.
  */
 export function decidePositionFromRules(
     columns: IndicatorColumns,
@@ -385,8 +353,7 @@ export function decidePositionFromRules(
 ): number {
     const hasRsiExit = masks.rsi && columns.rsi[index] >= parameters.rsiSellThreshold;
     const hasWilliamsExit = masks.williams && columns.williamsR[index] >= parameters.williamsSellThreshold;
-    const hasBollingerExit = masks.bollinger && isBollingerSqueezeExit(columns, index);
-    if (position > 0 && (hasRsiExit || hasWilliamsExit || hasBollingerExit)) {
+    if (position > 0 && (hasRsiExit || hasWilliamsExit)) {
         return 0;
     }
 
@@ -403,13 +370,10 @@ export function decidePositionFromRules(
     if (masks.williams) {
         votes.push(columns.williamsR[index] <= parameters.williamsBuyThreshold ? 1 : 0);
     }
-    if (masks.bollinger) {
-        votes.push(isBollingerSqueezeLong(columns, index) ? 1 : 0);
-    }
 
     if (votes.length === 0) {
-        // No rule-capable families → stay flat.
-        return 0;
+        // No rule-capable families → stay flat (or hold existing if somehow long without exits).
+        return position > 0 && !masks.rsi && !masks.williams ? 0 : 0;
     }
 
     const yes = votes.reduce((sum, vote) => sum + vote, 0);
@@ -418,7 +382,7 @@ export function decidePositionFromRules(
         return 1;
     }
     // No dedicated exit indicators: leave when the buy majority fails.
-    if (position > 0 && !masks.rsi && !masks.williams && !masks.bollinger) {
+    if (position > 0 && !masks.rsi && !masks.williams) {
         return 0;
     }
     return position;

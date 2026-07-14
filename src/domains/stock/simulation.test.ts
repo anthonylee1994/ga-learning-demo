@@ -177,7 +177,6 @@ describe("stock simulation", () => {
                 macd: false,
                 rsi: false,
                 williams: false,
-                bollinger: false,
             })
         ).toBe(1);
         expect(
@@ -187,49 +186,8 @@ describe("stock simulation", () => {
                 macd: false,
                 rsi: false,
                 williams: false,
-                bollinger: false,
             })
         ).toBe(0);
-    });
-
-    it("uses Bollinger Squeeze breakout in rule mode (not mean-reversion at the bands)", () => {
-        const columns = getIndicatorColumns(points, DEFAULT_INDICATOR_PARAMETERS);
-        const index = Math.min(50, columns.length - 1);
-        const bbOnly = {
-            ...ALL_INDICATOR_MASKS_ON,
-            sma: false,
-            macd: false,
-            rsi: false,
-            williams: false,
-            bollinger: true,
-        };
-        // Touching the lower band alone must NOT buy (classic wrong usage).
-        columns.bollingerPercentB[index] = 0;
-        columns.bollingerSqueezeRatio[index] = 1;
-        columns.bollingerBandwidth[index] = 0.02;
-        expect(decidePositionFromRules(columns, index, 0, DEFAULT_INDICATOR_PARAMETERS, bbOnly)).toBe(0);
-
-        // Squeeze release + price above mid → long vote wins alone.
-        columns.bollingerPercentB[index] = 0.7;
-        columns.bollingerSqueezeRatio[index] = 1.25;
-        expect(decidePositionFromRules(columns, index, 0, DEFAULT_INDICATOR_PARAMETERS, bbOnly)).toBe(1);
-
-        // Expansion with price in lower half → exit long.
-        columns.bollingerPercentB[index] = 0.3;
-        columns.bollingerSqueezeRatio[index] = 1.25;
-        expect(decidePositionFromRules(columns, index, 1, DEFAULT_INDICATOR_PARAMETERS, bbOnly)).toBe(0);
-    });
-
-    it("zeroes Bollinger Squeeze features when the BB mask is off", () => {
-        const columns = getIndicatorColumns(points, DEFAULT_INDICATOR_PARAMETERS);
-        const index = Math.min(50, columns.length - 1);
-        const features = buildNetworkFeatures(columns, index, 0, DEFAULT_INDICATOR_PARAMETERS, {
-            ...ALL_INDICATOR_MASKS_ON,
-            bollinger: false,
-        });
-        expect(features[8]).toBe(0);
-        expect(features[17]).toBe(0);
-        expect(features[18]).toBe(0);
     });
 
     it("scores seed genomes finitely on a rising market", () => {

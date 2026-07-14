@@ -16,8 +16,6 @@ describe("stock indicators", () => {
                 rsi: expect.any(Number),
                 macd: expect.any(Number),
                 bollingerPercentB: expect.any(Number),
-                bollingerBandwidth: expect.any(Number),
-                bollingerSqueezeRatio: expect.any(Number),
                 volatility: expect.any(Number),
                 volumeZScore: expect.any(Number),
                 nDayHigh: expect.any(Number),
@@ -25,8 +23,6 @@ describe("stock indicators", () => {
             })
         );
         expect(rows.every(row => Number.isFinite(row.rsi) && Number.isFinite(row.volumeZScore) && Number.isFinite(row.newHighRatio))).toBe(true);
-        expect(rows.every(row => Number.isFinite(row.bollingerBandwidth) && row.bollingerBandwidth > 0)).toBe(true);
-        expect(rows.every(row => Number.isFinite(row.bollingerSqueezeRatio) && row.bollingerSqueezeRatio >= 1 - 1e-9)).toBe(true);
         expect(rows.every(row => row.newHighRatio > 0 && row.newHighRatio <= 1 + 1e-9)).toBe(true);
     });
 
