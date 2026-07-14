@@ -18,9 +18,11 @@ interface DemoControlsProps {
         populationSize?: string;
         mutationRate?: string;
     };
+    /** Slider ceiling for population size — stock lab needs far more than snake/breaker. */
+    populationMax?: number;
 }
 
-export const DemoControls = React.memo<DemoControlsProps>(({demo, disabled, children, labels}) => {
+export const DemoControls = React.memo<DemoControlsProps>(({demo, disabled, children, labels, populationMax}) => {
     const updateNumber = (key: "populationSize" | "mutationRate" | "speed", value: number) => {
         demo.setConfig(current => ({...current, [key]: value}));
     };
@@ -55,7 +57,14 @@ export const DemoControls = React.memo<DemoControlsProps>(({demo, disabled, chil
                     </Tooltip>
                 </div>
 
-                <ControlSlider label={labels?.populationSize ?? "族群大小"} max={80} min={12} onChange={value => updateNumber("populationSize", value)} step={2} value={demo.config.populationSize} />
+                <ControlSlider
+                    label={labels?.populationSize ?? "族群大小"}
+                    max={populationMax ?? 80}
+                    min={12}
+                    onChange={value => updateNumber("populationSize", value)}
+                    step={2}
+                    value={demo.config.populationSize}
+                />
                 <ControlSlider label={labels?.mutationRate ?? "突變率"} max={0.4} min={0.01} onChange={value => updateNumber("mutationRate", value)} step={0.01} value={demo.config.mutationRate} />
                 <ControlSlider label="播放速度" max={5} min={1} onChange={value => updateNumber("speed", value)} step={1} value={demo.config.speed} />
                 <label className="control-field">

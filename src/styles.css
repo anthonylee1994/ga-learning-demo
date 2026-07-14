@@ -122,6 +122,7 @@ button {
     padding: 0 10px;
     color: #8f97a1;
     font-size: 14px;
+    background-color: #262c34;
 }
 .nav-button.button:hover {
     background: #181d23;

@@ -96,8 +96,8 @@ export function evolvePopulation(population: Genome[], fitnesses: number[], conf
     const profile = options?.mutationProfile;
 
     while (nextPopulation.length < population.length) {
-        const parentA = rouletteWheelSelect(ranked, random);
-        const parentB = rouletteWheelSelect(ranked, random);
+        const parentA = tournamentSelect(ranked, random);
+        const parentB = tournamentSelect(ranked, random);
         const child = uniformCrossover(parentA, parentB, random);
         nextPopulation.push(mutateGenome(child, config.mutationRate, config.mutationScale, random, profile));
     }
@@ -128,29 +128,21 @@ export function evolvePopulation(population: Genome[], fitnesses: number[], conf
     };
 }
 
-export function rouletteWheelSelect(candidates: Array<{genome: Genome; fitness: number}>, random: RandomSource): Genome {
-    let fitnessScale = 1;
-    for (const candidate of candidates) {
-        fitnessScale = Math.max(fitnessScale, Math.abs(candidate.fitness));
-    }
+/**
+ * Draws per parent selection. Replaced roulette wheel: proportional selection collapses to
+ * near-uniform once fitnesses cluster (tiny relative differences → tiny weight differences),
+ * so late-stage evolution lost almost all selection pressure. Tournament pressure only
+ * depends on rank, not fitness scale, so it stays constant throughout the run.
+ */
+const TOURNAMENT_SIZE = 3;
 
-    const scaledFitnesses = candidates.map(candidate => candidate.fitness / fitnessScale);
-    const minimumFitness = Math.min(...scaledFitnesses);
-    const offset = minimumFitness < 0 ? -minimumFitness : 0;
-    const weights = scaledFitnesses.map(fitness => fitness + offset);
-    const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
-
-    if (totalWeight <= 0) {
-        return candidates[random.integer(0, candidates.length - 1)].genome;
-    }
-
-    let threshold = random.next() * totalWeight;
-    for (let index = 0; index < candidates.length; index += 1) {
-        threshold -= weights[index];
-        if (threshold < 0) {
-            return candidates[index].genome;
+export function tournamentSelect(candidates: Array<{genome: Genome; fitness: number}>, random: RandomSource, size = TOURNAMENT_SIZE): Genome {
+    let best = candidates[random.integer(0, candidates.length - 1)];
+    for (let round = 1; round < size; round += 1) {
+        const challenger = candidates[random.integer(0, candidates.length - 1)];
+        if (challenger.fitness > best.fitness) {
+            best = challenger;
         }
     }
-
-    return candidates[candidates.length - 1].genome;
+    return best.genome;
 }

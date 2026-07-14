@@ -40,8 +40,9 @@ type StockOptimizer = "ga" | "montecarlo";
 type StockTopic = Extract<TopicId, "stock" | "stock-mc">;
 
 const GA_DEFAULT_CONFIG: GAConfig = {
-    // Slightly leaner default — stock fitness walks multi-year bars per genome.
-    populationSize: 36,
+    // ~280 genes (indicator head + NN tail) need a real population to search;
+    // 36 was mostly elite-neighborhood random walk. Stock sim is cheap enough per genome.
+    populationSize: 150,
     // Base rates; stock worker multiplies indicator genes ~3× and NN genes ~0.35×.
     mutationRate: 0.12,
     mutationScale: 0.22,
@@ -522,6 +523,7 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
                     <DemoControls
                         demo={demo}
                         disabled={!marketData || loading}
+                        populationMax={240}
                         labels={
                             isMonteCarlo
                                 ? {

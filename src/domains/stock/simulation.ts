@@ -136,7 +136,7 @@ export function evaluateStockGenome(genome: Genome, points: MarketDataPoint[], u
     // Rule mode ignores the NN tail entirely — penalizing unused weights would just add noise.
     const regularization = useNetwork ? WEIGHT_L2_PENALTY * meanSquare(networkGenome) : 0;
     const sparsity = SPARSITY_PENALTY_PER_MASK * Math.max(0, activeCount - FREE_MASK_COUNT);
-    // Full-segment return dominates — aligns with UI "訓練回報".
+    // Full-segment excess vs buy-and-hold dominates; halves only guard against one-half flukes.
     return fullScore * 0.9 + robustScore * 0.1 - regularization - sparsity;
 }
 
@@ -181,49 +181,22 @@ export function ablateIndicatorMasks(genome: Genome, points: MarketDataPoint[], 
 }
 
 /**
- * Return-first segment score (what "訓練回報" shows), with light risk terms.
- * Bias: capture bull markets and beat buy-and-hold; do not reward cash-for-safety.
+ * Excess-return-first segment score: the main term is log(strategy equity / benchmark equity),
+ * so matching buy-and-hold scores ~0 and fitness can only be earned by actually beating it.
+ * Cash through a bull (negative excess) and riding a crash (worse than cash's excess) both
+ * penalize themselves — no bespoke idle/lag penalties needed. Light risk terms break ties
+ * toward smoother paths; a small absolute-return term keeps participation preferred when
+ * two policies tie on excess.
  */
 function scoreSegment(metrics: SegmentMetrics, columns: IndicatorColumns, start: number, end: number): number {
     const first = columns.close[start] || 1;
     const last = columns.close[end - 1] || first;
     const years = Math.max((end - start) / 252, 0.5);
     const benchmarkReturn = last / first - 1;
-    const strategyCagr = annualize(metrics.totalReturn, years);
-    const benchmarkCagr = annualize(benchmarkReturn, years);
-    const excess = strategyCagr - benchmarkCagr;
-    // How much of the market move we captured (bulls); clip so disasters don't explode the term.
-    const capture = benchmarkReturn > 0.02 ? Math.min(2.5, Math.max(-0.5, metrics.totalReturn / benchmarkReturn)) : 0;
+    const logExcess = Math.log(1 + Math.max(metrics.totalReturn, -0.99)) - Math.log(1 + Math.max(benchmarkReturn, -0.99));
+    const annualizedExcess = logExcess / years;
 
-    // Flat / near-zero equity path — stronger than before so "do nothing" dies fast.
-    const idlePenalty = Math.abs(metrics.totalReturn) < 0.04 ? 22 : 0;
-    // Sitting in cash (or half-cash) through a rising segment looks "safe" on DD but tanks train return.
-    const bullMarket = benchmarkReturn > 0.06;
-    const underExposed = metrics.meanExposure < 0.45;
-    const laggingReturn = metrics.totalReturn < benchmarkReturn * 0.55;
-    const underInvestedPenalty = bullMarket && underExposed && laggingReturn ? 32 : 0;
-    // Even if exposure looks ok, lagging buy-and-hold hard still costs (missed the move).
-    const lagPenalty = bullMarket && metrics.totalReturn < benchmarkReturn * 0.45 ? 18 : 0;
-    // Mild bonus when we beat the market on total return (not just smoother path).
-    const beatMarketBonus = metrics.totalReturn > benchmarkReturn + 0.01 ? 10 : 0;
-
-    return (
-        strategyCagr * 200 +
-        metrics.totalReturn * 95 +
-        excess * 55 +
-        capture * 28 +
-        metrics.meanExposure * 16 +
-        metrics.sharpe * 5 -
-        metrics.maxDrawdown * 10 +
-        beatMarketBonus -
-        idlePenalty -
-        underInvestedPenalty -
-        lagPenalty
-    );
-}
-
-function annualize(totalReturn: number, years: number): number {
-    return Math.pow(1 + Math.max(totalReturn, -0.99), 1 / years) - 1;
+    return annualizedExcess * 250 + logExcess * 40 + metrics.totalReturn * 12 + metrics.sharpe * 2 - metrics.maxDrawdown * 8;
 }
 
 function meanSquare(genome: Genome): number {

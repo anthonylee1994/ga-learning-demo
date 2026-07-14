@@ -7,7 +7,7 @@ const THEORY_ITEMS = [
     {icon: Dna, title: "基因體 / 染色體", text: "每個基因體都係一組 Brain.js 權重同偏差，完整描述一個 AI 嘅決策方式。"},
     {icon: Users, title: "族群", text: "同一代同時測試多個唔同神經網絡，唔將希望押喺單一解法。"},
     {icon: Target, title: "適應度函數", text: "將生存、回報或任務表現壓縮成分數，決定邊啲個體值得繁殖。"},
-    {icon: ShieldCheck, title: "選擇 + 菁英保留", text: "輪盤選擇按適應度比例增加強者繁殖機會；菁英保留直接保留最優個體，避免倒退。"},
+    {icon: ShieldCheck, title: "選擇 + 菁英保留", text: "錦標賽選擇每次隨機抽幾個個體比併，最強者做家長，選擇壓力唔會因為分數接近而消失；菁英保留直接保留最優個體，避免倒退。"},
     {icon: Shuffle, title: "交配", text: "兩個父母逐個基因混合，子女同時繼承兩邊已經有效嘅結構。"},
     {icon: Sparkles, title: "突變", text: "以低機率擾動權重，為族群注入新方向，跳出局部最佳。"},
     {icon: Network, title: "神經演化", text: "唔用反向傳播；直接以演化搜尋神經網絡參數。"},
