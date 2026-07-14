@@ -10,11 +10,18 @@ export const BREAKER_TOPOLOGY = {
 
 const WIDTH = 560;
 const HEIGHT = 420;
-/** Cap physics steps so long rallies cannot explode worker memory / postMessage size. */
+/**
+ * Cap physics steps so a stuck rally cannot freeze the worker.
+ * ~60s at 60 Hz is already a very long breakout rally for this arena.
+ */
 const MAX_STEPS = 100_000;
-/** UI playback only needs a short highlight reel. */
-const MAX_REPLAY_FRAMES = MAX_STEPS * 2;
+/** UI playback only needs a short highlight reel (not one frame per physics step). */
+const MAX_REPLAY_FRAMES = 600;
 const PADDLE_WIDTH = 92;
+/** Keep a meaningful vertical component so the ball cannot infinite-loop left↔right off the walls. */
+const MIN_BALL_VY = 2.4;
+const MIN_BALL_SPEED = 4;
+const MAX_BALL_SPEED = 7;
 /** Canonical launch used for champion replay AND as one of the eval seeds. */
 const REPLAY_LAUNCH = 0.86;
 /**
@@ -121,7 +128,9 @@ function simulateBreaker(genome: Genome, xVelocityFactor: number, record: boolea
             if (labels.includes("paddle") && labels.includes("ball")) {
                 hits += 1;
                 const offset = (ball.position.x - paddle.position.x) / (PADDLE_WIDTH / 2);
-                Matter.Body.setVelocity(ball, {x: offset * 5.2, y: -Math.abs(ball.velocity.y || 4.4)});
+                // Always launch upward with a solid |vy| so paddle hits never spawn a horizontal trap.
+                Matter.Body.setVelocity(ball, {x: offset * 5.2, y: -Math.max(MIN_BALL_VY, Math.abs(ball.velocity.y) || 4.4)});
+                normalizeBallVelocity(ball);
             }
             const brickBody = [pair.bodyA, pair.bodyB].find(body => body.label.startsWith("brick:"));
             if (brickBody) {
@@ -171,14 +180,8 @@ function simulateBreaker(genome: Genome, xVelocityFactor: number, record: boolea
 
             Matter.Engine.update(engine, 1000 / 60);
 
-            const speed = Math.hypot(ball.velocity.x, ball.velocity.y);
-            if (speed > 0 && (speed < 4 || speed > 7)) {
-                const targetSpeed = clamp(speed, 4, 7);
-                Matter.Body.setVelocity(ball, {
-                    x: (ball.velocity.x / speed) * targetSpeed,
-                    y: (ball.velocity.y / speed) * targetSpeed,
-                });
-            }
+            // Wall/brick bounces can collapse |vy| → endless side-to-side loop until MAX_STEPS.
+            normalizeBallVelocity(ball);
 
             if (record && step % frameStride === 0 && frames.length < MAX_REPLAY_FRAMES) {
                 frames.push({
@@ -225,6 +228,49 @@ function simulateBreaker(genome: Genome, xVelocityFactor: number, record: boolea
         fitness: bricksCleared * 110 + hits * 9 + trackingReward + executedSteps * 0.01 + clearBonus,
         replay: {frames, bricksCleared, hits, steps: executedSteps},
     };
+}
+
+/**
+ * Clamp ball speed into [MIN, MAX] and guarantee a minimum |vertical| component.
+ * Without this, Matter.js wall/brick reflections can leave vy≈0 and the ball
+ * orbits left↔right forever (UI looks stuck in an infinite loop).
+ */
+function normalizeBallVelocity(ball: Matter.Body): void {
+    let vx = ball.velocity.x;
+    let vy = ball.velocity.y;
+
+    if (!Number.isFinite(vx) || !Number.isFinite(vy)) {
+        Matter.Body.setVelocity(ball, {x: 3.2, y: -4.4});
+        return;
+    }
+
+    if (Math.abs(vy) < MIN_BALL_VY) {
+        // Keep prior sign when possible; if flat, push away from the nearer vertical edge of play.
+        const sign = Math.abs(vy) > 1e-6 ? Math.sign(vy) : ball.position.y < HEIGHT * 0.45 ? 1 : -1;
+        vy = sign * MIN_BALL_VY;
+    }
+
+    let speed = Math.hypot(vx, vy);
+    if (speed < 1e-6) {
+        Matter.Body.setVelocity(ball, {x: 3.2, y: -4.4});
+        return;
+    }
+
+    const target = clamp(speed, MIN_BALL_SPEED, MAX_BALL_SPEED);
+    vx = (vx / speed) * target;
+    vy = (vy / speed) * target;
+
+    // Renormalizing can shrink |vy| again when |vx| dominates — re-assert floor once.
+    if (Math.abs(vy) < MIN_BALL_VY) {
+        const sign = Math.sign(vy) || (ball.position.y < HEIGHT * 0.45 ? 1 : -1);
+        vy = sign * MIN_BALL_VY;
+        speed = Math.hypot(vx, vy);
+        const retarget = clamp(speed, MIN_BALL_SPEED, MAX_BALL_SPEED);
+        vx = (vx / speed) * retarget;
+        vy = (vy / speed) * retarget;
+    }
+
+    Matter.Body.setVelocity(ball, {x: vx, y: vy});
 }
 
 function clamp(value: number, min: number, max: number): number {

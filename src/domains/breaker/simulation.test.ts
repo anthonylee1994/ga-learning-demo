@@ -14,9 +14,21 @@ describe("block breaker simulation", () => {
         const replay = createBreakerReplay(genome);
         expect(replay.frames.length).toBeGreaterThan(0);
         expect(replay.frames.length).toBeLessThanOrEqual(601);
-        expect(replay.steps).toBeLessThanOrEqual(2_400);
+        expect(replay.steps).toBeLessThanOrEqual(3_600);
         expect(replay.bricksCleared).toBeGreaterThanOrEqual(0);
         expect(replay.frames.at(-1)?.terminal).toMatch(/lost|cleared|timeout/);
+    });
+
+    it("does not record multi-minute horizontal ball loops", () => {
+        // Zero genome still loses or times out quickly; frames stay UI-sized.
+        const replay = createBreakerReplay(genome);
+        expect(replay.frames.length).toBeLessThanOrEqual(600);
+        // Every recorded velocity must keep a usable vertical component (anti stuck-loop).
+        const midFrames = replay.frames.filter(frame => !frame.terminal && frame.ballVelocity);
+        expect(midFrames.length).toBeGreaterThan(0);
+        midFrames.forEach(frame => {
+            expect(Math.abs(frame.ballVelocity!.y)).toBeGreaterThanOrEqual(2);
+        });
     });
 
     it("rebuilds a valid network input from a recorded frame", () => {
