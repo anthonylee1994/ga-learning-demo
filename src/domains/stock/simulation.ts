@@ -7,18 +7,18 @@ import {decodeStockGenome, STOCK_TOPOLOGY} from "./strategyGenome";
 export {STOCK_TOPOLOGY} from "./strategyGenome";
 
 export const STOCK_INPUT_LABELS = [
-    "對SMA快",
-    "對SMA慢",
-    "SMA差",
-    "Williams",
+    "快線",
+    "慢線",
+    "快慢線差",
+    "威廉指標",
     "ROC",
     "RSI",
     "MACD",
     "MACD訊",
-    "BB %B",
+    "保力加",
     "波動",
-    "量 Z",
-    "新高比",
+    "成交量",
+    "N日新高",
     "持倉",
     "RSI買距",
     "RSI賣距",
@@ -256,8 +256,8 @@ export function buildNetworkFeatures(
 }
 
 /**
- * NN 關咗時嘅 threshold 基準：買入要 trend / MACD / RSI oversold / Williams oversold 四票取二；
- * 持倉後 RSI 或 Williams 任一升穿進化出嚟嘅 sell threshold 就離場。
+ * NN 關咗時嘅 threshold 基準：買入要 trend / MACD / RSI oversold / 威廉指標 oversold 四票取二；
+ * 持倉後 RSI 或 威廉指標任一升穿進化出嚟嘅 sell threshold 就離場。
  */
 export function decidePositionFromRules(columns: IndicatorColumns, index: number, position: number, parameters: OptimizedIndicatorParameters): number {
     if (position > 0 && (columns.rsi[index] >= parameters.rsiSellThreshold || columns.williamsR[index] >= parameters.williamsSellThreshold)) {

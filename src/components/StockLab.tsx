@@ -204,7 +204,7 @@ export const StockLab = React.memo(() => {
     return (
         <DemoShell
             accent="stock"
-            description="以遺傳演算法為主進化技術指標週期同 RSI / Williams %R 買賣門檻，搭配一個好細嘅 Brain.js 決策頭（買 / 持 / 賣）。突變會優先擾動指標基因；80% 訓練、20% 樣本外測試。"
+            description="以遺傳演算法為主進化技術指標週期同 RSI / 威廉指標買賣門檻，搭配一個好細嘅 Brain.js 決策頭（買 / 持 / 賣）。突變會優先擾動指標基因；80% 訓練、20% 樣本外測試。"
             icon={<CandlestickChart size={20} strokeWidth={1.5} />}
             title="股票交易 · 神經演化"
         >
@@ -260,15 +260,15 @@ export const StockLab = React.memo(() => {
                             <div className="parameter-grid">
                                 <ParameterValue label="SMA" value={`${parameters.smaFastPeriod} / ${parameters.smaSlowPeriod}`} />
                                 <ParameterValue label="RSI" value={`${parameters.rsiPeriod} 日 · 買 ≤ ${parameters.rsiBuyThreshold} · 賣 ≥ ${parameters.rsiSellThreshold}`} />
-                                <ParameterValue label="布林帶" value={`${parameters.bollingerPeriod} / ${parameters.bollingerMultiplier.toFixed(2)}σ`} />
+                                <ParameterValue label="保力加通道" value={`${parameters.bollingerPeriod} / ${parameters.bollingerMultiplier.toFixed(2)}σ`} />
                                 <ParameterValue label="ROC 週期" value={String(parameters.rocPeriod)} />
-                                <ParameterValue label="Williams %R" value={`${parameters.williamsPeriod} 日 · 買 ≤ ${parameters.williamsBuyThreshold} · 賣 ≥ ${parameters.williamsSellThreshold}`} />
+                                <ParameterValue label="威廉指標" value={`${parameters.williamsPeriod} 日 · 買 ≤ ${parameters.williamsBuyThreshold} · 賣 ≥ ${parameters.williamsSellThreshold}`} />
                                 <ParameterValue label="MACD" value={`${parameters.macdFastPeriod} / ${parameters.macdSlowPeriod} / ${parameters.macdSignalPeriod}`} />
                                 <ParameterValue label="波動率" value={String(parameters.volatilityPeriod)} />
-                                <ParameterValue label="成交量 Z" value={String(parameters.volumeZScorePeriod)} />
-                                <ParameterValue label="N 日高" value={String(parameters.newHighPeriod)} />
+                                <ParameterValue label="成交量" value={String(parameters.volumeZScorePeriod)} />
+                                <ParameterValue label="N日新高" value={String(parameters.newHighPeriod)} />
                                 <ParameterValue label="指標基因" value={`${STOCK_PARAMETER_GENE_COUNT}（突變 ×3）`} />
-                                <ParameterValue label="決策頭" value={useNetwork ? describeStockNetwork() : "買入 2/4；RSI / Williams 任一過熱賣出"} />
+                                <ParameterValue label="決策頭" value={useNetwork ? describeStockNetwork() : "買入 2/4；RSI / 威廉指標任一過熱賣出"} />
                                 <ParameterValue label="網絡基因" value={useNetwork ? `${STOCK_NETWORK_GENE_COUNT}（突變 ×0.35）` : `${STOCK_NETWORK_GENE_COUNT}（規則模式未使用）`} />
                             </div>
                         </section>
@@ -280,10 +280,10 @@ export const StockLab = React.memo(() => {
                                 <h3>市場與交易訊號</h3>
                             </div>
                             <select aria-label="技術指標" onChange={event => setIndicatorView(event.target.value as IndicatorView)} value={indicatorView}>
-                                <option value="price">SMA + 布林帶</option>
-                                <option value="momentum">RSI + Williams %R + ROC</option>
+                                <option value="price">SMA + 保力加通道</option>
+                                <option value="momentum">RSI + 威廉指標 + ROC</option>
                                 <option value="macd">MACD</option>
-                                <option value="risk">波動率 + 成交量 Z</option>
+                                <option value="risk">波動率 + 成交量</option>
                                 <option value="newHigh">N 日高</option>
                             </select>
                         </div>
@@ -357,18 +357,18 @@ export const StockLab = React.memo(() => {
                                     <h3>股票決策頭</h3>
                                 </div>
                             </div>
-                            <div className="empty-chart network-empty">規則模式開啟中 — 決策用 SMA / MACD / RSI / Williams 投票，決策頭權重未使用。</div>
+                            <div className="empty-chart network-empty">規則模式開啟中 — 決策用 SMA / MACD / RSI / 威廉指標投票，決策頭權重未使用。</div>
                         </section>
                     )}
                     <FitnessChart history={demo.history} />
                     <ApplicationPanel
                         fitness="70% 全段訓練 + 30% 最差半段：年化回報×100 + Sharpe×15 − 最大回撤×40 + 超額回報×35 − 較重 L2；鼓勵靠指標組合賺錢而唔係肥網絡"
                         genome={`${STOCK_PARAMETER_GENE_COUNT} 個指標週期 / 門檻基因（突變 ×3）+ ${STOCK_NETWORK_GENE_COUNT} 個細決策頭權重（突變 ×0.35；${describeStockNetwork()}）`}
-                        inputs="17 維：價格相對 SMA、Williams、ROC、RSI、MACD、布林帶 %B、波動、成交量 Z、N 日新高比、持倉狀態，加 RSI / Williams 距離買賣門檻（全部正規化到約 ±1）"
+                        inputs="17 維：價格相對 SMA、威廉指標、ROC、RSI、MACD、保力加通道 %B、波動、成交量、N日新高、持倉狀態，加 RSI / 威廉指標距離買賣門檻（全部正規化到約 ±1）"
                         outputs={
                             useNetwork
                                 ? "薄隱藏層取最大 → 買入（全倉做多）/ 持有 / 賣出（全現金）；搜尋主力喺指標週期同門檻，唔用反向傳播"
-                                : "買入四票取二：SMA 趨勢、MACD、RSI 超賣、Williams 超賣；持倉後 RSI 或 Williams 任一升穿賣出門檻就全現金"
+                                : "買入四票取二：SMA 趨勢、MACD、RSI 超賣、威廉指標超賣；持倉後 RSI 或 威廉指標 任一升穿賣出門檻就全現金"
                         }
                         termination="用頭 80% 數據做選擇；最後 20% 測試數據絕不參與訓練；每代移民只重抽指標基因"
                     />
@@ -478,7 +478,7 @@ const MarketChart = React.memo<MarketChartProps>(
                     {indicatorView === "momentum" && hasReplay ? (
                         <React.Fragment>
                             <Line dataKey="rsi" dot={false} isAnimationActive={false} name="RSI" stroke="#63c6a1" strokeWidth={1} yAxisId="indicator" />
-                            <Line dataKey="williamsR" dot={false} isAnimationActive={false} name="Williams %R" stroke="#e36f5b" strokeWidth={1} yAxisId="indicator" />
+                            <Line dataKey="williamsR" dot={false} isAnimationActive={false} name="威廉指標" stroke="#e36f5b" strokeWidth={1} yAxisId="indicator" />
                             <Line dataKey="roc" dot={false} isAnimationActive={false} name="ROC" stroke="#b38bd4" strokeWidth={1} yAxisId="indicator" />
                             {parameters ? (
                                 <React.Fragment>
@@ -527,7 +527,7 @@ const MarketChart = React.memo<MarketChartProps>(
                     {indicatorView === "risk" && hasReplay ? (
                         <React.Fragment>
                             <Line dataKey="volatility" dot={false} isAnimationActive={false} name="波動率" stroke="#e36f5b" strokeWidth={1} yAxisId="indicator" />
-                            <Line dataKey="volumeZScore" dot={false} isAnimationActive={false} name="成交量 Z" stroke="#5da6d9" strokeWidth={1} yAxisId="indicator" />
+                            <Line dataKey="volumeZScore" dot={false} isAnimationActive={false} name="成交量" stroke="#5da6d9" strokeWidth={1} yAxisId="indicator" />
                         </React.Fragment>
                     ) : null}
                     {splitDate ? <ReferenceLine label={{value: "測試", fill: "#e7b955", fontSize: 12}} stroke="#e7b955" strokeDasharray="4 4" x={splitDate} /> : null}

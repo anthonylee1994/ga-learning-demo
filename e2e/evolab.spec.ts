@@ -78,7 +78,7 @@ test("desktop workspace runs all three evolution demos", async ({page}, testInfo
     await page.screenshot({fullPage: true, path: testInfo.outputPath("stock-thresholds-desktop.png")});
     await page.getByLabel("技術指標").selectOption("risk");
     await expect(marketPanel.getByText("波動率", {exact: true})).toBeVisible();
-    await expect(marketPanel.getByText("成交量 Z", {exact: true})).toBeVisible();
+    await expect(marketPanel.getByText("成交量", {exact: true})).toBeVisible();
     await expect(page.getByText("策略 vs 買入持有")).toBeVisible();
     const downloadPromise = page.waitForEvent("download");
     await page.getByRole("button", {name: "匯出 Pine Script"}).click();
