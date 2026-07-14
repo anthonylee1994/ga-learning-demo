@@ -99,6 +99,20 @@ export interface MarketDataResponse {
     points: MarketDataPoint[];
 }
 
+export interface StockAuxiliarySeries {
+    symbol: string;
+    points: MarketDataPoint[];
+}
+
+/**
+ * Training payload for the stock workers. Fitness runs on the primary series plus every
+ * auxiliary series (cross-market anti-overfit); replay / charts stay on the primary only.
+ */
+export interface StockTrainingData {
+    primary: MarketDataPoint[];
+    auxiliary: StockAuxiliarySeries[];
+}
+
 export interface OptimizedIndicatorParameters {
     smaFastPeriod: number;
     smaSlowPeriod: number;

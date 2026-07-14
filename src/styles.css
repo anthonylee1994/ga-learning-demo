@@ -622,6 +622,7 @@ button {
     color: #8dbea2;
     font-size: 13px;
     line-height: 1.5;
+    margin-bottom: 10px;
 }
 .genome-transfer {
     position: relative;

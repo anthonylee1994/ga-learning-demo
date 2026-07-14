@@ -82,9 +82,6 @@ export const GenomeTransfer = React.memo<GenomeTransferProps>(props => {
 
     return (
         <div className="genome-transfer">
-            <div className="control-label">
-                <span>權重匯入匯出</span>
-            </div>
             <div className="genome-transfer-actions">
                 <Button isDisabled={props.disabled || !props.genome?.length || busy} onPress={handleExport} size="sm" variant="secondary">
                     <Download size={15} strokeWidth={1.5} />

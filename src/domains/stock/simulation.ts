@@ -1,5 +1,5 @@
 import {argMax, createForwardRunner} from "../../lib/neuralNetwork";
-import type {Genome, IndicatorMaskState, MarketDataPoint, OptimizedIndicatorParameters, TradeMarker, TradingPoint, TradingReplay} from "../../lib/types";
+import type {Genome, IndicatorMaskState, MarketDataPoint, OptimizedIndicatorParameters, StockTrainingData, TradeMarker, TradingPoint, TradingReplay} from "../../lib/types";
 import type {IndicatorColumns} from "./indicators";
 import {calculateIndicatorColumns, columnsToSnapshots} from "./indicators";
 import {ALL_INDICATOR_MASKS_ON, countActiveMasks, decodeStockGenome, INDICATOR_MASK_DEFS, type IndicatorMaskId, STOCK_TOPOLOGY, withMaskOverride} from "./strategyGenome";
@@ -46,12 +46,11 @@ const SPARSITY_PENALTY_PER_MASK = 0.45;
 const EMPTY_MASK_PENALTY = 80;
 
 /**
- * Cache indicator columns by the exact points array reference.
- * evaluate() used to recompute indicators for every genome every generation —
- * with full daily history that was a large allocation storm.
+ * Cache indicator columns per points-array reference (multi-ticker fitness interleaves
+ * several series per genome — a single "current points" slot would thrash every call).
+ * WeakMap lets a replaced series' cache be collected with the array itself.
  */
-let cachedPoints: MarketDataPoint[] | null = null;
-const cachedColumns = new Map<string, IndicatorColumns>();
+const columnCachesBySeries = new WeakMap<MarketDataPoint[], Map<string, IndicatorColumns>>();
 
 interface SegmentMetrics {
     totalReturn: number;
@@ -83,26 +82,27 @@ export interface IndicatorAblationResult {
 }
 
 export function getIndicatorColumns(points: MarketDataPoint[], parameters: OptimizedIndicatorParameters): IndicatorColumns {
-    if (points !== cachedPoints) {
-        cachedPoints = points;
-        cachedColumns.clear();
+    let seriesCache = columnCachesBySeries.get(points);
+    if (!seriesCache) {
+        seriesCache = new Map();
+        columnCachesBySeries.set(points, seriesCache);
     }
     const key = createIndicatorCacheKey(parameters);
-    const cached = cachedColumns.get(key);
+    const cached = seriesCache.get(key);
     if (cached) {
         // Refresh LRU order.
-        cachedColumns.delete(key);
-        cachedColumns.set(key, cached);
+        seriesCache.delete(key);
+        seriesCache.set(key, cached);
         return cached;
     }
     const columns = calculateIndicatorColumns(points, parameters);
-    if (cachedColumns.size >= MAX_INDICATOR_CACHE) {
-        const oldest = cachedColumns.keys().next().value;
+    if (seriesCache.size >= MAX_INDICATOR_CACHE) {
+        const oldest = seriesCache.keys().next().value;
         if (oldest !== undefined) {
-            cachedColumns.delete(oldest);
+            seriesCache.delete(oldest);
         }
     }
-    cachedColumns.set(key, columns);
+    seriesCache.set(key, columns);
     return columns;
 }
 
@@ -138,6 +138,31 @@ export function evaluateStockGenome(genome: Genome, points: MarketDataPoint[], u
     const sparsity = SPARSITY_PENALTY_PER_MASK * Math.max(0, activeCount - FREE_MASK_COUNT);
     // Full-segment excess vs buy-and-hold dominates; halves only guard against one-half flukes.
     return fullScore * 0.9 + robustScore * 0.1 - regularization - sparsity;
+}
+
+/**
+ * Cross-market anti-overfit fitness: score the same genome on the primary series plus every
+ * auxiliary series (different tickers / asset classes). Mean keeps the shared signal; the min
+ * floor kills strategies that only "work" on one chart — the classic single-history overfit.
+ * Excess-vs-benchmark scoring makes tickers comparable regardless of their absolute drift.
+ */
+export function evaluateStockGenomeMulti(genome: Genome, data: StockTrainingData, useNetwork = true): number {
+    const scores = [evaluateStockGenome(genome, data.primary, useNetwork)];
+    for (const series of data.auxiliary) {
+        if (series.points.length) {
+            scores.push(evaluateStockGenome(genome, series.points, useNetwork));
+        }
+    }
+    if (scores.length === 1) {
+        return scores[0];
+    }
+    let sum = 0;
+    let min = Infinity;
+    for (const score of scores) {
+        sum += score;
+        min = Math.min(min, score);
+    }
+    return 0.75 * (sum / scores.length) + 0.25 * min;
 }
 
 /**

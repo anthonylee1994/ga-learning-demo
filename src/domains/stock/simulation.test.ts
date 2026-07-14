@@ -6,6 +6,7 @@ import {
     decidePositionFromNetwork,
     decidePositionFromRules,
     evaluateStockGenome,
+    evaluateStockGenomeMulti,
     getIndicatorColumns,
     positionBeforeDate,
 } from "./simulation";
@@ -235,6 +236,26 @@ describe("stock simulation", () => {
             expect(buyFitness).toBeGreaterThan(sparseFitness);
         }
         expect(buyReplay.trainReturn).toBeGreaterThan(0.1);
+    });
+
+    it("matches single-series fitness when no auxiliary data is present", () => {
+        const seed = createStockSeedGenomes()[0];
+        const single = evaluateStockGenome(seed, points, true);
+        const multi = evaluateStockGenomeMulti(seed, {primary: points, auxiliary: []}, true);
+        expect(multi).toBe(single);
+    });
+
+    it("blends primary and auxiliary scores with a worst-case floor", () => {
+        const seed = createStockSeedGenomes()[0];
+        const auxiliaryPoints = createMarketData(400);
+        const primaryScore = evaluateStockGenome(seed, points, true);
+        const auxiliaryScore = evaluateStockGenome(seed, auxiliaryPoints, true);
+        const multi = evaluateStockGenomeMulti(seed, {primary: points, auxiliary: [{symbol: "AUX", points: auxiliaryPoints}]}, true);
+        const mean = (primaryScore + auxiliaryScore) / 2;
+        const min = Math.min(primaryScore, auxiliaryScore);
+        expect(multi).toBeCloseTo(0.75 * mean + 0.25 * min, 10);
+        // The blend can never exceed the plain mean — one bad market always drags fitness down.
+        expect(multi).toBeLessThanOrEqual(mean);
     });
 
     it("ablates enabled masks and ranks by fitness drop", () => {
