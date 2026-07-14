@@ -47,7 +47,7 @@ describe("champion replay playback", () => {
                 <SnakeCanvas loop playing replay={snakeReplay} restartKey={1} speed={5} />
             </React.Fragment>
         );
-        const canvas = screen.getByLabelText("Snake champion replay");
+        const canvas = screen.getByLabelText("貪食蛇冠軍重播");
         expect(canvas).toHaveAttribute("data-frame-index", "0");
 
         act(() => vi.advanceTimersByTime(40));
@@ -66,7 +66,7 @@ describe("champion replay playback", () => {
                 <BreakerCanvas loop playing replay={breakerReplay} restartKey={1} speed={5} />
             </React.Fragment>
         );
-        const canvas = screen.getByLabelText("Block Breaker champion replay");
+        const canvas = screen.getByLabelText("打磚塊冠軍重播");
         expect(canvas).toHaveAttribute("data-frame-index", "0");
 
         act(() => vi.advanceTimersByTime(12));

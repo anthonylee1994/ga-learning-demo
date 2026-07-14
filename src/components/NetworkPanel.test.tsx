@@ -19,12 +19,12 @@ describe("NetworkPanel", () => {
         const input = [1, -1, -1, 0.2, -0.1, -1, 1, -1, -1, 0.01];
         render(
             <React.Fragment>
-                <NetworkPanel genome={genome} input={input} inputLabels={SNAKE_INPUT_LABELS} outputLabels={SNAKE_OUTPUT_LABELS} title="Snake network" topology={SNAKE_TOPOLOGY} />
+                <NetworkPanel genome={genome} input={input} inputLabels={SNAKE_INPUT_LABELS} outputLabels={SNAKE_OUTPUT_LABELS} title="貪食蛇網絡" topology={SNAKE_TOPOLOGY} />
             </React.Fragment>
         );
-        expect(screen.getByLabelText("Neural network topology")).toBeInTheDocument();
+        expect(screen.getByLabelText("神經網絡拓撲")).toBeInTheDocument();
         expect(screen.getByText(/決策：/)).toBeInTheDocument();
-        expect(screen.getByText("Output weights")).toBeInTheDocument();
-        expect(screen.getByText("Input activations")).toBeInTheDocument();
+        expect(screen.getByText("輸出層權重")).toBeInTheDocument();
+        expect(screen.getByText("輸入激活")).toBeInTheDocument();
     });
 });

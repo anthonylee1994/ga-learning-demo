@@ -99,7 +99,7 @@ export const SnakeCanvas = React.memo<Props>(
                 context.fillStyle = "#78818b";
                 context.font = "500 18px Inter, sans-serif";
                 context.textAlign = "center";
-                context.fillText("等待第一個 champion", size / 2, size / 2);
+                context.fillText("等待第一個冠軍", size / 2, size / 2);
                 return;
             }
             context.fillStyle = "#ef6262";
@@ -109,13 +109,13 @@ export const SnakeCanvas = React.memo<Props>(
                 context.fillRect(part.x * cell + 2, part.y * cell + 2, cell - 4, cell - 4);
             });
             if (frame.terminal) {
-                drawTerminalOverlay(context, size, frame.terminal === "collision" ? "GAME OVER" : "ROUND ENDED");
+                drawTerminalOverlay(context, size, frame.terminal === "collision" ? "遊戲結束" : "本局完結");
             }
         }, [frameIndex, replay]);
 
         return (
             <canvas
-                aria-label="Snake champion replay"
+                aria-label="貪食蛇冠軍重播"
                 className="simulation-canvas square"
                 data-frame-index={frameIndex}
                 data-loop={loop}

@@ -28,7 +28,7 @@ export const GenomeTransfer = React.memo<GenomeTransferProps>(props => {
 
     const handleExport = () => {
         if (!props.genome?.length) {
-            props.onMessage?.({type: "error", text: "未有 champion weights 可以 export。"});
+            props.onMessage?.({type: "error", text: "未有冠軍權重可以匯出。"});
             return;
         }
         try {
@@ -42,9 +42,9 @@ export const GenomeTransfer = React.memo<GenomeTransferProps>(props => {
                 steps: props.steps,
             });
             downloadJsonFile(defaultGenomeFilename(props.topic, props.score), file);
-            props.onMessage?.({type: "status", text: "已 export champion weights。"});
+            props.onMessage?.({type: "status", text: "已匯出冠軍權重。"});
         } catch (error) {
-            props.onMessage?.({type: "error", text: error instanceof Error ? error.message : "Export 失敗。"});
+            props.onMessage?.({type: "error", text: error instanceof Error ? error.message : "匯出失敗。"});
         }
     };
 
@@ -72,9 +72,9 @@ export const GenomeTransfer = React.memo<GenomeTransferProps>(props => {
             }
             const genome = parseGenomeFile(raw, {topic: props.topic, topology: props.topology, geneCount: props.geneCount});
             props.onImport(genome);
-            props.onMessage?.({type: "status", text: `已 import ${file.name}（${genome.length} genes）。`});
+            props.onMessage?.({type: "status", text: `已匯入 ${file.name}（${genome.length} 個基因）。`});
         } catch (error) {
-            props.onMessage?.({type: "error", text: error instanceof Error ? error.message : "Import 失敗。"});
+            props.onMessage?.({type: "error", text: error instanceof Error ? error.message : "匯入失敗。"});
         } finally {
             setBusy(false);
         }
@@ -83,27 +83,27 @@ export const GenomeTransfer = React.memo<GenomeTransferProps>(props => {
     return (
         <div className="genome-transfer">
             <div className="control-label">
-                <span>Weights I/O</span>
+                <span>權重匯入匯出</span>
                 <Tooltip delay={250}>
-                    <span aria-label="Weights I/O 說明" className="help-icon" role="button" tabIndex={0}>
+                    <span aria-label="權重匯入匯出說明" className="help-icon" role="button" tabIndex={0}>
                         <Info size={13} strokeWidth={1.5} />
                     </span>
                     <Tooltip.Content className="max-w-60 text-xs" showArrow>
-                        Export / import champion network 嘅扁平 weights 同 biases（JSON）。Import 後會即刻 replay，再撳「開始」會用呢個 genome 做種子繼續演化。
+                        匯出 / 匯入冠軍網絡嘅扁平權重同偏差（JSON）。匯入後會即刻重播，再撳「開始」會用呢個基因體做種子繼續演化。
                     </Tooltip.Content>
                 </Tooltip>
             </div>
             <div className="genome-transfer-actions">
                 <Button isDisabled={props.disabled || !props.genome?.length || busy} onPress={handleExport} size="sm" variant="secondary">
                     <Download size={15} strokeWidth={1.5} />
-                    Export
+                    匯出
                 </Button>
                 <Button isDisabled={props.disabled || busy} onPress={handleImportClick} size="sm" variant="secondary">
                     <Upload size={15} strokeWidth={1.5} />
-                    Import
+                    匯入
                 </Button>
             </div>
-            <input accept="application/json,.json" aria-label="Import genome JSON" className="genome-file-input" onChange={handleFileChange} ref={fileInputRef} type="file" />
+            <input accept="application/json,.json" aria-label="匯入基因體 JSON" className="genome-file-input" onChange={handleFileChange} ref={fileInputRef} type="file" />
         </div>
     );
 });

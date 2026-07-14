@@ -68,7 +68,7 @@ export const BreakerCanvas = React.memo<Props>(({replay, speed, playing = true, 
             context.fillStyle = "#78818b";
             context.font = "500 17px Inter, sans-serif";
             context.textAlign = "center";
-            context.fillText("等待第一個 champion", 280, 210);
+            context.fillText("等待第一個冠軍", 280, 210);
             return;
         }
         const brickColors = ["#e36f5b", "#e7b955", "#63c6a1", "#5da6d9", "#b38bd4"];
@@ -86,13 +86,13 @@ export const BreakerCanvas = React.memo<Props>(({replay, speed, playing = true, 
         context.fillStyle = "#ffffff";
         context.fill();
         if (frame.terminal) {
-            drawTerminalOverlay(context, frame.terminal === "cleared" ? "ROUND COMPLETE" : "GAME OVER");
+            drawTerminalOverlay(context, frame.terminal === "cleared" ? "全部清晒" : "遊戲結束");
         }
     }, [frameIndex, replay]);
 
     return (
         <canvas
-            aria-label="Block Breaker champion replay"
+            aria-label="打磚塊冠軍重播"
             className="simulation-canvas breaker"
             data-frame-index={frameIndex}
             data-loop={loop}

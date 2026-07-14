@@ -17,19 +17,19 @@ test("desktop workspace runs all three evolution demos", async ({page}, testInfo
     await page.goto("/");
     await expect(page).toHaveURL(/\/theory$/);
     await expect(page.getByRole("heading", {name: "用演化，搜尋一個夠好嘅決策腦"})).toBeVisible();
-    await expect(page.getByText("初始化 Population")).toBeVisible();
-    await page.getByRole("slider", {name: "Theory mutation rate"}).fill("0.6");
+    await expect(page.getByText("初始化族群")).toBeVisible();
+    await page.getByRole("slider", {name: "突變率"}).fill("0.6");
     const mutatedGene = page.locator(".gene.mutated").first();
     await expect(mutatedGene).toBeVisible();
     expect(await mutatedGene.evaluate(element => window.getComputedStyle(element).borderTopColor)).toBe("rgb(227, 111, 91)");
     await page.screenshot({fullPage: true, path: testInfo.outputPath("theory-desktop.png")});
 
-    await page.getByRole("button", {name: "Snake Game"}).click();
+    await page.getByRole("button", {name: "貪食蛇"}).click();
     await expect(page).toHaveURL(/\/snake$/);
     await page.getByRole("slider", {name: "播放速度"}).fill("5");
     await page.getByRole("button", {name: "開始"}).click();
     await expectGeneration(page);
-    const snakeHasGreenPixels = await page.getByLabel("Snake champion replay").evaluate(canvas => {
+    const snakeHasGreenPixels = await page.getByLabel("貪食蛇冠軍重播").evaluate(canvas => {
         const context = (canvas as HTMLCanvasElement).getContext("2d");
         const pixels = context?.getImageData(0, 0, (canvas as HTMLCanvasElement).width, (canvas as HTMLCanvasElement).height).data;
         if (!pixels) return false;
@@ -40,33 +40,33 @@ test("desktop workspace runs all three evolution demos", async ({page}, testInfo
     });
     expect(snakeHasGreenPixels).toBe(true);
     await page.getByRole("button", {name: "暫停"}).click();
-    await expect(page.getByText("暫停 · 最新 champion 玩到輸再重開")).toBeVisible();
-    const snakeCanvas = page.getByLabel("Snake champion replay");
+    await expect(page.getByText("暫停 · 最新冠軍玩到輸再重開")).toBeVisible();
+    const snakeCanvas = page.getByLabel("貪食蛇冠軍重播");
     await expect(snakeCanvas).toHaveAttribute("data-loop", "true");
     await expectCompleteReplayLoop(snakeCanvas, /collision|starved|timeout/, page);
 
-    await page.getByRole("button", {name: "Block Breaker"}).click();
+    await page.getByRole("button", {name: "打磚塊"}).click();
     await expect(page).toHaveURL(/\/breaker$/);
     await page.getByRole("slider", {name: "播放速度"}).fill("5");
     await page.getByRole("button", {name: "開始"}).click();
     await expectGeneration(page);
-    await expect(page.getByLabel("Block Breaker champion replay")).toBeVisible();
+    await expect(page.getByLabel("打磚塊冠軍重播")).toBeVisible();
     await page.getByRole("button", {name: "暫停"}).click();
-    await expect(page.getByText("暫停 · 最新 champion 玩到輸再重開")).toBeVisible();
-    const breakerCanvas = page.getByLabel("Block Breaker champion replay");
+    await expect(page.getByText("暫停 · 最新冠軍玩到輸再重開")).toBeVisible();
+    const breakerCanvas = page.getByLabel("打磚塊冠軍重播");
     await expect(breakerCanvas).toHaveAttribute("data-loop", "true");
     await expectCompleteReplayLoop(breakerCanvas, /lost|cleared|timeout/, page);
 
-    await page.getByRole("button", {name: "Stock Trading"}).click();
+    await page.getByRole("button", {name: "股票交易"}).click();
     await expect(page).toHaveURL(/\/stock$/);
     await expect(page.locator(".market-zoom-brush")).toBeVisible({timeout: 30_000});
     await page.getByRole("textbox", {name: "股票代號"}).fill("AAPL");
-    await page.getByRole("button", {name: "載入 Ticker"}).click();
-    await expect(page.getByText("AAPL · Daily")).toBeVisible({timeout: 30_000});
+    await page.getByRole("textbox", {name: "股票代號"}).press("Enter");
+    await expect(page.getByText("AAPL · 日線")).toBeVisible({timeout: 30_000});
     await expect(page.locator(".market-zoom-brush")).toBeVisible();
     await page.getByRole("button", {name: "開始"}).click();
     await expectGeneration(page, 45_000);
-    await expect(page.getByRole("heading", {name: "Best indicator parameters"})).toBeVisible();
+    await expect(page.getByRole("heading", {name: "最佳指標參數"})).toBeVisible();
     const marketPanel = page.locator(".market-panel").filter({has: page.getByRole("heading", {name: "市場與交易訊號"})});
     await expect(page.getByText(/買 ≤ \d+ · 賣 ≥ \d+/).first()).toBeVisible();
     await expect(page.getByText(/買 ≤ -\d+ · 賣 ≥ -\d+/)).toBeVisible();
@@ -77,9 +77,9 @@ test("desktop workspace runs all three evolution demos", async ({page}, testInfo
     await expect(marketPanel.getByText(/W%R 賣 -\d+/)).toBeVisible();
     await page.screenshot({fullPage: true, path: testInfo.outputPath("stock-thresholds-desktop.png")});
     await page.getByLabel("技術指標").selectOption("risk");
-    await expect(marketPanel.getByText("Volatility", {exact: true})).toBeVisible();
-    await expect(marketPanel.getByText("Volume Z", {exact: true})).toBeVisible();
-    await expect(page.getByText("Strategy vs Buy & Hold")).toBeVisible();
+    await expect(marketPanel.getByText("波動率", {exact: true})).toBeVisible();
+    await expect(marketPanel.getByText("成交量 Z", {exact: true})).toBeVisible();
+    await expect(page.getByText("策略 vs 買入持有")).toBeVisible();
     const downloadPromise = page.waitForEvent("download");
     await page.getByRole("button", {name: "匯出 Pine Script"}).click();
     const download = await downloadPromise;
@@ -105,14 +105,14 @@ test("desktop workspace runs all three evolution demos", async ({page}, testInfo
 test("routing supports direct links and browser history", async ({page}, testInfo) => {
     test.skip(testInfo.project.name !== "desktop", "Desktop routing flow");
     await page.goto("/snake");
-    await expect(page.getByRole("heading", {name: "Snake Neuroevolution"})).toBeVisible();
-    await expect(page.getByRole("button", {name: "Snake Game"})).toHaveClass(/active/);
+    await expect(page.getByRole("heading", {name: "貪食蛇 · 神經演化"})).toBeVisible();
+    await expect(page.getByRole("button", {name: "貪食蛇"})).toHaveClass(/active/);
 
     await page.getByRole("button", {name: "演算法原理"}).click();
     await expect(page).toHaveURL(/\/theory$/);
     await page.goBack();
     await expect(page).toHaveURL(/\/snake$/);
-    await expect(page.getByRole("heading", {name: "Snake Neuroevolution"})).toBeVisible();
+    await expect(page.getByRole("heading", {name: "貪食蛇 · 神經演化"})).toBeVisible();
 });
 
 test("stock evolution tunes RSI and Williams thresholds", async ({page}, testInfo) => {
@@ -129,7 +129,7 @@ test("stock evolution tunes RSI and Williams thresholds", async ({page}, testInf
     await expect(page.locator(".market-zoom-brush")).toBeVisible({timeout: 30_000});
     await page.getByRole("button", {name: "開始"}).click();
     await expectGeneration(page, 45_000);
-    await expect(page.getByRole("heading", {name: "Best indicator parameters"})).toBeVisible();
+    await expect(page.getByRole("heading", {name: "最佳指標參數"})).toBeVisible();
     await expect(page.getByText(/買 ≤ \d+ · 賣 ≥ \d+/).first()).toBeVisible();
     await expect(page.getByText(/買 ≤ -\d+ · 賣 ≥ -\d+/)).toBeVisible();
 
@@ -165,7 +165,7 @@ test("mobile workspace keeps navigation and theory readable", async ({page}, tes
 });
 
 async function expectGeneration(page: import("@playwright/test").Page, timeout = 30_000): Promise<void> {
-    const value = page.locator(".metric").filter({hasText: "Generation"}).locator("strong");
+    const value = page.locator(".metric").filter({hasText: "世代"}).locator("strong");
     await expect(value).not.toHaveText("0", {timeout});
 }
 

@@ -4,21 +4,21 @@ import {ArrowRight, Atom, Binary, Braces, Dna, FlaskConical, Network, RefreshCw,
 import {createRandom} from "../lib/random";
 
 const THEORY_ITEMS = [
-    {icon: Dna, title: "Genome / Chromosome", text: "每個 genome 都係一組 Brain.js weights 同 biases，完整描述一個 AI 嘅決策方式。"},
-    {icon: Users, title: "Population", text: "同一代同時測試多個不同 neural networks，唔將希望押喺單一解法。"},
-    {icon: Target, title: "Fitness Function", text: "將生存、回報或任務表現壓縮成分數，決定邊啲個體值得繁殖。"},
-    {icon: ShieldCheck, title: "Selection + Elitism", text: "Roulette wheel selection 按 fitness 比例增加強者繁殖機會；elitism 直接保留最優個體，避免倒退。"},
-    {icon: Shuffle, title: "Crossover", text: "兩個 parents 逐個 gene 混合，child 同時繼承兩邊已經有效嘅結構。"},
-    {icon: Sparkles, title: "Mutation", text: "以低機率擾動 weights，為 population 注入新方向，跳出局部最佳。"},
-    {icon: Network, title: "Neuroevolution", text: "唔用 backpropagation；直接以演化搜尋 neural network parameters。"},
-    {icon: TrendingUp, title: "Exploration vs Exploitation", text: "mutation 太低會早熟收斂，太高就會不停破壞已有成果。"},
-    {icon: Braces, title: "Overfitting", text: "高 training fitness 唔等於識應付新環境；股票實驗會保留 20% unseen data。"},
-    {icon: Atom, title: "Stochastic Search", text: "GA 依賴隨機抽樣。Seed 可重播實驗，但演算法唔保證搵到全局最佳。"},
-    {icon: Binary, title: "Fitness Bias", text: "AI 只會優化你寫落去嘅分數。錯嘅 fitness 會穩定地學出錯嘅行為。"},
-    {icon: FlaskConical, title: "計算限制", text: "每一代都要評估整個 population；更大樣本通常更穩，但亦更慢。"},
+    {icon: Dna, title: "基因體 / 染色體", text: "每個基因體都係一組 Brain.js 權重同偏差，完整描述一個 AI 嘅決策方式。"},
+    {icon: Users, title: "族群", text: "同一代同時測試多個唔同神經網絡，唔將希望押喺單一解法。"},
+    {icon: Target, title: "適應度函數", text: "將生存、回報或任務表現壓縮成分數，決定邊啲個體值得繁殖。"},
+    {icon: ShieldCheck, title: "選擇 + 菁英保留", text: "輪盤選擇按適應度比例增加強者繁殖機會；菁英保留直接保留最優個體，避免倒退。"},
+    {icon: Shuffle, title: "交配", text: "兩個父母逐個基因混合，子女同時繼承兩邊已經有效嘅結構。"},
+    {icon: Sparkles, title: "突變", text: "以低機率擾動權重，為族群注入新方向，跳出局部最佳。"},
+    {icon: Network, title: "神經演化", text: "唔用反向傳播；直接以演化搜尋神經網絡參數。"},
+    {icon: TrendingUp, title: "探索 vs 利用", text: "突變太低會早熟收斂，太高就會不停破壞已有成果。"},
+    {icon: Braces, title: "過擬合", text: "高訓練適應度唔等於識應付新環境；股票實驗會保留 20% 未見過數據。"},
+    {icon: Atom, title: "隨機搜尋", text: "遺傳演算法依賴隨機抽樣。種子可重播實驗，但演算法唔保證搵到全局最佳。"},
+    {icon: Binary, title: "適應度偏差", text: "AI 只會優化你寫落去嘅分數。錯嘅適應度會穩定地學出錯嘅行為。"},
+    {icon: FlaskConical, title: "計算限制", text: "每一代都要評估成個族群；更大樣本通常更穩，但亦更慢。"},
 ] as const;
 
-const FLOW = ["初始化 Population", "評估 Fitness", "Selection", "Crossover", "Mutation", "Elitism", "下一代"];
+const FLOW = ["初始化族群", "評估適應度", "選擇", "交配", "突變", "菁英保留", "下一代"];
 const PARENT_A = [0.82, -0.31, 0.14, 0.67, -0.74, 0.26, 0.51, -0.08];
 const PARENT_B = [-0.44, 0.76, 0.39, -0.22, 0.91, -0.58, 0.05, 0.63];
 
@@ -31,21 +31,21 @@ export const TheoryLab = React.memo(() => {
         <div className="theory-view">
             <section className="theory-intro">
                 <div>
-                    <p className="eyebrow">Genetic algorithm fundamentals</p>
+                    <p className="eyebrow">遺傳演算法基礎</p>
                     <h2>用演化，搜尋一個夠好嘅決策腦</h2>
-                    <p>Genetic Algorithm 將候選解當成生物個體：評分、選擇、繁殖、突變，再重複好多代。 呢個係 stochastic search，唔保證每次一樣，亦唔保證搵到全局最佳。</p>
+                    <p>遺傳演算法將候選解當成生物個體：評分、選擇、繁殖、突變，再重複好多代。呢個係隨機搜尋，唔保證每次一樣，亦唔保證搵到全局最佳。</p>
                 </div>
                 <div className="intro-stat">
                     <span>核心循環</span>
-                    <strong>Evaluate → Evolve</strong>
-                    <small>Brain.js 負責推理，GA 負責改寫 weights。</small>
+                    <strong>評估 → 演化</strong>
+                    <small>Brain.js 負責推理，遺傳演算法負責改寫權重。</small>
                 </div>
             </section>
 
             <section className="flow-section">
                 <div className="panel-heading">
                     <div>
-                        <p className="eyebrow">Generation loop</p>
+                        <p className="eyebrow">世代循環</p>
                         <h3>一代係點樣誕生</h3>
                     </div>
                     <Chip color="accent" size="sm" variant="soft">
@@ -82,26 +82,26 @@ export const TheoryLab = React.memo(() => {
             <section className="genome-lab">
                 <div className="panel-heading">
                     <div>
-                        <p className="eyebrow">Interactive genome lab</p>
-                        <h3>Crossover + Mutation</h3>
+                        <p className="eyebrow">互動基因實驗室</p>
+                        <h3>交配 + 突變</h3>
                     </div>
                     <Button isIconOnly onPress={() => setSeed(value => value + 1)} variant="tertiary">
-                        <RefreshCw aria-label="重新生成 child" size={16} strokeWidth={1.5} />
+                        <RefreshCw aria-label="重新生成子女" size={16} strokeWidth={1.5} />
                     </Button>
                 </div>
-                <p className="section-copy">每一格係一個 network weight。Child 先從兩個 parents 繼承，再按 mutation rate 加入細小擾動。</p>
+                <p className="section-copy">每一格係一個網絡權重。子女先從兩個父母繼承，再按突變率加入細小擾動。</p>
                 <div className="genome-rows">
-                    <GenomeRow label="Parent A" values={PARENT_A.map(value => ({value, source: "a" as const, mutated: false}))} />
-                    <GenomeRow label="Parent B" values={PARENT_B.map(value => ({value, source: "b" as const, mutated: false}))} />
-                    <GenomeRow label="Child" values={child} />
+                    <GenomeRow label="父母 A" values={PARENT_A.map(value => ({value, source: "a" as const, mutated: false}))} />
+                    <GenomeRow label="父母 B" values={PARENT_B.map(value => ({value, source: "b" as const, mutated: false}))} />
+                    <GenomeRow label="子女" values={child} />
                 </div>
                 <label className="mutation-control">
                     <span>
-                        <span>Mutation rate</span>
+                        <span>突變率</span>
                         <strong>{Math.round(mutationRate * 100)}%</strong>
                     </span>
                     <input
-                        aria-label="Theory mutation rate"
+                        aria-label="突變率"
                         className="range-input"
                         max={0.6}
                         min={0}
@@ -114,11 +114,11 @@ export const TheoryLab = React.memo(() => {
                 <div className="genome-legend">
                     <span>
                         <i className="gene-a" />
-                        Parent A
+                        父母 A
                     </span>
                     <span>
                         <i className="gene-b" />
-                        Parent B
+                        父母 B
                     </span>
                     <span>
                         <i className="gene-mutated" />

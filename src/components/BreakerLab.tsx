@@ -54,25 +54,20 @@ export const BreakerLab = React.memo(() => {
     }, [demo.champion]);
 
     return (
-        <DemoShell
-            accent="breaker"
-            description="Matter.js 固定 timestep 重播物理世界；AI 要從球速同位置預測下一次接球點。"
-            icon={<Blocks size={20} strokeWidth={1.5} />}
-            title="Block Breaker Evolution"
-        >
+        <DemoShell accent="breaker" description="Matter.js 固定時間步重播物理世界；AI 要從球速同位置預測下一次接球點。" icon={<Blocks size={20} strokeWidth={1.5} />} title="打磚塊 · 神經演化">
             <div className="workspace-grid">
                 <main className="demo-main">
                     <Metrics
                         extra={[
-                            {label: "Bricks cleared", value: String(demo.champion?.replay.bricksCleared ?? 0)},
-                            {label: "Paddle hits", value: String(demo.champion?.replay.hits ?? 0)},
+                            {label: "清磚數", value: String(demo.champion?.replay.bricksCleared ?? 0)},
+                            {label: "接球次數", value: String(demo.champion?.replay.hits ?? 0)},
                         ]}
                         stats={demo.stats}
                     />
                     <div className="simulation-stage breaker-stage">
                         <div className="stage-overlay">
                             <span>Matter.js · 60 Hz</span>
-                            <span>{demo.status === "paused" ? "暫停 · 最新 champion 玩到輸再重開" : "Champion replay"}</span>
+                            <span>{demo.status === "paused" ? "暫停 · 最新冠軍玩到輸再重開" : "冠軍重播"}</span>
                         </div>
                         <BreakerCanvas
                             loop={demo.status === "paused"}
@@ -88,17 +83,17 @@ export const BreakerLab = React.memo(() => {
                         input={liveInput}
                         inputLabels={BREAKER_INPUT_LABELS}
                         outputLabels={BREAKER_OUTPUT_LABELS}
-                        subtitle="節點亮度跟住 replay 每一 frame 嘅 forward pass；heatmap 係 champion weights。"
-                        title="Breaker network"
+                        subtitle="節點亮度跟住重播每一格嘅前向運算；熱圖係冠軍權重。"
+                        title="打磚塊網絡"
                         topology={BREAKER_TOPOLOGY}
                     />
                     <FitnessChart history={demo.history} />
                     <ApplicationPanel
-                        fitness="清除 bricks + 回球次數 + 存活時間 + clear bonus"
-                        genome="Brain.js 8 → 12 → 3 network 嘅所有 weights 與 biases"
-                        inputs="Paddle/ball 位置、ball velocity、最近 brick 方向、剩餘比例"
-                        outputs="向左、停低、向右"
-                        termination="Ball 跌出底部、清晒 45 塊 bricks，或 600 physics steps"
+                        fitness="清磚分數 + 接球次數 + 存活時間 + 全清獎勵"
+                        genome="Brain.js 8 → 12 → 3 網絡嘅所有權重同偏差"
+                        inputs="擋板/球位置、球速、最近磚塊方向、剩餘比例"
+                        outputs="向左、停住、向右"
+                        termination="球跌出底部、清晒 45 塊磚，或物理步數上限"
                     />
                 </main>
                 <aside className="demo-sidebar">

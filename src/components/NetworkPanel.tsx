@@ -15,68 +15,66 @@ interface NetworkPanelProps {
     children?: React.ReactNode;
 }
 
-export const NetworkPanel = React.memo<NetworkPanelProps>(
-    ({topology, genome, input = null, inputLabels, outputLabels, title = "Neural network", subtitle = "Champion topology · weights · live activations", children}) => {
-        const inspection = React.useMemo(() => {
-            if (!genome || genome.length === 0) {
-                return null;
-            }
-            try {
-                return inspectGenome(genome, topology);
-            } catch {
-                return null;
-            }
-        }, [genome, topology]);
+export const NetworkPanel = React.memo<NetworkPanelProps>(({topology, genome, input = null, inputLabels, outputLabels, title = "神經網絡", subtitle = "冠軍拓撲 · 權重 · 即時激活", children}) => {
+    const inspection = React.useMemo(() => {
+        if (!genome || genome.length === 0) {
+            return null;
+        }
+        try {
+            return inspectGenome(genome, topology);
+        } catch {
+            return null;
+        }
+    }, [genome, topology]);
 
-        const forward = React.useMemo((): NetworkForwardPass | null => {
-            if (!genome || !input || input.length !== topology.inputSize) {
-                return null;
-            }
-            try {
-                return forwardWithActivations(genome, topology, input);
-            } catch {
-                return null;
-            }
-        }, [genome, input, topology]);
+    const forward = React.useMemo((): NetworkForwardPass | null => {
+        if (!genome || !input || input.length !== topology.inputSize) {
+            return null;
+        }
+        try {
+            return forwardWithActivations(genome, topology, input);
+        } catch {
+            return null;
+        }
+    }, [genome, input, topology]);
 
-        const sizes = layerSizes(topology);
-        const decision = forward?.decision ?? null;
-        const decisionLabel = decision !== null ? (outputLabels?.[decision] ?? `out ${decision}`) : null;
+    const sizes = layerSizes(topology);
+    const decision = forward?.decision ?? null;
+    const decisionLabel = decision !== null ? (outputLabels?.[decision] ?? `out ${decision}`) : null;
 
-        return (
-            <section className="network-panel">
-                <div className="panel-heading">
-                    <div>
-                        <p className="eyebrow">Neuroevolution brain</p>
-                        <h3>{title}</h3>
-                    </div>
-                    <div className="network-meta">
-                        <span>
-                            {sizes.join(" → ")} · {inspection ? countGenes(inspection) : calculateExpectedGenes(topology)} genes
-                        </span>
-                        {decisionLabel ? (
-                            <strong className="network-decision" data-decision={decisionLabel}>
-                                決策：{decisionLabel}
-                            </strong>
-                        ) : null}
-                    </div>
+    return (
+        <section className="network-panel">
+            <div className="panel-heading">
+                <div>
+                    <p className="eyebrow">神經演化大腦</p>
+                    <h3>{title}</h3>
                 </div>
-                <p className="section-copy">{subtitle}</p>
+                <div className="network-meta">
+                    <span>
+                        {sizes.join(" → ")} · {inspection ? countGenes(inspection) : calculateExpectedGenes(topology)} 個基因
+                    </span>
+                    {decisionLabel ? (
+                        <strong className="network-decision" data-decision={decisionLabel}>
+                            決策：{decisionLabel}
+                        </strong>
+                    ) : null}
+                </div>
+            </div>
+            <p className="section-copy">{subtitle}</p>
 
-                {!inspection ? (
-                    <div className="empty-chart network-empty">開始訓練後，呢度會顯示 champion network 結構同 weights。</div>
-                ) : (
-                    <React.Fragment>
-                        <TopologyGraph activations={forward?.activations ?? null} decision={decision} inputLabels={inputLabels} inspection={inspection} outputLabels={outputLabels} />
-                        <WeightHeatmaps inspection={inspection} inputLabels={inputLabels} outputLabels={outputLabels} />
-                        {forward ? <ActivationBars activations={forward} inputLabels={inputLabels} outputLabels={outputLabels} /> : null}
-                    </React.Fragment>
-                )}
-                {children}
-            </section>
-        );
-    }
-);
+            {!inspection ? (
+                <div className="empty-chart network-empty">開始訓練後，呢度會顯示冠軍網絡結構同權重。</div>
+            ) : (
+                <React.Fragment>
+                    <TopologyGraph activations={forward?.activations ?? null} decision={decision} inputLabels={inputLabels} inspection={inspection} outputLabels={outputLabels} />
+                    <WeightHeatmaps inspection={inspection} inputLabels={inputLabels} outputLabels={outputLabels} />
+                    {forward ? <ActivationBars activations={forward} inputLabels={inputLabels} outputLabels={outputLabels} /> : null}
+                </React.Fragment>
+            )}
+            {children}
+        </section>
+    );
+});
 
 interface TopologyGraphProps {
     inspection: NetworkInspection;
@@ -126,17 +124,17 @@ const TopologyGraph = React.memo<TopologyGraphProps>(({inspection, activations, 
 
     const layerNames = sizes.map((_, index) => {
         if (index === 0) {
-            return "Input";
+            return "輸入層";
         }
         if (index === sizes.length - 1) {
-            return "Output";
+            return "輸出層";
         }
-        return `Hidden ${index}`;
+        return `隱藏層 ${index}`;
     });
 
     return (
         <div className="topology-wrap">
-            <svg aria-label="Neural network topology" className="topology-svg" role="img" viewBox={`0 0 ${width} ${height}`}>
+            <svg aria-label="神經網絡拓撲" className="topology-svg" role="img" viewBox={`0 0 ${width} ${height}`}>
                 {drawnEdges.map(edge => {
                     const magnitude = Math.min(1, Math.abs(edge.weight) / 1.4);
                     const stroke = edge.weight >= 0 ? `rgba(88, 214, 141, ${0.12 + magnitude * 0.55})` : `rgba(240, 139, 123, ${0.12 + magnitude * 0.55})`;
@@ -161,7 +159,7 @@ const TopologyGraph = React.memo<TopologyGraphProps>(({inspection, activations, 
                                 >
                                     <title>
                                         {label}
-                                        {activation !== undefined ? ` · act ${activation.toFixed(2)}` : ""}
+                                        {activation !== undefined ? ` · 激活 ${activation.toFixed(2)}` : ""}
                                     </title>
                                 </circle>
                             </g>
@@ -176,14 +174,16 @@ const TopologyGraph = React.memo<TopologyGraphProps>(({inspection, activations, 
             </svg>
             <div className="topology-legend">
                 <span>
-                    <i className="edge-pos" />正 weight
+                    <i className="edge-pos" />
+                    正權重
                 </span>
                 <span>
-                    <i className="edge-neg" />負 weight
+                    <i className="edge-neg" />
+                    負權重
                 </span>
                 <span>
                     <i className="node-live" />
-                    節點亮度 = activation
+                    節點亮度 = 激活值
                 </span>
             </div>
         </div>
@@ -203,7 +203,7 @@ const WeightHeatmaps = React.memo<WeightHeatmapsProps>(({inspection, inputLabels
                 const isOutput = layerIndex === inspection.layers.length - 1;
                 const rowLabels = isOutput ? outputLabels : undefined;
                 const colLabels = layerIndex === 0 ? inputLabels : undefined;
-                const title = isOutput ? "Output weights" : `Hidden ${layerIndex + 1} weights`;
+                const title = isOutput ? "輸出層權重" : `隱藏層 ${layerIndex + 1} 權重`;
                 return <WeightMatrix colLabels={colLabels} key={`w-${layerIndex}`} matrix={layer.weights} rowLabels={rowLabels} title={title} />;
             })}
         </div>
@@ -279,7 +279,7 @@ const ActivationBars = React.memo<ActivationBarsProps>(({activations, inputLabel
     return (
         <div className="activation-bars">
             <div className="activation-group">
-                <div className="weight-matrix-title">Input activations</div>
+                <div className="weight-matrix-title">輸入激活</div>
                 <div className="activation-list">
                     {inputs.map((value, index) => (
                         <div className="activation-row" key={`in-${index}`}>
@@ -293,7 +293,7 @@ const ActivationBars = React.memo<ActivationBarsProps>(({activations, inputLabel
                 </div>
             </div>
             <div className="activation-group">
-                <div className="weight-matrix-title">Output activations</div>
+                <div className="weight-matrix-title">輸出激活</div>
                 <div className="activation-list">
                     {outputs.map((value, index) => {
                         const active = index === decision;

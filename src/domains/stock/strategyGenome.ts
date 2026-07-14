@@ -203,7 +203,7 @@ export function createStockSeedGenomes(): Genome[] {
 
 export function describeStockNetwork(): string {
     const hidden = STOCK_TOPOLOGY.hiddenLayers.join(" → ");
-    return `${STOCK_TOPOLOGY.inputSize} → ${hidden} → ${STOCK_TOPOLOGY.outputSize} (${STOCK_NETWORK_GENE_COUNT} weights)`;
+    return `${STOCK_TOPOLOGY.inputSize} → ${hidden} → ${STOCK_TOPOLOGY.outputSize}（${STOCK_NETWORK_GENE_COUNT} 個權重）`;
 }
 
 function decodeInteger(gene: number, min: number, max: number): number {

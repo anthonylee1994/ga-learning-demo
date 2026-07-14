@@ -54,20 +54,20 @@ export const SnakeLab = React.memo(() => {
     }, [demo.champion]);
 
     return (
-        <DemoShell accent="snake" description="一個 10 → 12 → 3 嘅 Brain.js network，靠食物、存活同距離 shaping 學識轉彎。" icon={<Dna size={20} strokeWidth={1.5} />} title="Snake Neuroevolution">
+        <DemoShell accent="snake" description="一個 10 → 12 → 3 嘅 Brain.js 網絡，靠食嘢、存活同靠近食物獎勵學識轉彎。" icon={<Dna size={20} strokeWidth={1.5} />} title="貪食蛇 · 神經演化">
             <div className="workspace-grid">
                 <main className="demo-main">
                     <Metrics
                         extra={[
-                            {label: "Champion score", value: String(demo.champion?.replay.score ?? 0)},
-                            {label: "Survival steps", value: String(demo.champion?.replay.steps ?? 0)},
+                            {label: "冠軍分數", value: String(demo.champion?.replay.score ?? 0)},
+                            {label: "存活步數", value: String(demo.champion?.replay.steps ?? 0)},
                         ]}
                         stats={demo.stats}
                     />
                     <div className="simulation-stage snake-stage">
                         <div className="stage-overlay">
-                            <span>20 × 20 grid</span>
-                            <span>{demo.status === "paused" ? "暫停 · 最新 champion 玩到輸再重開" : "Champion replay"}</span>
+                            <span>20 × 20 格</span>
+                            <span>{demo.status === "paused" ? "暫停 · 最新冠軍玩到輸再重開" : "冠軍重播"}</span>
                         </div>
                         <SnakeCanvas
                             loop={demo.status === "paused"}
@@ -83,17 +83,17 @@ export const SnakeLab = React.memo(() => {
                         input={liveInput}
                         inputLabels={SNAKE_INPUT_LABELS}
                         outputLabels={SNAKE_OUTPUT_LABELS}
-                        subtitle="節點亮度跟住 replay 每一 frame 嘅 forward pass；heatmap 係 champion weights。"
-                        title="Snake network"
+                        subtitle="節點亮度跟住重播每一格嘅前向運算；熱圖係冠軍權重。"
+                        title="貪食蛇網絡"
                         topology={SNAKE_TOPOLOGY}
                     />
                     <FitnessChart history={demo.history} />
                     <ApplicationPanel
-                        fitness="食物平方獎勵 + 存活步數 + 接近食物 shaping"
-                        genome="Brain.js 10 → 12 → 3 network 嘅所有 weights 與 biases"
+                        fitness="食物平方獎勵 + 存活步數 + 接近食物塑造"
+                        genome="Brain.js 10 → 12 → 3 網絡嘅所有權重同偏差"
                         inputs="前、左、右危險；食物相對位置；方向 one-hot；身體長度"
                         outputs="左轉、直行、右轉"
-                        termination="撞牆、撞自己、長時間食唔到食物，或 2,400 steps 上限"
+                        termination="撞牆、撞自己、長時間食唔到食物，或步數上限"
                     />
                 </main>
                 <aside className="demo-sidebar">
@@ -130,7 +130,7 @@ export const DemoShell = React.memo<DemoShellProps>(props => {
             <header className="demo-header">
                 <div className="demo-icon">{props.icon}</div>
                 <div>
-                    <p className="eyebrow">Live evolution experiment</p>
+                    <p className="eyebrow">即時演化實驗</p>
                     <h2>{props.title}</h2>
                     <p>{props.description}</p>
                 </div>

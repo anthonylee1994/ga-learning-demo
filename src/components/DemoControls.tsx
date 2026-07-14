@@ -50,7 +50,7 @@ export const DemoControls = React.memo<DemoControlsProps>(({demo, disabled, chil
 
                 <ControlSlider
                     description="個體越多，搜尋範圍越廣，但每一代需要更多運算。"
-                    label="Population"
+                    label="族群大小"
                     max={80}
                     min={12}
                     onChange={value => updateNumber("populationSize", value)}
@@ -59,7 +59,7 @@ export const DemoControls = React.memo<DemoControlsProps>(({demo, disabled, chil
                 />
                 <ControlSlider
                     description="太低容易早熟收斂；太高會破壞已學到嘅結構。"
-                    label="Mutation rate"
+                    label="突變率"
                     max={0.4}
                     min={0.01}
                     onChange={value => updateNumber("mutationRate", value)}
@@ -67,7 +67,7 @@ export const DemoControls = React.memo<DemoControlsProps>(({demo, disabled, chil
                     value={demo.config.mutationRate}
                 />
                 <ControlSlider
-                    description="只影響每代之間嘅等待時間，唔改變 fitness。"
+                    description="只影響每代之間嘅等待時間，唔改變適應度計分。"
                     label="播放速度"
                     max={5}
                     min={1}

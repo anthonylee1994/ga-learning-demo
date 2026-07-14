@@ -8,10 +8,10 @@ interface MetricsProps {
 
 export const Metrics = React.memo<MetricsProps>(({stats, extra = []}) => {
     const values = [
-        {label: "Generation", value: stats ? String(stats.generation) : "0"},
-        {label: "Best fitness", value: stats ? formatNumber(stats.bestFitness) : "—"},
-        {label: "Average", value: stats ? formatNumber(stats.averageFitness) : "—"},
-        {label: "Diversity", value: stats ? stats.diversity.toFixed(3) : "—"},
+        {label: "世代", value: stats ? String(stats.generation) : "0"},
+        {label: "最佳適應度", value: stats ? formatNumber(stats.bestFitness) : "—"},
+        {label: "平均適應度", value: stats ? formatNumber(stats.averageFitness) : "—"},
+        {label: "多樣性", value: stats ? stats.diversity.toFixed(3) : "—"},
         ...extra,
     ];
     return (

@@ -10,9 +10,9 @@ const StockLab = React.lazy(() => import("./components/StockLab").then(module =>
 
 const NAV_ITEMS = [
     {id: "theory" as const, path: "/theory", label: "演算法原理", shortLabel: "原理", icon: BookOpen, color: "neutral"},
-    {id: "snake" as const, path: "/snake", label: "Snake Game", shortLabel: "Snake", icon: Dna, color: "snake"},
-    {id: "breaker" as const, path: "/breaker", label: "Block Breaker", shortLabel: "Breaker", icon: Blocks, color: "breaker"},
-    {id: "stock" as const, path: "/stock", label: "Stock Trading", shortLabel: "Trading", icon: CandlestickChart, color: "stock"},
+    {id: "snake" as const, path: "/snake", label: "貪食蛇", shortLabel: "貪食蛇", icon: Dna, color: "snake"},
+    {id: "breaker" as const, path: "/breaker", label: "打磚塊", shortLabel: "打磚塊", icon: Blocks, color: "breaker"},
+    {id: "stock" as const, path: "/stock", label: "股票交易", shortLabel: "股票", icon: CandlestickChart, color: "stock"},
 ];
 
 export const App = React.memo(() => {
@@ -33,7 +33,7 @@ export const App = React.memo(() => {
                     </div>
                 </div>
                 <nav aria-label="實驗主題" className="sidebar-nav">
-                    <p>LEARNING PATH</p>
+                    <p>學習路徑</p>
                     {NAV_ITEMS.map(item => (
                         <Button className={`nav-button nav-${item.color} ${activeItem.id === item.id ? "active" : ""}`} fullWidth key={item.id} onPress={() => navigate(item.path)} variant="tertiary">
                             <item.icon size={17} strokeWidth={1.5} />
@@ -57,7 +57,7 @@ export const App = React.memo(() => {
                     </div>
                     <div className="topbar-status">
                         <span className="live-dot" />
-                        <span>Local simulation</span>
+                        <span>本機模擬</span>
                         <Chip color="warning" size="sm" variant="soft">
                             brain.js beta
                         </Chip>
@@ -72,7 +72,7 @@ export const App = React.memo(() => {
                     ))}
                 </nav>
                 <div className="content-scroll">
-                    <React.Suspense fallback={<div className="lab-loading">Loading lab…</div>}>
+                    <React.Suspense fallback={<div className="lab-loading">載入實驗中…</div>}>
                         <Routes>
                             <Route element={<Navigate replace to="/theory" />} path="/" />
                             <Route element={<TheoryLab />} path="/theory" />

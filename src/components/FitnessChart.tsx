@@ -13,8 +13,8 @@ export const FitnessChart = React.memo<Props>(({history, showDiversity = true}) 
         <div className="chart-panel">
             <div className="panel-heading">
                 <div>
-                    <p className="eyebrow">Evolution signal</p>
-                    <h3>Fitness 趨勢</h3>
+                    <p className="eyebrow">演化訊號</p>
+                    <h3>適應度趨勢</h3>
                 </div>
                 <div className="legend-row">
                     <span className="legend-dot best" />
@@ -24,7 +24,7 @@ export const FitnessChart = React.memo<Props>(({history, showDiversity = true}) 
                     {showDiversity ? (
                         <React.Fragment>
                             <span className="legend-dot diversity" />
-                            Diversity
+                            多樣性
                         </React.Fragment>
                     ) : null}
                 </div>
@@ -46,7 +46,7 @@ export const FitnessChart = React.memo<Props>(({history, showDiversity = true}) 
                         </LineChart>
                     </ResponsiveContainer>
                 ) : (
-                    <div className="empty-chart">開始訓練後，呢度會顯示每一代嘅 fitness。</div>
+                    <div className="empty-chart">開始訓練後，呢度會顯示每一代嘅適應度。</div>
                 )}
             </div>
         </div>

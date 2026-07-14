@@ -39,7 +39,7 @@ export function createBreakerReplay(genome: Genome): BreakerReplay {
     return simulateBreaker(genome, REPLAY_LAUNCH, true).replay;
 }
 
-export const BREAKER_INPUT_LABELS = ["Paddle X", "Ball X", "Ball Y", "Vel X", "Vel Y", "Brick Δx", "Brick Δy", "剩餘磚"] as const;
+export const BREAKER_INPUT_LABELS = ["板 X", "球 X", "球 Y", "速 X", "速 Y", "磚 Δx", "磚 Δy", "剩餘磚"] as const;
 
 export const BREAKER_OUTPUT_LABELS = ["向左", "停住", "向右"] as const;
 

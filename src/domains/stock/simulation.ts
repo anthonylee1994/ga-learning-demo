@@ -7,14 +7,14 @@ import {decodeStockGenome, STOCK_TOPOLOGY} from "./strategyGenome";
 export {STOCK_TOPOLOGY} from "./strategyGenome";
 
 export const STOCK_INPUT_LABELS = [
-    "vs SMA快",
-    "vs SMA慢",
-    "SMA spread",
+    "對SMA快",
+    "對SMA慢",
+    "SMA差",
     "Williams",
     "ROC",
     "RSI",
     "MACD",
-    "MACD sig",
+    "MACD訊",
     "BB %B",
     "波動",
     "量 Z",

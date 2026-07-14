@@ -8,30 +8,30 @@ interface ApplicationPanelProps {
     termination: string;
 }
 
-export const ApplicationPanel = React.memo<ApplicationPanelProps>((props) => {
+export const ApplicationPanel = React.memo<ApplicationPanelProps>(props => {
     return (
         <section className="application-panel">
             <div className="panel-heading">
                 <div>
-                    <p className="eyebrow">GA mapping</p>
-                    <h3>點樣套用 Genetic Algorithm</h3>
+                    <p className="eyebrow">GA 對應</p>
+                    <h3>點樣套用遺傳演算法</h3>
                 </div>
             </div>
             <dl className="mapping-grid">
                 <div>
-                    <dt>Genome</dt>
+                    <dt>基因體</dt>
                     <dd>{props.genome}</dd>
                 </div>
                 <div>
-                    <dt>Inputs</dt>
+                    <dt>輸入</dt>
                     <dd>{props.inputs}</dd>
                 </div>
                 <div>
-                    <dt>Outputs</dt>
+                    <dt>輸出</dt>
                     <dd>{props.outputs}</dd>
                 </div>
                 <div>
-                    <dt>Fitness</dt>
+                    <dt>適應度</dt>
                     <dd>{props.fitness}</dd>
                 </div>
                 <div>
