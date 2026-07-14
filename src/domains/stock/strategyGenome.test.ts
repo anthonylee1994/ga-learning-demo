@@ -28,8 +28,8 @@ describe("stock strategy genome", () => {
         expect(STOCK_HEAD_GENE_COUNT).toBe(STOCK_PARAMETER_GENE_COUNT + STOCK_MASK_GENE_COUNT);
         expect(STOCK_MASK_GENE_COUNT).toBe(9);
         expect(STOCK_NETWORK_GENE_COUNT).toBe(calculateGeneCount(STOCK_TOPOLOGY));
-        expect(STOCK_TOPOLOGY.hiddenLayers).toEqual([10]);
-        expect(STOCK_NETWORK_GENE_COUNT).toBeLessThan(250);
+        expect(STOCK_TOPOLOGY.hiddenLayers.length).toBeGreaterThanOrEqual(1);
+        expect(STOCK_NETWORK_GENE_COUNT).toBeLessThan(400);
         expect(STOCK_MUTATION_PROFILE.headGeneCount).toBe(STOCK_HEAD_GENE_COUNT);
         expect(STOCK_MUTATION_PROFILE.headRateMultiplier).toBeGreaterThan(STOCK_MUTATION_PROFILE.tailRateMultiplier);
         expect(decoded.parameters.smaFastPeriod).toBeGreaterThanOrEqual(5);

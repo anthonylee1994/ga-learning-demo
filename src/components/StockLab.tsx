@@ -293,7 +293,7 @@ export const StockLab = React.memo(() => {
                                         <span>
                                             指標開關（{countActiveMasks(masks)} / {STOCK_MASK_GENE_COUNT} 開）
                                         </span>
-                                        <span className="mask-section-hint">前 3 個免罰，之後每個 −2.2 fitness</span>
+                                        <span className="mask-section-hint">前 5 個免罰，之後每個 −0.65 fitness</span>
                                     </div>
                                     <div className="mask-chip-row" role="list" aria-label="指標開關">
                                         {INDICATOR_MASK_DEFS.map(def => {
@@ -469,7 +469,7 @@ export const StockLab = React.memo(() => {
                     )}
                     <FitnessChart history={demo.history} />
                     <ApplicationPanel
-                        fitness="70% 全段訓練 + 30% 最差半段：年化×100 + Sharpe×15 − 回撤×40 + 超額×35 − L2 − sparsity（超過 3 個開着的指標家族各 −2.2）；鼓勵用最少有用指標"
+                        fitness="82% 全段 + 18% soft-robust 半段：年化×130 + 累積回報×55 + Sharpe×10 − 回撤×22 + 超額×22 + 倉位暴露×8 − 閒置/低倉罰 − 輕 L2 − soft sparsity（超過 5 個各 −0.65）；主力係推高訓練回報，唔係避風險躺平"
                         genome={`${STOCK_PARAMETER_GENE_COUNT} 週期/門檻 + ${STOCK_MASK_GENE_COUNT} 個 on/off mask（一齊突變 ×3）+ ${STOCK_NETWORK_GENE_COUNT} 決策頭權重（×0.35；${describeStockNetwork()}）`}
                         inputs="17 維特徵；被 mask 關掉嘅指標家族會強制填 0。持倉狀態永遠開啟。"
                         outputs={

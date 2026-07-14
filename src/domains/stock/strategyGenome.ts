@@ -373,16 +373,27 @@ function seedGenome(
     }
 
     // Deterministic small weights + explicit output biases (buy / hold / sell).
-    const hidden = STOCK_TOPOLOGY.hiddenLayers[0];
-    const inputSize = STOCK_TOPOLOGY.inputSize;
+    // Offset must skip every hidden layer (not only the first) — multi-layer heads
+    // used to write buyBias into the wrong slice and never entered long.
     for (let index = 0; index < STOCK_NETWORK_GENE_COUNT; index += 1) {
         // Fixed pseudo-random pattern so seeds are reproducible across reloads.
         const wave = Math.sin((index + 1) * 1.7) * network.weightScale;
         genome[STOCK_HEAD_GENE_COUNT + index] = wave;
     }
-    const outputBiasStart = hidden + hidden * inputSize;
+    const outputBiasStart = networkOutputBiasOffset(STOCK_TOPOLOGY);
     genome[STOCK_HEAD_GENE_COUNT + outputBiasStart] = network.buyBias;
     genome[STOCK_HEAD_GENE_COUNT + outputBiasStart + 1] = network.holdBias;
     genome[STOCK_HEAD_GENE_COUNT + outputBiasStart + 2] = network.sellBias;
     return genome;
+}
+
+/** Gene index of the first output bias (buy), after all hidden biases/weights. */
+function networkOutputBiasOffset(topology: NetworkTopology): number {
+    const sizes = [topology.inputSize, ...topology.hiddenLayers, topology.outputSize];
+    let cursor = 0;
+    for (let layer = 1; layer < sizes.length - 1; layer += 1) {
+        cursor += sizes[layer];
+        cursor += sizes[layer] * sizes[layer - 1];
+    }
+    return cursor;
 }

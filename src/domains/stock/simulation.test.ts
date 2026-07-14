@@ -200,6 +200,22 @@ describe("stock simulation", () => {
         });
     });
 
+    it("ranks buy-biased seed above near-cash empty-mask policy on a rising market", () => {
+        const rising = createMarketData(500);
+        const buySeed = createStockSeedGenomes()[0];
+        const empty = Array(STOCK_GENE_COUNT).fill(0);
+        for (let index = 0; index < STOCK_MASK_GENE_COUNT; index += 1) {
+            empty[STOCK_PARAMETER_GENE_COUNT + index] = encodeMask(false);
+        }
+        const buyFitness = evaluateStockGenome(buySeed, rising, true);
+        const emptyFitness = evaluateStockGenome(empty, rising, true);
+        const buyReplay = createTradingReplay(buySeed, rising, true);
+        expect(buyFitness).toBeGreaterThan(emptyFitness);
+        // Fixture is strongly upward — buy-biased seed must actually enter and capture return.
+        expect(buyReplay.trades.some(trade => trade.action === "buy")).toBe(true);
+        expect(buyReplay.trainReturn).toBeGreaterThan(0.15);
+    });
+
     it("ablates enabled masks and ranks by fitness drop", () => {
         const seed = createStockSeedGenomes()[0];
         const result = ablateIndicatorMasks(seed, points, true);

@@ -32,14 +32,17 @@ const STARTING_EQUITY = 10_000;
 const TRANSACTION_COST = 0.001;
 /** Keep a small LRU of indicator series — Float64Array columns, ~1MB per full history entry. */
 const MAX_INDICATOR_CACHE = 16;
-/** Stronger weight decay so fitness gains come from indicator periods, not overweight nets. */
-const WEIGHT_L2_PENALTY = 2.5;
 /**
- * Prefer sparse strategies: first FREE_MASK_COUNT families free, then per-extra penalty.
- * Pushes the GA to turn off indicators that do not earn their keep.
+ * Mild weight decay: enough to discourage overweight nets, not enough to swamp return signal.
+ * (Was 2.5 — dominated small CAGR differences and pushed evolution toward near-cash policies.)
  */
-const FREE_MASK_COUNT = 3;
-const SPARSITY_PENALTY_PER_MASK = 2.2;
+const WEIGHT_L2_PENALTY = 1.0;
+/**
+ * Soft sparsity: keep feature selection pressure without starving the decision head of inputs.
+ * First FREE_MASK_COUNT families free; each extra costs a little fitness.
+ */
+const FREE_MASK_COUNT = 5;
+const SPARSITY_PENALTY_PER_MASK = 0.65;
 /** Hard floor when every indicator family is off (only position feature left). */
 const EMPTY_MASK_PENALTY = 80;
 
@@ -59,6 +62,8 @@ interface SegmentMetrics {
     sharpe: number;
     maxDrawdown: number;
     endingPosition: number;
+    /** Average long exposure in [0, 1] over the segment (cash-only ≈ 0). */
+    meanExposure: number;
 }
 
 interface SegmentResult extends SegmentMetrics {
@@ -128,11 +133,15 @@ export function evaluateStockGenome(genome: Genome, points: MarketDataPoint[], u
     const firstHalf = simulateColumnMetrics(decide, columns, 0, 0, mid + 1);
     const secondHalf = simulateColumnMetrics(decide, columns, firstHalf.endingPosition, mid, trainLength);
     const fullScore = scoreSegment(full, columns, 0, trainLength);
-    const robustScore = Math.min(scoreSegment(firstHalf, columns, 0, mid + 1), scoreSegment(secondHalf, columns, mid, trainLength));
+    const halfA = scoreSegment(firstHalf, columns, 0, mid + 1);
+    const halfB = scoreSegment(secondHalf, columns, mid, trainLength);
+    // Soft robust: pure min was crushing bull-market train returns (one bad half nuked fitness).
+    const robustScore = 0.35 * Math.min(halfA, halfB) + 0.65 * ((halfA + halfB) / 2);
     // Rule mode ignores the NN tail entirely — penalizing unused weights would just add noise.
     const regularization = useNetwork ? WEIGHT_L2_PENALTY * meanSquare(networkGenome) : 0;
     const sparsity = SPARSITY_PENALTY_PER_MASK * Math.max(0, activeCount - FREE_MASK_COUNT);
-    return fullScore * 0.7 + robustScore * 0.3 - regularization - sparsity;
+    // Full-segment performance dominates — matches what the UI "訓練回報" shows.
+    return fullScore * 0.82 + robustScore * 0.18 - regularization - sparsity;
 }
 
 /**
@@ -176,18 +185,25 @@ export function ablateIndicatorMasks(genome: Genome, points: MarketDataPoint[], 
 }
 
 /**
- * Prefer absolute risk-adjusted performance (what the equity chart shows as "working"),
- * with a softer excess-vs-B&H term so pure cash still loses on strong bulls.
+ * Prefer cumulative + annualized return (what "訓練回報" shows), with softer risk terms.
+ * Pure cash still loses on bulls via excess + under-exposure penalties; drawdown no longer dominates.
  */
 function scoreSegment(metrics: SegmentMetrics, columns: IndicatorColumns, start: number, end: number): number {
     const first = columns.close[start] || 1;
     const last = columns.close[end - 1] || first;
     const years = Math.max((end - start) / 252, 0.5);
+    const benchmarkReturn = last / first - 1;
     const strategyCagr = annualize(metrics.totalReturn, years);
-    const benchmarkCagr = annualize(last / first - 1, years);
+    const benchmarkCagr = annualize(benchmarkReturn, years);
     const excess = strategyCagr - benchmarkCagr;
-    const idlePenalty = Math.abs(metrics.totalReturn) < 0.02 ? 8 : 0;
-    return strategyCagr * 100 + metrics.sharpe * 15 - metrics.maxDrawdown * 40 + excess * 35 - idlePenalty;
+    // Flat / near-zero equity path.
+    const idlePenalty = Math.abs(metrics.totalReturn) < 0.03 ? 14 : 0;
+    // Sitting in cash through a rising train segment looks "safe" on DD but tanks train return.
+    const bullMarket = benchmarkReturn > 0.08;
+    const underExposed = metrics.meanExposure < 0.3;
+    const laggingReturn = metrics.totalReturn < benchmarkReturn * 0.35;
+    const underInvestedPenalty = bullMarket && underExposed && laggingReturn ? 16 : 0;
+    return strategyCagr * 130 + metrics.totalReturn * 55 + metrics.sharpe * 10 - metrics.maxDrawdown * 22 + excess * 22 + metrics.meanExposure * 8 - idlePenalty - underInvestedPenalty;
 }
 
 function annualize(totalReturn: number, years: number): number {
@@ -412,6 +428,7 @@ function simulateColumnMetrics(decide: PositionDecider, columns: IndicatorColumn
     let returnSum = 0;
     let returnSqSum = 0;
     let returnCount = 0;
+    let exposureSum = 0;
 
     for (let index = start + 1; index < end; index += 1) {
         const previous = index - 1;
@@ -423,6 +440,7 @@ function simulateColumnMetrics(decide: PositionDecider, columns: IndicatorColumn
         returnSum += dailyReturn;
         returnSqSum += dailyReturn * dailyReturn;
         returnCount += 1;
+        exposureSum += position;
         peak = Math.max(peak, equity);
         maxDrawdown = Math.max(maxDrawdown, peak > 0 ? (peak - equity) / peak : 0);
         position = targetPosition;
@@ -433,6 +451,7 @@ function simulateColumnMetrics(decide: PositionDecider, columns: IndicatorColumn
         sharpe: calculateSharpeFromMoments(returnSum, returnSqSum, returnCount),
         maxDrawdown,
         endingPosition: position,
+        meanExposure: returnCount > 0 ? exposureSum / returnCount : 0,
     };
 }
 
@@ -445,6 +464,7 @@ function simulateColumnReplay(decide: PositionDecider, columns: IndicatorColumns
     let returnSum = 0;
     let returnSqSum = 0;
     let returnCount = 0;
+    let exposureSum = 0;
     const equityCurve = new Array<number>(length);
     if (length > 0) {
         equityCurve[0] = equity;
@@ -461,6 +481,7 @@ function simulateColumnReplay(decide: PositionDecider, columns: IndicatorColumns
         returnSum += dailyReturn;
         returnSqSum += dailyReturn * dailyReturn;
         returnCount += 1;
+        exposureSum += position;
         equityCurve[index - start] = equity;
         peak = Math.max(peak, equity);
         maxDrawdown = Math.max(maxDrawdown, peak > 0 ? (peak - equity) / peak : 0);
@@ -482,6 +503,7 @@ function simulateColumnReplay(decide: PositionDecider, columns: IndicatorColumns
         sharpe: calculateSharpeFromMoments(returnSum, returnSqSum, returnCount),
         maxDrawdown,
         endingPosition: position,
+        meanExposure: returnCount > 0 ? exposureSum / returnCount : 0,
     };
 }
 
