@@ -11,7 +11,7 @@ const StockLab = React.lazy(() => import("./components/StockLab").then(module =>
 const NAV_ITEMS = [
     {id: "theory" as const, path: "/theory", label: "演算法原理", icon: BookOpen, color: "neutral"},
     {id: "snake" as const, path: "/snake", label: "貪食蛇", icon: Dna, color: "snake"},
-    {id: "breaker" as const, path: "/breaker", label: "打磚塊", icon: Blocks, color: "breaker"},
+    {id: "breaker" as const, path: "/breaker", label: "撞磚", icon: Blocks, color: "breaker"},
     {id: "stock" as const, path: "/stock", label: "股票交易", icon: CandlestickChart, color: "stock"},
 ];
 

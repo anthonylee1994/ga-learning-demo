@@ -92,7 +92,7 @@ export const BreakerCanvas = React.memo<Props>(({replay, speed, playing = true, 
 
     return (
         <canvas
-            aria-label="打磚塊冠軍重播"
+            aria-label="撞磚冠軍重播"
             className="simulation-canvas breaker"
             data-frame-index={frameIndex}
             data-loop={loop}

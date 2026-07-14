@@ -48,14 +48,14 @@ test("desktop workspace runs all three evolution demos", async ({page}, testInfo
     await expect(page.getByText("冠軍循環重播", {exact: true})).toBeVisible();
     await expectCompleteReplayLoop(snakeCanvas, /collision|starved|timeout/, page);
 
-    await page.getByRole("button", {name: "打磚塊"}).click();
+    await page.getByRole("button", {name: "撞磚"}).click();
     await expect(page).toHaveURL(/\/breaker$/);
     await page.getByRole("slider", {name: "播放速度"}).fill("5");
     await page.getByRole("button", {name: "開始"}).click();
     await expectGeneration(page);
-    await expect(page.getByLabel("打磚塊冠軍重播")).toBeVisible();
+    await expect(page.getByLabel("撞磚冠軍重播")).toBeVisible();
     await expect(page.getByText("冠軍循環重播 · 進化中")).toBeVisible();
-    const breakerCanvas = page.getByLabel("打磚塊冠軍重播");
+    const breakerCanvas = page.getByLabel("撞磚冠軍重播");
     await expect(breakerCanvas).toHaveAttribute("data-loop", "true");
     await expect(breakerCanvas).toHaveAttribute("data-playing", "true");
     await page.getByRole("button", {name: "暫停"}).click();

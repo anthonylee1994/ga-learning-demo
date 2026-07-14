@@ -54,7 +54,7 @@ export const BreakerLab = React.memo(() => {
     }, [demo.champion]);
 
     return (
-        <DemoShell accent="breaker" description="Matter.js 固定時間步重播物理世界；AI 要從球速同位置預測下一次接球點。" icon={<Blocks size={20} strokeWidth={1.5} />} title="打磚塊 · 神經演化">
+        <DemoShell accent="breaker" description="Matter.js 固定時間步重播物理世界；AI 要從球速同位置預測下一次接球點。" icon={<Blocks size={20} strokeWidth={1.5} />} title="撞磚 · 神經演化">
             <div className="workspace-grid">
                 <main className="demo-main">
                     <Metrics
@@ -84,7 +84,7 @@ export const BreakerLab = React.memo(() => {
                         inputLabels={BREAKER_INPUT_LABELS}
                         outputLabels={BREAKER_OUTPUT_LABELS}
                         subtitle="節點亮度跟住重播每一格嘅前向運算；熱圖係冠軍權重。"
-                        title="打磚塊網絡"
+                        title="撞磚網絡"
                         topology={BREAKER_TOPOLOGY}
                     />
                     <FitnessChart history={demo.history} />

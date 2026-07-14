@@ -66,7 +66,7 @@ describe("champion replay playback", () => {
                 <BreakerCanvas loop playing replay={breakerReplay} restartKey={1} speed={5} />
             </React.Fragment>
         );
-        const canvas = screen.getByLabelText("打磚塊冠軍重播");
+        const canvas = screen.getByLabelText("撞磚冠軍重播");
         expect(canvas).toHaveAttribute("data-frame-index", "0");
 
         act(() => vi.advanceTimersByTime(12));
