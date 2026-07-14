@@ -6,6 +6,7 @@ import {useEvolutionDemo} from "../hooks/useEvolutionDemo";
 import type {GAConfig, Genome, MarketDataResponse, TradingPoint, TradingReplay} from "../lib/types";
 import {createPineScript} from "../domains/stock/pineScript";
 import {
+    ablateIndicatorMasks,
     buildNetworkFeatures,
     createTradingReplay,
     evaluateStockGenome,
@@ -15,7 +16,17 @@ import {
     STOCK_OUTPUT_LABELS,
     STOCK_TOPOLOGY,
 } from "../domains/stock/simulation";
-import {decodeStockGenome, describeStockNetwork, STOCK_GENE_COUNT, STOCK_NETWORK_GENE_COUNT, STOCK_PARAMETER_GENE_COUNT} from "../domains/stock/strategyGenome";
+import {
+    countActiveMasks,
+    decodeStockGenome,
+    describeStockNetwork,
+    INDICATOR_MASK_DEFS,
+    STOCK_GENE_COUNT,
+    STOCK_HEAD_GENE_COUNT,
+    STOCK_MASK_GENE_COUNT,
+    STOCK_NETWORK_GENE_COUNT,
+    STOCK_PARAMETER_GENE_COUNT,
+} from "../domains/stock/strategyGenome";
 import {ApplicationPanel} from "./ApplicationPanel";
 import {DemoControls} from "./DemoControls";
 import {FitnessChart} from "./FitnessChart";
@@ -117,6 +128,25 @@ export const StockLab = React.memo(() => {
         }
     }, [demo.champion?.genome]);
     const parameters = decoded?.parameters ?? replay?.optimizedParameters;
+    const masks = decoded?.masks ?? replay?.indicatorMasks;
+    /**
+     * Ablation is O(masks) full train evals. While evolving, only recompute when the
+     * throttled champion showcase refreshes; when paused/idle, follow the live champion genome.
+     */
+    const ablationTrigger = demo.status === "running" ? demo.showcaseEpoch : demo.champion?.genome;
+    const ablation = React.useMemo(() => {
+        const genome = demo.champion?.genome;
+        if (!genome || !marketData?.points.length) {
+            return null;
+        }
+        try {
+            return ablateIndicatorMasks(genome, marketData.points, useNetwork);
+        } catch {
+            return null;
+        }
+        // Intentionally omit demo.champion from deps: trigger gates cadence; render provides latest genome.
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- ablationTrigger encodes status/genome/showcase
+    }, [ablationTrigger, marketData?.points, useNetwork]);
     /**
      * Chart labels must track the *replay* parameters, not the live-decoded genome.
      * Live parameters are a new object every generation and used to blow MarketChart's
@@ -188,7 +218,7 @@ export const StockLab = React.memo(() => {
             const index = Math.min(Math.max(0, previewIndex), columns.length - 1);
             const date = marketData.points[columns.warmup + index]?.date ?? "";
             const position = liveDay?.index === index ? liveDay.position : replay ? positionBeforeDate(replay.trades, date) : 0;
-            const input = buildNetworkFeatures(columns, index, position, decoded.parameters);
+            const input = buildNetworkFeatures(columns, index, position, decoded.parameters, decoded.masks);
             return {
                 input,
                 index,
@@ -204,7 +234,7 @@ export const StockLab = React.memo(() => {
     return (
         <DemoShell
             accent="stock"
-            description="以遺傳演算法為主進化技術指標週期同 RSI / 威廉指標買賣門檻，搭配一個好細嘅 Brain.js 決策頭（買 / 持 / 賣）。突變會優先擾動指標基因；80% 訓練、20% 樣本外測試。"
+            description="以遺傳演算法同時進化指標 on/off（feature selection）、週期 / 門檻，同薄 Brain.js 決策頭。Sparsity 懲罰多餘指標；冠軍會做 ablation 睇邊個真正有用。80% 訓練、20% 樣本外。"
             icon={<CandlestickChart size={20} strokeWidth={1.5} />}
             title="股票交易 · 神經演化"
         >
@@ -249,7 +279,7 @@ export const StockLab = React.memo(() => {
                         <section className="optimized-panel">
                             <div className="panel-heading">
                                 <div>
-                                    <p className="eyebrow">冠軍基因體 · 指標優先</p>
+                                    <p className="eyebrow">冠軍基因體 · 指標選擇 + 參數</p>
                                     <h3>最佳指標參數</h3>
                                 </div>
                                 <Button onPress={() => downloadPineScript(demo.champion!.genome, marketData?.symbol ?? "QQQ", useNetwork)} size="sm" variant="secondary">
@@ -257,20 +287,97 @@ export const StockLab = React.memo(() => {
                                     匯出 Pine Script
                                 </Button>
                             </div>
+                            {masks ? (
+                                <div className="mask-section">
+                                    <div className="mask-section-label">
+                                        <span>
+                                            指標開關（{countActiveMasks(masks)} / {STOCK_MASK_GENE_COUNT} 開）
+                                        </span>
+                                        <span className="mask-section-hint">前 3 個免罰，之後每個 −2.2 fitness</span>
+                                    </div>
+                                    <div className="mask-chip-row" role="list" aria-label="指標開關">
+                                        {INDICATOR_MASK_DEFS.map(def => {
+                                            const on = masks[def.id];
+                                            return (
+                                                <span className={on ? "mask-chip mask-chip--on" : "mask-chip mask-chip--off"} key={def.id} role="listitem" title={def.label}>
+                                                    {def.shortLabel}
+                                                    <em>{on ? "ON" : "OFF"}</em>
+                                                </span>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            ) : null}
                             <div className="parameter-grid">
-                                <ParameterValue label="移動平均線" value={`${parameters.smaFastPeriod} / ${parameters.smaSlowPeriod}`} />
-                                <ParameterValue label="RSI" value={`${parameters.rsiPeriod} 日 · 買 ≤ ${parameters.rsiBuyThreshold} · 賣 ≥ ${parameters.rsiSellThreshold}`} />
-                                <ParameterValue label="保力加通道" value={`${parameters.bollingerPeriod} / ${parameters.bollingerMultiplier.toFixed(2)}σ`} />
-                                <ParameterValue label="ROC 週期" value={String(parameters.rocPeriod)} />
-                                <ParameterValue label="威廉指標" value={`${parameters.williamsPeriod} 日 · 買 ≤ ${parameters.williamsBuyThreshold} · 賣 ≥ ${parameters.williamsSellThreshold}`} />
-                                <ParameterValue label="MACD" value={`${parameters.macdFastPeriod} / ${parameters.macdSlowPeriod} / ${parameters.macdSignalPeriod}`} />
-                                <ParameterValue label="波動率" value={String(parameters.volatilityPeriod)} />
-                                <ParameterValue label="成交量" value={String(parameters.volumeZScorePeriod)} />
-                                <ParameterValue label="N日新高" value={String(parameters.newHighPeriod)} />
-                                <ParameterValue label="指標基因" value={`${STOCK_PARAMETER_GENE_COUNT}（突變 ×3）`} />
-                                <ParameterValue label="決策頭" value={useNetwork ? describeStockNetwork() : "買入 2/4；RSI / 威廉指標任一過熱賣出"} />
+                                <ParameterValue label="移動平均線" value={`${parameters.smaFastPeriod} / ${parameters.smaSlowPeriod}${masks && !masks.sma ? " · 關" : ""}`} />
+                                <ParameterValue
+                                    label="RSI"
+                                    value={`${parameters.rsiPeriod} 日 · 買 ≤ ${parameters.rsiBuyThreshold} · 賣 ≥ ${parameters.rsiSellThreshold}${masks && !masks.rsi ? " · 關" : ""}`}
+                                />
+                                <ParameterValue label="保力加通道" value={`${parameters.bollingerPeriod} / ${parameters.bollingerMultiplier.toFixed(2)}σ${masks && !masks.bollinger ? " · 關" : ""}`} />
+                                <ParameterValue label="ROC 週期" value={`${parameters.rocPeriod}${masks && !masks.roc ? " · 關" : ""}`} />
+                                <ParameterValue
+                                    label="威廉指標"
+                                    value={`${parameters.williamsPeriod} 日 · 買 ≤ ${parameters.williamsBuyThreshold} · 賣 ≥ ${parameters.williamsSellThreshold}${masks && !masks.williams ? " · 關" : ""}`}
+                                />
+                                <ParameterValue
+                                    label="MACD"
+                                    value={`${parameters.macdFastPeriod} / ${parameters.macdSlowPeriod} / ${parameters.macdSignalPeriod}${masks && !masks.macd ? " · 關" : ""}`}
+                                />
+                                <ParameterValue label="波動率" value={`${parameters.volatilityPeriod}${masks && !masks.volatility ? " · 關" : ""}`} />
+                                <ParameterValue label="成交量" value={`${parameters.volumeZScorePeriod}${masks && !masks.volume ? " · 關" : ""}`} />
+                                <ParameterValue label="N日新高" value={`${parameters.newHighPeriod}${masks && !masks.newHigh ? " · 關" : ""}`} />
+                                <ParameterValue label="Head 基因" value={`${STOCK_HEAD_GENE_COUNT}（週期 ${STOCK_PARAMETER_GENE_COUNT} + mask ${STOCK_MASK_GENE_COUNT}，突變 ×3）`} />
+                                <ParameterValue label="決策頭" value={useNetwork ? describeStockNetwork() : "啟用票多數；RSI / 威廉指標可賣出"} />
                                 <ParameterValue label="網絡基因" value={useNetwork ? `${STOCK_NETWORK_GENE_COUNT}（突變 ×0.35）` : `${STOCK_NETWORK_GENE_COUNT}（規則模式未使用）`} />
                             </div>
+                            {ablation ? (
+                                <div className="ablation-section">
+                                    <div className="mask-section-label">
+                                        <span>Ablation · 關掉後 fitness 變化</span>
+                                        <span className="mask-section-hint">Δ &gt; 0 = 有用（唔好亂關）；Δ ≤ 0 = 裝飾品</span>
+                                    </div>
+                                    <div className="ablation-table-wrap">
+                                        <table className="ablation-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>指標</th>
+                                                    <th>狀態</th>
+                                                    <th>Δ fitness</th>
+                                                    <th>解讀</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {ablation.rows.map(row => {
+                                                    const useful = row.enabled && row.fitnessDrop > 0.15;
+                                                    const noise = row.enabled && row.fitnessDrop <= 0;
+                                                    let verdict = "未選用";
+                                                    if (row.enabled) {
+                                                        if (useful) {
+                                                            verdict = "有貢獻";
+                                                        } else if (noise) {
+                                                            verdict = "可關";
+                                                        } else {
+                                                            verdict = "弱貢獻";
+                                                        }
+                                                    }
+                                                    return (
+                                                        <tr className={!row.enabled ? "ablation-row--off" : useful ? "ablation-row--useful" : noise ? "ablation-row--noise" : undefined} key={row.id}>
+                                                            <td>
+                                                                {row.label}
+                                                                <span className="ablation-short">{row.shortLabel}</span>
+                                                            </td>
+                                                            <td>{row.enabled ? "ON" : "OFF"}</td>
+                                                            <td className="font-mono">{row.enabled ? formatFitnessDrop(row.fitnessDrop) : "—"}</td>
+                                                            <td>{verdict}</td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            ) : null}
                         </section>
                     ) : null}
                     <section className="market-panel">
@@ -362,15 +469,15 @@ export const StockLab = React.memo(() => {
                     )}
                     <FitnessChart history={demo.history} />
                     <ApplicationPanel
-                        fitness="70% 全段訓練 + 30% 最差半段：年化回報×100 + Sharpe×15 − 最大回撤×40 + 超額回報×35 − 較重 L2；鼓勵靠指標組合賺錢而唔係肥網絡"
-                        genome={`${STOCK_PARAMETER_GENE_COUNT} 個指標週期 / 門檻基因（突變 ×3）+ ${STOCK_NETWORK_GENE_COUNT} 個細決策頭權重（突變 ×0.35；${describeStockNetwork()}）`}
-                        inputs="17 維：價格相對移動平均線、威廉指標、ROC、RSI、MACD、保力加通道 %B、波動、成交量、N日新高、持倉狀態，加 RSI / 威廉指標距離買賣門檻（全部正規化到約 ±1）"
+                        fitness="70% 全段訓練 + 30% 最差半段：年化×100 + Sharpe×15 − 回撤×40 + 超額×35 − L2 − sparsity（超過 3 個開着的指標家族各 −2.2）；鼓勵用最少有用指標"
+                        genome={`${STOCK_PARAMETER_GENE_COUNT} 週期/門檻 + ${STOCK_MASK_GENE_COUNT} 個 on/off mask（一齊突變 ×3）+ ${STOCK_NETWORK_GENE_COUNT} 決策頭權重（×0.35；${describeStockNetwork()}）`}
+                        inputs="17 維特徵；被 mask 關掉嘅指標家族會強制填 0。持倉狀態永遠開啟。"
                         outputs={
                             useNetwork
-                                ? "薄隱藏層取最大 → 買入（全倉做多）/ 持有 / 賣出（全現金）；搜尋主力喺指標週期同門檻，唔用反向傳播"
-                                : "買入四票取二：移動平均線趨勢、MACD、RSI 超賣、威廉指標超賣；持倉後 RSI 或 威廉指標 任一升穿賣出門檻就全現金"
+                                ? "薄隱藏層取最大 → 買 / 持 / 賣；搜尋主力喺 mask + 週期 / 門檻"
+                                : "啟用中嘅 SMA / MACD / RSI / 威廉 多數票買入；RSI / 威廉過熱賣出（兩者都關則買入條件失敗就離場）"
                         }
-                        termination="用頭 80% 數據做選擇；最後 20% 測試數據絕不參與訓練；每代移民只重抽指標基因"
+                        termination="頭 80% 做選擇；尾 20% 唔入訓練；移民只重抽 head（參數 + mask）"
                     />
                 </main>
                 <aside className="demo-sidebar">
@@ -605,6 +712,11 @@ async function loadMarketData(symbol: string): Promise<MarketDataResponse> {
 
 function formatPercent(value: number): string {
     return new Intl.NumberFormat("zh-HK", {style: "percent", maximumFractionDigits: 1}).format(value);
+}
+
+function formatFitnessDrop(value: number): string {
+    const sign = value > 0 ? "+" : "";
+    return `${sign}${value.toFixed(2)}`;
 }
 
 function formatBrushDate(value: string): string {

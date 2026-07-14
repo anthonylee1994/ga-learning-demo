@@ -1,5 +1,5 @@
-import type {Genome} from "../../lib/types";
-import {decodeStockGenome, STOCK_TOPOLOGY} from "./strategyGenome";
+import type {Genome, IndicatorMaskState} from "../../lib/types";
+import {decodeStockGenome, INDICATOR_MASK_DEFS, STOCK_TOPOLOGY} from "./strategyGenome";
 
 interface DenseLayer {
     biases: number[];
@@ -7,15 +7,18 @@ interface DenseLayer {
 }
 
 export function createPineScript(genome: Genome, symbol: string, useNetwork = true): string {
-    const {parameters, networkGenome} = decodeStockGenome(genome);
+    const {parameters, masks, networkGenome} = decodeStockGenome(genome);
     const safeSymbol = symbol.replace(/[^A-Z0-9._-]/gi, "").toUpperCase() || "QQQ";
-    const decisionLines = useNetwork ? createNetworkDecisionLines(networkGenome) : createRuleDecisionLines();
+    const decisionLines = useNetwork ? createNetworkDecisionLines(networkGenome, masks) : createRuleDecisionLines(masks);
+    const maskComments = INDICATOR_MASK_DEFS.map(def => `//   ${def.id}: ${masks[def.id] ? "ON" : "OFF"}`).join("\n");
 
     return `//@version=6
 strategy("EvoLab ${safeSymbol} Evolved Strategy", overlay=true, initial_capital=1000000, default_qty_type=strategy.percent_of_equity, default_qty_value=100, pyramiding=0, commission_type=strategy.commission.percent, commission_value=0.1, process_orders_on_close=true)
 
-// Optimized by EvoLab genetic algorithm — indicator periods, signal thresholds, and Brain.js network weights.
+// Optimized by EvoLab genetic algorithm — indicator periods, on/off masks, thresholds, and Brain.js weights.
 // Validate this strategy on fresh out-of-sample data before considering any use.
+// Indicator masks (feature selection):
+${maskComments}
 smaFastPeriod = ${parameters.smaFastPeriod}
 smaSlowPeriod = ${parameters.smaSlowPeriod}
 williamsPeriod = ${parameters.williamsPeriod}
@@ -33,6 +36,15 @@ bollingerMultiplier = ${formatNumber(parameters.bollingerMultiplier)}
 volatilityPeriod = ${parameters.volatilityPeriod}
 volumeZScorePeriod = ${parameters.volumeZScorePeriod}
 newHighPeriod = ${parameters.newHighPeriod}
+useSma = ${masks.sma}
+useWilliams = ${masks.williams}
+useRoc = ${masks.roc}
+useRsi = ${masks.rsi}
+useMacd = ${masks.macd}
+useBollinger = ${masks.bollinger}
+useVolatility = ${masks.volatility}
+useVolume = ${masks.volume}
+useNewHigh = ${masks.newHigh}
 
 clamp(value) => math.min(1.0, math.max(-1.0, nz(value)))
 tanh(value) =>
@@ -85,48 +97,55 @@ plotshape(sellSignal and strategy.position_size > 0, title="Sell", style=shape.t
 `;
 }
 
-function createNetworkDecisionLines(networkGenome: Genome): string[] {
+function createNetworkDecisionLines(networkGenome: Genome, masks: IndicatorMaskState): string[] {
     const layers = decodeLayers(networkGenome);
     const inputNames = Array.from({length: STOCK_TOPOLOGY.inputSize}, (_, index) => `f${index}`);
     const hiddenNames = layers[0].biases.map((_, index) => `h1_${index}`);
     const outputNames = ["outBuy", "outHold", "outSell"];
     return [
-        "f0 = clamp((close / smaFast - 1.0) * 10.0)",
-        "f1 = clamp((close / smaSlow - 1.0) * 10.0)",
-        "f2 = clamp((smaFast / smaSlow - 1.0) * 10.0)",
-        "f3 = clamp((williamsR + 50.0) / 50.0)",
-        "f4 = clamp(roc * 5.0)",
-        "f5 = clamp((rsi - 50.0) / 50.0)",
-        "f6 = clamp(macdLine / close * 25.0)",
-        "f7 = clamp(macdSignal / close * 25.0)",
-        "f8 = clamp((bollingerPercentB - 0.5) * 2.0)",
-        "f9 = clamp(volatility * 5.0)",
-        "f10 = clamp(volumeZScore / 3.0)",
-        "f11 = clamp((newHighRatio - 0.95) * 20.0)",
+        `f0 = useSma ? clamp((close / smaFast - 1.0) * 10.0) : 0.0`,
+        `f1 = useSma ? clamp((close / smaSlow - 1.0) * 10.0) : 0.0`,
+        `f2 = useSma ? clamp((smaFast / smaSlow - 1.0) * 10.0) : 0.0`,
+        `f3 = useWilliams ? clamp((williamsR + 50.0) / 50.0) : 0.0`,
+        `f4 = useRoc ? clamp(roc * 5.0) : 0.0`,
+        `f5 = useRsi ? clamp((rsi - 50.0) / 50.0) : 0.0`,
+        `f6 = useMacd ? clamp(macdLine / close * 25.0) : 0.0`,
+        `f7 = useMacd ? clamp(macdSignal / close * 25.0) : 0.0`,
+        `f8 = useBollinger ? clamp((bollingerPercentB - 0.5) * 2.0) : 0.0`,
+        `f9 = useVolatility ? clamp(volatility * 5.0) : 0.0`,
+        `f10 = useVolume ? clamp(volumeZScore / 3.0) : 0.0`,
+        `f11 = useNewHigh ? clamp((newHighRatio - 0.95) * 20.0) : 0.0`,
         "f12 = strategy.position_size > 0 ? 1.0 : -1.0",
-        "f13 = clamp((rsiBuyThreshold - rsi) / 20.0)",
-        "f14 = clamp((rsi - rsiSellThreshold) / 20.0)",
-        "f15 = clamp((williamsBuyThreshold - williamsR) / 25.0)",
-        "f16 = clamp((williamsR - williamsSellThreshold) / 25.0)",
+        `f13 = useRsi ? clamp((rsiBuyThreshold - rsi) / 20.0) : 0.0`,
+        `f14 = useRsi ? clamp((rsi - rsiSellThreshold) / 20.0) : 0.0`,
+        `f15 = useWilliams ? clamp((williamsBuyThreshold - williamsR) / 25.0) : 0.0`,
+        `f16 = useWilliams ? clamp((williamsR - williamsSellThreshold) / 25.0) : 0.0`,
         "",
         ...createLayerLines(hiddenNames, inputNames, layers[0]),
         ...createLayerLines(outputNames, hiddenNames, layers[1], false),
         "",
         "buySignal = ready and outBuy >= outHold and outBuy >= outSell",
         "sellSignal = ready and outSell > outBuy and outSell > outHold",
+        `// masks embedded: sma=${masks.sma} williams=${masks.williams} roc=${masks.roc} rsi=${masks.rsi} macd=${masks.macd}`,
     ];
 }
 
 /** Rule mode（唔用 NN）：threshold 買賣規則，同 simulation.ts decidePositionFromRules 保持一致。 */
-function createRuleDecisionLines(): string[] {
+function createRuleDecisionLines(masks: IndicatorMaskState): string[] {
     return [
-        "trendVote = smaFast > smaSlow ? 1 : 0",
-        "macdVote = macdLine > macdSignal ? 1 : 0",
-        "rsiBuyVote = rsi <= rsiBuyThreshold ? 1 : 0",
-        "williamsBuyVote = williamsR <= williamsBuyThreshold ? 1 : 0",
+        "trendVote = useSma and smaFast > smaSlow ? 1 : 0",
+        "macdVote = useMacd and macdLine > macdSignal ? 1 : 0",
+        "rsiBuyVote = useRsi and rsi <= rsiBuyThreshold ? 1 : 0",
+        "williamsBuyVote = useWilliams and williamsR <= williamsBuyThreshold ? 1 : 0",
+        "activeVotes = (useSma ? 1 : 0) + (useMacd ? 1 : 0) + (useRsi ? 1 : 0) + (useWilliams ? 1 : 0)",
         "buyVotes = trendVote + macdVote + rsiBuyVote + williamsBuyVote",
-        "buySignal = ready and buyVotes >= 2",
-        "sellSignal = ready and (rsi >= rsiSellThreshold or williamsR >= williamsSellThreshold)",
+        "neededVotes = math.max(1, int(math.ceil(activeVotes / 2.0)))",
+        "buySignal = ready and activeVotes > 0 and buyVotes >= neededVotes",
+        "rsiSell = useRsi and rsi >= rsiSellThreshold",
+        "williamsSell = useWilliams and williamsR >= williamsSellThreshold",
+        "fallbackSell = not useRsi and not useWilliams and activeVotes > 0 and buyVotes < neededVotes",
+        "sellSignal = ready and (rsiSell or williamsSell or fallbackSell)",
+        `// rule masks: sma=${masks.sma} macd=${masks.macd} rsi=${masks.rsi} williams=${masks.williams}`,
     ];
 }
 

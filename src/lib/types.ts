@@ -170,6 +170,19 @@ export interface TradingPoint {
     newHighRatio: number;
 }
 
+/** On/off state for each selectable indicator family (matches stock mask genes). */
+export type IndicatorMaskState = {
+    sma: boolean;
+    williams: boolean;
+    roc: boolean;
+    rsi: boolean;
+    macd: boolean;
+    bollinger: boolean;
+    volatility: boolean;
+    volume: boolean;
+    newHigh: boolean;
+};
+
 export interface TradingReplay {
     points: TradingPoint[];
     trades: TradeMarker[];
@@ -179,6 +192,8 @@ export interface TradingReplay {
     sharpe: number;
     maxDrawdown: number;
     optimizedParameters: OptimizedIndicatorParameters;
+    /** Evolved indicator on/off masks (feature selection). */
+    indicatorMasks: IndicatorMaskState;
 }
 
 export type WorkerCommand<TData = unknown> =

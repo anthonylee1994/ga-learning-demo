@@ -1,14 +1,46 @@
 import {createMarketData} from "../../test/marketFixture";
-import {buildNetworkFeatures, createTradingReplay, decidePositionFromNetwork, decidePositionFromRules, evaluateStockGenome, getIndicatorColumns, positionBeforeDate} from "./simulation";
-import {createStockSeedGenomes, decodeStockGenome, DEFAULT_INDICATOR_PARAMETERS, STOCK_GENE_COUNT, STOCK_TOPOLOGY} from "./strategyGenome";
+import {
+    ablateIndicatorMasks,
+    buildNetworkFeatures,
+    createTradingReplay,
+    decidePositionFromNetwork,
+    decidePositionFromRules,
+    evaluateStockGenome,
+    getIndicatorColumns,
+    positionBeforeDate,
+} from "./simulation";
+import {
+    ALL_INDICATOR_MASKS_ON,
+    createStockSeedGenomes,
+    decodeStockGenome,
+    DEFAULT_INDICATOR_PARAMETERS,
+    encodeMask,
+    STOCK_GENE_COUNT,
+    STOCK_MASK_GENE_COUNT,
+    STOCK_PARAMETER_GENE_COUNT,
+    STOCK_TOPOLOGY,
+    withMaskOverride,
+} from "./strategyGenome";
 
 describe("stock simulation", () => {
     const genome = Array(STOCK_GENE_COUNT).fill(0);
+    // Zero genome → all masks off; turn all masks on so fitness path is usable.
+    for (let index = 0; index < STOCK_MASK_GENE_COUNT; index += 1) {
+        genome[STOCK_PARAMETER_GENE_COUNT + index] = encodeMask(true);
+    }
     const points = createMarketData(300);
 
     it("returns a finite fitness", () => {
         expect(evaluateStockGenome(genome, points)).toEqual(expect.any(Number));
         expect(Number.isFinite(evaluateStockGenome(genome, points))).toBe(true);
+    });
+
+    it("penalizes empty indicator masks hard", () => {
+        const empty = Array(STOCK_GENE_COUNT).fill(0);
+        for (let index = 0; index < STOCK_MASK_GENE_COUNT; index += 1) {
+            empty[STOCK_PARAMETER_GENE_COUNT + index] = encodeMask(false);
+        }
+        expect(evaluateStockGenome(empty, points)).toBeLessThan(-50);
     });
 
     it("creates train and test equity data with network-backed decisions", () => {
@@ -25,6 +57,13 @@ describe("stock simulation", () => {
                 williamsBuyThreshold: expect.any(Number),
                 williamsSellThreshold: expect.any(Number),
                 bollingerMultiplier: expect.any(Number),
+            })
+        );
+        expect(replay.indicatorMasks).toEqual(
+            expect.objectContaining({
+                sma: true,
+                rsi: true,
+                macd: true,
             })
         );
     });
@@ -70,6 +109,21 @@ describe("stock simulation", () => {
         expect(features[12]).toBe(1);
     });
 
+    it("zeroes features for masked-off indicator families", () => {
+        const columns = getIndicatorColumns(points, DEFAULT_INDICATOR_PARAMETERS);
+        const index = Math.min(50, columns.length - 1);
+        const masks = {...ALL_INDICATOR_MASKS_ON, rsi: false, williams: false, roc: false};
+        const features = buildNetworkFeatures(columns, index, 0, DEFAULT_INDICATOR_PARAMETERS, masks);
+        expect(features[3]).toBe(0);
+        expect(features[4]).toBe(0);
+        expect(features[5]).toBe(0);
+        expect(features[13]).toBe(0);
+        expect(features[14]).toBe(0);
+        expect(features[15]).toBe(0);
+        expect(features[16]).toBe(0);
+        expect(features[12]).toBe(-1);
+    });
+
     it("feeds tuned RSI and Williams threshold distances into the network", () => {
         const columns = getIndicatorColumns(points, DEFAULT_INDICATOR_PARAMETERS);
         const index = Math.min(50, columns.length - 1);
@@ -106,6 +160,36 @@ describe("stock simulation", () => {
         expect(decidePositionFromRules(columns, index, 1, DEFAULT_INDICATOR_PARAMETERS)).toBe(0);
     });
 
+    it("ignores disabled rule-mode vote families", () => {
+        const columns = getIndicatorColumns(points, DEFAULT_INDICATOR_PARAMETERS);
+        const index = Math.min(50, columns.length - 1);
+        columns.smaFast[index] = 2;
+        columns.smaSlow[index] = 1;
+        columns.macd[index] = 2;
+        columns.macdSignal[index] = 1;
+        columns.rsi[index] = 80;
+        columns.williamsR[index] = -10;
+        // Only SMA enabled → majority of 1 needs the trend vote.
+        expect(
+            decidePositionFromRules(columns, index, 0, DEFAULT_INDICATOR_PARAMETERS, {
+                ...ALL_INDICATOR_MASKS_ON,
+                sma: true,
+                macd: false,
+                rsi: false,
+                williams: false,
+            })
+        ).toBe(1);
+        expect(
+            decidePositionFromRules(columns, index, 0, DEFAULT_INDICATOR_PARAMETERS, {
+                ...ALL_INDICATOR_MASKS_ON,
+                sma: false,
+                macd: false,
+                rsi: false,
+                williams: false,
+            })
+        ).toBe(0);
+    });
+
     it("scores seed genomes finitely on a rising market", () => {
         const rising = createMarketData(400);
         const seeds = createStockSeedGenomes();
@@ -114,5 +198,23 @@ describe("stock simulation", () => {
             expect(Number.isFinite(fitness)).toBe(true);
             expect(decodeStockGenome(seed).networkGenome.length).toBeGreaterThan(0);
         });
+    });
+
+    it("ablates enabled masks and ranks by fitness drop", () => {
+        const seed = createStockSeedGenomes()[0];
+        const result = ablateIndicatorMasks(seed, points, true);
+        expect(result.rows).toHaveLength(STOCK_MASK_GENE_COUNT);
+        expect(result.activeCount).toBe(STOCK_MASK_GENE_COUNT);
+        expect(Number.isFinite(result.baselineFitness)).toBe(true);
+        result.rows.forEach(row => {
+            expect(row.enabled).toBe(true);
+            expect(Number.isFinite(row.fitnessDrop)).toBe(true);
+        });
+        // Sparse genome: ablation of disabled masks reports enabled=false.
+        const sparse = withMaskOverride(withMaskOverride(seed, "roc", false), "volume", false);
+        const sparseAblation = ablateIndicatorMasks(sparse, points, true);
+        expect(sparseAblation.rows.find(row => row.id === "roc")?.enabled).toBe(false);
+        expect(sparseAblation.rows.find(row => row.id === "volume")?.enabled).toBe(false);
+        expect(sparseAblation.activeCount).toBe(STOCK_MASK_GENE_COUNT - 2);
     });
 });

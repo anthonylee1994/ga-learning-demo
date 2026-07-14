@@ -1007,6 +1007,99 @@ button {
     font-size: 14px;
     font-weight: 500;
 }
+.mask-section,
+.ablation-section {
+    margin-top: 14px;
+}
+.mask-section-label {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px 16px;
+    margin-bottom: 8px;
+    color: #c5cad1;
+    font-size: 13px;
+    font-weight: 500;
+}
+.mask-section-hint {
+    color: #737d88;
+    font-size: 12px;
+    font-weight: 400;
+}
+.mask-chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.mask-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 999px;
+    border: 1px solid #2b323a;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-family: "SFMono-Regular", Consolas, monospace;
+    letter-spacing: 0.02em;
+}
+.mask-chip em {
+    font-style: normal;
+    font-size: 10px;
+    opacity: 0.85;
+}
+.mask-chip--on {
+    border-color: rgba(94, 196, 122, 0.45);
+    background: rgba(94, 196, 122, 0.12);
+    color: #b6ecc6;
+}
+.mask-chip--off {
+    border-color: #2b323a;
+    background: rgba(20, 24, 29, 0.55);
+    color: #6d7681;
+}
+.ablation-table-wrap {
+    overflow-x: auto;
+    border: 1px solid #2b323a;
+    border-radius: 6px;
+}
+.ablation-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+.ablation-table th,
+.ablation-table td {
+    padding: 8px 10px;
+    text-align: left;
+    border-bottom: 1px solid #2b323a;
+}
+.ablation-table th {
+    color: #737d88;
+    font-weight: 500;
+    background: rgba(0, 0, 0, 0.18);
+}
+.ablation-table td {
+    color: #d7dce2;
+}
+.ablation-table tbody tr:last-child td {
+    border-bottom: none;
+}
+.ablation-short {
+    margin-left: 6px;
+    color: #6d7681;
+    font-family: "SFMono-Regular", Consolas, monospace;
+    font-size: 11px;
+}
+.ablation-row--useful td {
+    color: #c5e8cf;
+}
+.ablation-row--noise td {
+    color: #c9a27a;
+}
+.ablation-row--off td {
+    color: #6d7681;
+}
 .chart-height-sm {
     height: 190px;
     margin-top: 12px;

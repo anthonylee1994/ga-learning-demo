@@ -4,25 +4,49 @@ import type {Genome, NetworkTopology, OptimizedIndicatorParameters} from "../../
 /**
  * Normalized indicator features, tuned threshold distances, and current position → buy / hold / sell.
  * Thin decision head on purpose: the GA is steered to spend most of its search
- * budget on indicator periods (see STOCK_MUTATION_PROFILE), not a fat hidden net.
+ * budget on indicator periods / masks (see STOCK_MUTATION_PROFILE), not a fat hidden net.
  */
 export const STOCK_TOPOLOGY: NetworkTopology = {
     inputSize: 17,
-    hiddenLayers: [4],
+    hiddenLayers: [10, 5],
     outputSize: 3,
 };
 
-/** Indicator period/threshold genes (0–16) + brain.js weights/biases. */
+/**
+ * Selectable indicator families. Each mask zeroes the listed NN feature indexes
+ * (feature 12 = position is always on). Rule mode only uses sma / macd / rsi / williams votes.
+ */
+export const INDICATOR_MASK_DEFS = [
+    {id: "sma", label: "移動平均線", shortLabel: "SMA", featureIndexes: [0, 1, 2]},
+    {id: "williams", label: "威廉指標", shortLabel: "W%R", featureIndexes: [3, 15, 16]},
+    {id: "roc", label: "ROC", shortLabel: "ROC", featureIndexes: [4]},
+    {id: "rsi", label: "RSI", shortLabel: "RSI", featureIndexes: [5, 13, 14]},
+    {id: "macd", label: "MACD", shortLabel: "MACD", featureIndexes: [6, 7]},
+    {id: "bollinger", label: "保力加通道", shortLabel: "BB", featureIndexes: [8]},
+    {id: "volatility", label: "波動率", shortLabel: "Vol", featureIndexes: [9]},
+    {id: "volume", label: "成交量", shortLabel: "量", featureIndexes: [10]},
+    {id: "newHigh", label: "N日新高", shortLabel: "新高", featureIndexes: [11]},
+] as const;
+
+export type IndicatorMaskId = (typeof INDICATOR_MASK_DEFS)[number]["id"];
+
+export type IndicatorMaskState = Record<IndicatorMaskId, boolean>;
+
+/** Period/threshold genes (0–16). */
 export const STOCK_PARAMETER_GENE_COUNT = 17;
+/** On/off mask genes for each indicator family. */
+export const STOCK_MASK_GENE_COUNT = INDICATOR_MASK_DEFS.length;
+/** Parameter + mask genes — mutated harder than the NN tail. */
+export const STOCK_HEAD_GENE_COUNT = STOCK_PARAMETER_GENE_COUNT + STOCK_MASK_GENE_COUNT;
 export const STOCK_NETWORK_GENE_COUNT = calculateGeneCount(STOCK_TOPOLOGY);
-export const STOCK_GENE_COUNT = STOCK_PARAMETER_GENE_COUNT + STOCK_NETWORK_GENE_COUNT;
+export const STOCK_GENE_COUNT = STOCK_HEAD_GENE_COUNT + STOCK_NETWORK_GENE_COUNT;
 
 /**
- * Indicator-first mutation: period/threshold genes flip ~3× more often / harder than the NN tail.
- * Immigrants re-roll only indicator parameters so a stable decision head is reused across setups.
+ * Indicator-first mutation: period/mask genes flip ~3× more often / harder than the NN tail.
+ * Immigrants re-roll only the head so a stable decision head is reused across indicator setups.
  */
 export const STOCK_MUTATION_PROFILE = {
-    headGeneCount: STOCK_PARAMETER_GENE_COUNT,
+    headGeneCount: STOCK_HEAD_GENE_COUNT,
     headRateMultiplier: 3,
     headScaleMultiplier: 1.5,
     tailRateMultiplier: 0.35,
@@ -50,8 +74,21 @@ export const DEFAULT_INDICATOR_PARAMETERS: OptimizedIndicatorParameters = {
     newHighPeriod: 55,
 };
 
+export const ALL_INDICATOR_MASKS_ON: IndicatorMaskState = {
+    sma: true,
+    williams: true,
+    roc: true,
+    rsi: true,
+    macd: true,
+    bollinger: true,
+    volatility: true,
+    volume: true,
+    newHigh: true,
+};
+
 export interface DecodedStockGenome {
     parameters: OptimizedIndicatorParameters;
+    masks: IndicatorMaskState;
     networkGenome: Genome;
 }
 
@@ -65,6 +102,11 @@ export function decodeStockGenome(genome: Genome): DecodedStockGenome {
     const smaSlowPeriod = Math.max(smaFastPeriod + 5, value(1, 30, 200));
     const macdFastPeriod = value(5, 5, 18);
     const macdSlowPeriod = Math.max(macdFastPeriod + 3, value(6, 20, 50));
+
+    const masks = {} as IndicatorMaskState;
+    for (let index = 0; index < STOCK_MASK_GENE_COUNT; index += 1) {
+        masks[INDICATOR_MASK_DEFS[index].id] = decodeMask(genome[STOCK_PARAMETER_GENE_COUNT + index]);
+    }
 
     return {
         parameters: {
@@ -86,8 +128,41 @@ export function decodeStockGenome(genome: Genome): DecodedStockGenome {
             volumeZScorePeriod: value(11, 10, 60),
             newHighPeriod: value(12, 10, 120),
         },
-        networkGenome: genome.slice(STOCK_PARAMETER_GENE_COUNT),
+        masks,
+        networkGenome: genome.slice(STOCK_HEAD_GENE_COUNT),
     };
+}
+
+/** gene > 0 → indicator family enabled (~50% of random init around 0). */
+export function decodeMask(gene: number): boolean {
+    return gene > 0;
+}
+
+export function encodeMask(enabled: boolean): number {
+    return enabled ? 1.5 : -1.5;
+}
+
+export function countActiveMasks(masks: IndicatorMaskState): number {
+    let count = 0;
+    for (const def of INDICATOR_MASK_DEFS) {
+        if (masks[def.id]) {
+            count += 1;
+        }
+    }
+    return count;
+}
+
+/**
+ * Clone genome and force one mask on/off (for ablation). Returns null if gene length wrong.
+ */
+export function withMaskOverride(genome: Genome, maskId: IndicatorMaskId, enabled: boolean): Genome {
+    const maskIndex = INDICATOR_MASK_DEFS.findIndex(def => def.id === maskId);
+    if (maskIndex < 0 || genome.length !== STOCK_GENE_COUNT) {
+        return genome.slice();
+    }
+    const next = genome.slice();
+    next[STOCK_PARAMETER_GENE_COUNT + maskIndex] = encodeMask(enabled);
+    return next;
 }
 
 /**
@@ -107,6 +182,7 @@ export function encodeGene(value: number, min: number, max: number): number {
 /**
  * Classic indicator setups + lightly biased networks so evolution starts from
  * coherent long/cash priors instead of pure noise weights.
+ * Seeds also span dense / sparse mask priors so feature selection has a head start.
  */
 export function createStockSeedGenomes(): Genome[] {
     return [
@@ -130,7 +206,8 @@ export function createStockSeedGenomes(): Genome[] {
                 volumeZ: 20,
                 newHigh: 20,
             },
-            {buyBias: 1.2, holdBias: 0.2, sellBias: -0.8, weightScale: 0.05}
+            {buyBias: 1.2, holdBias: 0.2, sellBias: -0.8, weightScale: 0.05},
+            ALL_INDICATOR_MASKS_ON
         ),
         seedGenome(
             {
@@ -152,7 +229,18 @@ export function createStockSeedGenomes(): Genome[] {
                 volumeZ: 20,
                 newHigh: 55,
             },
-            {buyBias: 0.4, holdBias: 0.1, sellBias: -0.2, weightScale: 0.12}
+            {buyBias: 0.4, holdBias: 0.1, sellBias: -0.2, weightScale: 0.12},
+            {
+                sma: true,
+                williams: false,
+                roc: false,
+                rsi: false,
+                macd: true,
+                bollinger: false,
+                volatility: false,
+                volume: false,
+                newHigh: true,
+            }
         ),
         seedGenome(
             {
@@ -174,7 +262,18 @@ export function createStockSeedGenomes(): Genome[] {
                 volumeZ: 20,
                 newHigh: 40,
             },
-            {buyBias: 0.1, holdBias: 0.3, sellBias: 0.1, weightScale: 0.18}
+            {buyBias: 0.1, holdBias: 0.3, sellBias: 0.1, weightScale: 0.18},
+            {
+                sma: false,
+                williams: true,
+                roc: true,
+                rsi: true,
+                macd: false,
+                bollinger: true,
+                volatility: false,
+                volume: false,
+                newHigh: false,
+            }
         ),
         seedGenome(
             {
@@ -196,7 +295,18 @@ export function createStockSeedGenomes(): Genome[] {
                 volumeZ: 30,
                 newHigh: 100,
             },
-            {buyBias: 0.8, holdBias: 0, sellBias: -0.4, weightScale: 0.08}
+            {buyBias: 0.8, holdBias: 0, sellBias: -0.4, weightScale: 0.08},
+            {
+                sma: true,
+                williams: false,
+                roc: false,
+                rsi: false,
+                macd: true,
+                bollinger: false,
+                volatility: true,
+                volume: true,
+                newHigh: true,
+            }
         ),
     ];
 }
@@ -236,7 +346,8 @@ function seedGenome(
         volumeZ: number;
         newHigh: number;
     },
-    network: {buyBias: number; holdBias: number; sellBias: number; weightScale: number}
+    network: {buyBias: number; holdBias: number; sellBias: number; weightScale: number},
+    masks: IndicatorMaskState
 ): Genome {
     const genome = Array.from({length: STOCK_GENE_COUNT}, () => 0);
     genome[0] = encodeGene(periods.smaFast, 5, 40);
@@ -257,17 +368,21 @@ function seedGenome(
     genome[15] = encodeGene(periods.williamsBuy, -95, -55);
     genome[16] = encodeGene(periods.williamsSell, -45, -5);
 
+    for (let index = 0; index < STOCK_MASK_GENE_COUNT; index += 1) {
+        genome[STOCK_PARAMETER_GENE_COUNT + index] = encodeMask(masks[INDICATOR_MASK_DEFS[index].id]);
+    }
+
     // Deterministic small weights + explicit output biases (buy / hold / sell).
     const hidden = STOCK_TOPOLOGY.hiddenLayers[0];
     const inputSize = STOCK_TOPOLOGY.inputSize;
     for (let index = 0; index < STOCK_NETWORK_GENE_COUNT; index += 1) {
         // Fixed pseudo-random pattern so seeds are reproducible across reloads.
         const wave = Math.sin((index + 1) * 1.7) * network.weightScale;
-        genome[STOCK_PARAMETER_GENE_COUNT + index] = wave;
+        genome[STOCK_HEAD_GENE_COUNT + index] = wave;
     }
     const outputBiasStart = hidden + hidden * inputSize;
-    genome[STOCK_PARAMETER_GENE_COUNT + outputBiasStart] = network.buyBias;
-    genome[STOCK_PARAMETER_GENE_COUNT + outputBiasStart + 1] = network.holdBias;
-    genome[STOCK_PARAMETER_GENE_COUNT + outputBiasStart + 2] = network.sellBias;
+    genome[STOCK_HEAD_GENE_COUNT + outputBiasStart] = network.buyBias;
+    genome[STOCK_HEAD_GENE_COUNT + outputBiasStart + 1] = network.holdBias;
+    genome[STOCK_HEAD_GENE_COUNT + outputBiasStart + 2] = network.sellBias;
     return genome;
 }
