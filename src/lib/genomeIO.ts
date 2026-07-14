@@ -11,6 +11,11 @@ export interface EvolabGenomeFileV1 {
     version: typeof EVOLAB_GENOME_VERSION;
     topic: GenomeFileTopic;
     topology: NetworkTopology;
+    /**
+     * Explicit length when the flat genome is longer than the NN topology alone
+     * (e.g. stock = indicator period genes + decision-head weights).
+     */
+    geneCount?: number;
     genome: Genome;
     meta?: {
         fitness?: number;
@@ -24,6 +29,8 @@ export interface GenomeExportOptions {
     topic: GenomeFileTopic;
     topology: NetworkTopology;
     genome: Genome;
+    /** Override when genome includes non-NN genes (stock indicator periods). */
+    geneCount?: number;
     fitness?: number;
     score?: number;
     steps?: number;
@@ -33,15 +40,17 @@ export interface GenomeExportOptions {
 export interface GenomeParseExpectation {
     topic: GenomeFileTopic;
     topology: NetworkTopology;
+    /** Override when genome includes non-NN genes (stock indicator periods). */
+    geneCount?: number;
 }
 
 /**
  * Build a versioned JSON payload for champion weights (biases included in the flat genome).
  */
 export function buildGenomeFile(options: GenomeExportOptions): EvolabGenomeFileV1 {
-    const geneCount = calculateGeneCount(options.topology);
+    const geneCount = resolveGeneCount(options.topology, options.geneCount);
     if (options.genome.length !== geneCount) {
-        throw new Error(`Genome length ${options.genome.length} does not match topology (${geneCount} genes)`);
+        throw new Error(`Genome length ${options.genome.length} does not match expected (${geneCount} genes)`);
     }
 
     return {
@@ -53,6 +62,7 @@ export function buildGenomeFile(options: GenomeExportOptions): EvolabGenomeFileV
             hiddenLayers: [...options.topology.hiddenLayers],
             outputSize: options.topology.outputSize,
         },
+        geneCount,
         genome: options.genome.map(value => Number(value)),
         meta: {
             fitness: options.fitness,
@@ -67,7 +77,7 @@ export function buildGenomeFile(options: GenomeExportOptions): EvolabGenomeFileV
  * Accept either the full Evolab envelope or a bare number[] for convenience.
  */
 export function parseGenomeFile(raw: unknown, expected: GenomeParseExpectation): Genome {
-    const geneCount = calculateGeneCount(expected.topology);
+    const geneCount = resolveGeneCount(expected.topology, expected.geneCount);
 
     if (Array.isArray(raw)) {
         return validateGenomeArray(raw, geneCount);
@@ -128,6 +138,10 @@ export function defaultGenomeFilename(topic: GenomeFileTopic, score?: number): s
         .replace(/[:T]/g, m => (m === "T" ? "_" : m === ":" ? "" : "-"));
     const scorePart = score !== undefined ? `_score${score}` : "";
     return `evolab-${topic}${scorePart}_${stamp}.json`;
+}
+
+function resolveGeneCount(topology: NetworkTopology, geneCount?: number): number {
+    return geneCount ?? calculateGeneCount(topology);
 }
 
 function validateGenomeArray(values: unknown[], geneCount: number): Genome {

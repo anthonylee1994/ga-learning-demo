@@ -1,12 +1,15 @@
 import React from "react";
 import {Blocks} from "lucide-react";
+import {BREAKER_INPUT_LABELS, BREAKER_OUTPUT_LABELS, BREAKER_TOPOLOGY, buildBreakerInputFromFrame, createBreakerReplay, evaluateBreakerGenome} from "../domains/breaker/simulation";
 import {useEvolutionDemo} from "../hooks/useEvolutionDemo";
-import type {BreakerReplay, GAConfig} from "../lib/types";
+import type {BreakerFrame, BreakerReplay, GAConfig, Genome} from "../lib/types";
 import {ApplicationPanel} from "./ApplicationPanel";
 import {BreakerCanvas} from "./BreakerCanvas";
 import {DemoControls} from "./DemoControls";
 import {FitnessChart} from "./FitnessChart";
+import {GenomeTransfer} from "./GenomeTransfer";
 import {Metrics} from "./Metrics";
+import {NetworkPanel} from "./NetworkPanel";
 import {DemoShell} from "./SnakeLab";
 
 const DEFAULT_CONFIG: GAConfig = {
@@ -27,6 +30,29 @@ export const BreakerLab = React.memo(() => {
             seed: Math.round(Math.random() * 1_000_000),
         },
     });
+    const [liveInput, setLiveInput] = React.useState<number[] | null>(null);
+    const [transferMessage, setTransferMessage] = React.useState<{type: "status" | "error"; text: string} | null>(null);
+
+    const handleFrameChange = (frame: BreakerFrame | null) => {
+        if (!frame) {
+            setLiveInput(null);
+            return;
+        }
+        setLiveInput(buildBreakerInputFromFrame(frame));
+    };
+
+    const handleImportGenome = (genome: Genome) => {
+        const replay = createBreakerReplay(genome);
+        const fitness = evaluateBreakerGenome(genome);
+        demo.loadChampion({genome, replay, fitness});
+    };
+
+    React.useEffect(() => {
+        if (!demo.champion) {
+            setLiveInput(null);
+        }
+    }, [demo.champion]);
+
     return (
         <DemoShell
             accent="breaker"
@@ -50,12 +76,22 @@ export const BreakerLab = React.memo(() => {
                         </div>
                         <BreakerCanvas
                             loop={demo.status === "paused"}
+                            onFrameChange={handleFrameChange}
                             playing={demo.status === "running" || demo.status === "paused"}
                             replay={demo.champion?.replay}
                             restartKey={demo.showcaseEpoch}
                             speed={demo.config.speed}
                         />
                     </div>
+                    <NetworkPanel
+                        genome={demo.champion?.genome}
+                        input={liveInput}
+                        inputLabels={BREAKER_INPUT_LABELS}
+                        outputLabels={BREAKER_OUTPUT_LABELS}
+                        subtitle="節點亮度跟住 replay 每一 frame 嘅 forward pass；heatmap 係 champion weights。"
+                        title="Breaker network"
+                        topology={BREAKER_TOPOLOGY}
+                    />
                     <FitnessChart history={demo.history} />
                     <ApplicationPanel
                         fitness="清除 bricks + 回球次數 + 存活時間 + clear bonus"
@@ -66,7 +102,19 @@ export const BreakerLab = React.memo(() => {
                     />
                 </main>
                 <aside className="demo-sidebar">
-                    <DemoControls demo={demo} />
+                    <DemoControls demo={demo}>
+                        <GenomeTransfer
+                            fitness={demo.champion?.fitness}
+                            genome={demo.champion?.genome}
+                            onImport={handleImportGenome}
+                            onMessage={setTransferMessage}
+                            score={demo.champion?.replay.bricksCleared}
+                            steps={demo.champion?.replay.steps}
+                            topic="breaker"
+                            topology={BREAKER_TOPOLOGY}
+                        />
+                        {transferMessage ? <p className={transferMessage.type === "error" ? "error-message" : "status-message"}>{transferMessage.text}</p> : null}
+                    </DemoControls>
                 </aside>
             </div>
         </DemoShell>

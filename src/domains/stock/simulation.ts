@@ -6,6 +6,28 @@ import {decodeStockGenome, STOCK_TOPOLOGY} from "./strategyGenome";
 
 export {STOCK_TOPOLOGY} from "./strategyGenome";
 
+export const STOCK_INPUT_LABELS = [
+    "vs SMA快",
+    "vs SMA慢",
+    "SMA spread",
+    "Williams",
+    "ROC",
+    "RSI",
+    "MACD",
+    "MACD sig",
+    "BB %B",
+    "波動",
+    "量 Z",
+    "新高比",
+    "持倉",
+    "RSI買距",
+    "RSI賣距",
+    "W%買距",
+    "W%賣距",
+] as const;
+
+export const STOCK_OUTPUT_LABELS = ["買入", "持有", "賣出"] as const;
+
 const STARTING_EQUITY = 10_000;
 const TRANSACTION_COST = 0.001;
 /** Keep a small LRU of indicator series — Float64Array columns, ~1MB per full history entry. */
@@ -180,6 +202,21 @@ export function decidePositionFromNetwork(output: number[], position: number): n
     }
     if (action === 2) {
         return 0;
+    }
+    return position;
+}
+
+/**
+ * Reconstruct long/cash position just before `date` from the trade log
+ * (used when scrubbing the NN activation preview on the stock lab).
+ */
+export function positionBeforeDate(trades: TradeMarker[], date: string): number {
+    let position = 0;
+    for (const trade of trades) {
+        if (trade.date > date) {
+            break;
+        }
+        position = trade.action === "buy" ? 1 : 0;
     }
     return position;
 }

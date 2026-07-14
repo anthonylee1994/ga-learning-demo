@@ -743,6 +743,11 @@ button {
 .network-empty {
     min-height: 140px;
 }
+.network-scrub {
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid #22282f;
+}
 .topology-wrap {
     margin-bottom: 14px;
 }

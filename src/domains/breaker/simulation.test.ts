@@ -1,7 +1,7 @@
-import {calculateGeneCount} from "../../lib/neuralNetwork";
+import {calculateGeneCount, forwardWithActivations} from "../../lib/neuralNetwork";
 import {createPopulation, evolvePopulation} from "../../lib/ga";
 import {createRandom} from "../../lib/random";
-import {BREAKER_TOPOLOGY, createBreakerReplay, evaluateBreakerGenome} from "./simulation";
+import {BREAKER_TOPOLOGY, buildBreakerInputFromFrame, createBreakerReplay, evaluateBreakerGenome} from "./simulation";
 
 describe("block breaker simulation", () => {
     const genome = Array(calculateGeneCount(BREAKER_TOPOLOGY)).fill(0);
@@ -17,6 +17,17 @@ describe("block breaker simulation", () => {
         expect(replay.steps).toBeLessThanOrEqual(2_400);
         expect(replay.bricksCleared).toBeGreaterThanOrEqual(0);
         expect(replay.frames.at(-1)?.terminal).toMatch(/lost|cleared|timeout/);
+    });
+
+    it("rebuilds a valid network input from a recorded frame", () => {
+        const replay = createBreakerReplay(genome);
+        const frame = replay.frames[0];
+        expect(frame.ballVelocity).toBeDefined();
+        const input = buildBreakerInputFromFrame(frame);
+        expect(input).toHaveLength(BREAKER_TOPOLOGY.inputSize);
+        expect(input.every(value => Number.isFinite(value))).toBe(true);
+        const pass = forwardWithActivations(genome, BREAKER_TOPOLOGY, input);
+        expect(pass.outputs).toHaveLength(BREAKER_TOPOLOGY.outputSize);
     });
 
     it("keeps evaluate fitness consistent with the replay launch seed", () => {

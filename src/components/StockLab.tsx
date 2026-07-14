@@ -3,13 +3,25 @@ import {Button, Spinner, Switch} from "@heroui/react";
 import {CandlestickChart, FileDown, TriangleAlert} from "lucide-react";
 import {Brush, CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis} from "recharts";
 import {useEvolutionDemo} from "../hooks/useEvolutionDemo";
-import type {GAConfig, MarketDataResponse, TradingPoint, TradingReplay} from "../lib/types";
+import type {GAConfig, Genome, MarketDataResponse, TradingPoint, TradingReplay} from "../lib/types";
 import {createPineScript} from "../domains/stock/pineScript";
-import {decodeStockGenome, describeStockNetwork, STOCK_NETWORK_GENE_COUNT, STOCK_PARAMETER_GENE_COUNT} from "../domains/stock/strategyGenome";
+import {
+    buildNetworkFeatures,
+    createTradingReplay,
+    evaluateStockGenome,
+    getIndicatorColumns,
+    positionBeforeDate,
+    STOCK_INPUT_LABELS,
+    STOCK_OUTPUT_LABELS,
+    STOCK_TOPOLOGY,
+} from "../domains/stock/simulation";
+import {decodeStockGenome, describeStockNetwork, STOCK_GENE_COUNT, STOCK_NETWORK_GENE_COUNT, STOCK_PARAMETER_GENE_COUNT} from "../domains/stock/strategyGenome";
 import {ApplicationPanel} from "./ApplicationPanel";
 import {DemoControls} from "./DemoControls";
 import {FitnessChart} from "./FitnessChart";
+import {GenomeTransfer} from "./GenomeTransfer";
 import {Metrics} from "./Metrics";
+import {NetworkPanel} from "./NetworkPanel";
 import {DemoShell} from "./SnakeLab";
 
 const DEFAULT_CONFIG: GAConfig = {
@@ -31,6 +43,7 @@ export const StockLab = React.memo(() => {
     const [loading, setLoading] = React.useState(true);
     const [fetchError, setFetchError] = React.useState<string | null>(null);
     const [indicatorView, setIndicatorView] = React.useState<IndicatorView>("price");
+    const [transferMessage, setTransferMessage] = React.useState<{type: "status" | "error"; text: string} | null>(null);
     const requestIdRef = React.useRef(0);
     const demo = useEvolutionDemo<MarketDataResponse["points"], TradingReplay>({
         topic: "stock",
@@ -73,6 +86,18 @@ export const StockLab = React.memo(() => {
             requestIdRef.current += 1;
         };
     }, []);
+
+    const handleImportGenome = (genome: Genome) => {
+        if (!marketData?.points.length) {
+            setTransferMessage({type: "error", text: "未有市場數據，無法 import genome。"});
+            return;
+        }
+        const nnOn = demo.config.useNeuralNetwork !== false;
+        const nextReplay = createTradingReplay(genome, marketData.points, nnOn);
+        const fitness = evaluateStockGenome(genome, marketData.points, nnOn);
+        demo.loadChampion({genome, replay: nextReplay, fitness});
+    };
+
     const useNetwork = demo.config.useNeuralNetwork !== false;
     const replay = demo.champion?.replay;
     /**
@@ -131,6 +156,52 @@ export const StockLab = React.memo(() => {
         ],
         [replay]
     );
+
+    /** Index into warm-up-aligned indicator columns for NN activation scrub. */
+    const [previewIndex, setPreviewIndex] = React.useState(0);
+    const networkGenome = decoded?.networkGenome ?? null;
+    const networkPreview = React.useMemo(() => {
+        if (!useNetwork || !demo.champion?.genome || !marketData?.points.length || !decoded) {
+            return null;
+        }
+        try {
+            const columns = getIndicatorColumns(marketData.points, decoded.parameters);
+            if (columns.length === 0) {
+                return null;
+            }
+            const index = Math.min(Math.max(0, previewIndex), columns.length - 1);
+            const date = marketData.points[columns.warmup + index]?.date ?? "";
+            const position = replay ? positionBeforeDate(replay.trades, date) : 0;
+            const input = buildNetworkFeatures(columns, index, position, decoded.parameters);
+            return {
+                input,
+                index,
+                date,
+                maxIndex: columns.length - 1,
+                segment: index < Math.floor(columns.length * 0.8) ? "train" : "test",
+            };
+        } catch {
+            return null;
+        }
+    }, [useNetwork, demo.champion?.genome, marketData, decoded, previewIndex, replay]);
+
+    React.useEffect(() => {
+        if (!marketData?.points.length || !decoded) {
+            return;
+        }
+        try {
+            const columns = getIndicatorColumns(marketData.points, decoded.parameters);
+            if (columns.length === 0) {
+                return;
+            }
+            // Default preview near the end of the training segment.
+            const trainEnd = Math.max(0, Math.floor(columns.length * 0.8) - 1);
+            setPreviewIndex(trainEnd);
+        } catch {
+            // Ignore decode / indicator failures; panel stays empty.
+        }
+        // Reset when champion genome or ticker changes — not on every generation parameter tick.
+    }, [demo.champion?.genome, marketData?.symbol]);
 
     return (
         <DemoShell
@@ -243,6 +314,48 @@ export const StockLab = React.memo(() => {
                             {replay ? <EquityChart points={replay.points} splitDate={splitDate} /> : <div className="empty-chart">訓練出 champion 後會顯示 equity curve。</div>}
                         </div>
                     </section>
+                    {useNetwork ? (
+                        <NetworkPanel
+                            genome={networkGenome}
+                            input={networkPreview?.input ?? null}
+                            inputLabels={STOCK_INPUT_LABELS}
+                            outputLabels={STOCK_OUTPUT_LABELS}
+                            subtitle="只顯示 decision head（period genes 另見上方參數表）。拖下面 slider 睇某一日嘅 forward pass。"
+                            title="Stock decision head"
+                            topology={STOCK_TOPOLOGY}
+                        >
+                            {networkPreview ? (
+                                <label className="network-scrub control-field">
+                                    <span className="control-label">
+                                        <span>NN preview day</span>
+                                        <strong className="font-mono text-xs">
+                                            {networkPreview.date || "—"} · {networkPreview.segment}
+                                        </strong>
+                                    </span>
+                                    <input
+                                        aria-label="NN preview day"
+                                        className="range-input"
+                                        max={networkPreview.maxIndex}
+                                        min={0}
+                                        onChange={event => setPreviewIndex(Number(event.target.value))}
+                                        step={1}
+                                        type="range"
+                                        value={Math.min(previewIndex, networkPreview.maxIndex)}
+                                    />
+                                </label>
+                            ) : null}
+                        </NetworkPanel>
+                    ) : (
+                        <section className="network-panel">
+                            <div className="panel-heading">
+                                <div>
+                                    <p className="eyebrow">Neuroevolution brain</p>
+                                    <h3>Stock decision head</h3>
+                                </div>
+                            </div>
+                            <div className="empty-chart network-empty">Rule mode 開啟中 — 決策用 SMA / MACD / RSI / Williams 投票，decision head weights 未使用。</div>
+                        </section>
+                    )}
                     <FitnessChart history={demo.history} />
                     <ApplicationPanel
                         fitness="70% 全段 train + 30% 最差半段：CAGR×100 + Sharpe×15 − maxDD×40 + 超額回報×35 − 較重 L2；鼓勵靠 period 組合賺錢而唔係肥 NN"
@@ -266,6 +379,18 @@ export const StockLab = React.memo(() => {
                                 使用神經網絡
                             </Switch.Content>
                         </Switch>
+                        <GenomeTransfer
+                            disabled={!marketData || loading}
+                            fitness={demo.champion?.fitness}
+                            geneCount={STOCK_GENE_COUNT}
+                            genome={demo.champion?.genome}
+                            onImport={handleImportGenome}
+                            onMessage={setTransferMessage}
+                            score={replay ? Math.round(replay.trainReturn * 1000) / 10 : undefined}
+                            topic="stock"
+                            topology={STOCK_TOPOLOGY}
+                        />
+                        {transferMessage ? <p className={transferMessage.type === "error" ? "error-message" : "status-message"}>{transferMessage.text}</p> : null}
                     </DemoControls>
                 </aside>
             </div>

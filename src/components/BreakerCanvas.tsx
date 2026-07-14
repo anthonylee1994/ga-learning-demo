@@ -1,5 +1,5 @@
 import React from "react";
-import type {BreakerReplay} from "../lib/types";
+import type {BreakerFrame, BreakerReplay} from "../lib/types";
 
 const TERMINAL_HOLD_MS = 900;
 
@@ -12,11 +12,15 @@ interface Props {
     loop?: boolean;
     /** Change to force restart from frame 0 (e.g. pause showcase of latest champion). */
     restartKey?: number | string;
+    /** Fires whenever the visible frame changes (for live network activation). */
+    onFrameChange?: (frame: BreakerFrame | null, frameIndex: number) => void;
 }
 
-export const BreakerCanvas = React.memo<Props>(({replay, speed, playing = true, loop = true, restartKey = 0}) => {
+export const BreakerCanvas = React.memo<Props>(({replay, speed, playing = true, loop = true, restartKey = 0, onFrameChange}) => {
     const canvasRef = React.useRef<HTMLCanvasElement>(null);
     const [frameIndex, setFrameIndex] = React.useState(0);
+    const onFrameChangeRef = React.useRef(onFrameChange);
+    onFrameChangeRef.current = onFrameChange;
 
     React.useEffect(() => {
         setFrameIndex(0);
@@ -43,6 +47,11 @@ export const BreakerCanvas = React.memo<Props>(({replay, speed, playing = true, 
         }, delay);
         return () => window.clearTimeout(timer);
     }, [frameIndex, replay, speed, playing, loop]);
+
+    React.useEffect(() => {
+        const frame = replay?.frames[frameIndex] ?? null;
+        onFrameChangeRef.current?.(frame, frameIndex);
+    }, [frameIndex, replay]);
 
     React.useEffect(() => {
         const canvas = canvasRef.current;

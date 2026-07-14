@@ -11,10 +11,12 @@ interface NetworkPanelProps {
     outputLabels?: readonly string[];
     title?: string;
     subtitle?: string;
+    /** Optional footer (e.g. stock day scrubber). */
+    children?: React.ReactNode;
 }
 
 export const NetworkPanel = React.memo<NetworkPanelProps>(
-    ({topology, genome, input = null, inputLabels, outputLabels, title = "Neural network", subtitle = "Champion topology · weights · live activations"}) => {
+    ({topology, genome, input = null, inputLabels, outputLabels, title = "Neural network", subtitle = "Champion topology · weights · live activations", children}) => {
         const inspection = React.useMemo(() => {
             if (!genome || genome.length === 0) {
                 return null;
@@ -70,6 +72,7 @@ export const NetworkPanel = React.memo<NetworkPanelProps>(
                         {forward ? <ActivationBars activations={forward} inputLabels={inputLabels} outputLabels={outputLabels} /> : null}
                     </React.Fragment>
                 )}
+                {children}
             </section>
         );
     }

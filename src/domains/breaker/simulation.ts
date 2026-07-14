@@ -39,6 +39,34 @@ export function createBreakerReplay(genome: Genome): BreakerReplay {
     return simulateBreaker(genome, REPLAY_LAUNCH, true).replay;
 }
 
+export const BREAKER_INPUT_LABELS = ["Paddle X", "Ball X", "Ball Y", "Vel X", "Vel Y", "Brick Δx", "Brick Δy", "剩餘磚"] as const;
+
+export const BREAKER_OUTPUT_LABELS = ["向左", "停住", "向右"] as const;
+
+/**
+ * Rebuild the network input vector from a recorded frame so the UI can show
+ * live activations without re-running Matter.js.
+ */
+export function buildBreakerInputFromFrame(frame: BreakerFrame): number[] {
+    const activeBricks = frame.bricks.filter(brick => brick.active);
+    const nearestBrick = activeBricks.reduce(
+        (nearest, brick) => (Math.abs(brick.x - frame.ball.x) < Math.abs(nearest.x - frame.ball.x) ? brick : nearest),
+        activeBricks[0] ?? {id: -1, x: frame.ball.x, y: 0, active: false}
+    );
+    const velocity = frame.ballVelocity ?? {x: 0, y: 0};
+    const totalBricks = Math.max(1, frame.bricks.length);
+    return [
+        (frame.paddleX / WIDTH) * 2 - 1,
+        (frame.ball.x / WIDTH) * 2 - 1,
+        (frame.ball.y / HEIGHT) * 2 - 1,
+        clamp(velocity.x / 7, -1, 1),
+        clamp(velocity.y / 7, -1, 1),
+        clamp((nearestBrick.x - frame.ball.x) / WIDTH, -1, 1),
+        clamp((nearestBrick.y - frame.ball.y) / HEIGHT, -1, 1),
+        activeBricks.length / totalBricks,
+    ];
+}
+
 function simulateBreaker(genome: Genome, xVelocityFactor: number, record: boolean): BreakerResult {
     const engine = Matter.Engine.create({gravity: {x: 0, y: 0}});
     const runNetwork = networkAdapter.createRunner(genome);
@@ -156,6 +184,7 @@ function simulateBreaker(genome: Genome, xVelocityFactor: number, record: boolea
                 frames.push({
                     paddleX: paddle.position.x,
                     ball: {x: ball.position.x, y: ball.position.y},
+                    ballVelocity: {x: ball.velocity.x, y: ball.velocity.y},
                     bricks: Array.from(bricks.values()).map(brick => ({...brick})),
                     hits,
                     step,
@@ -176,6 +205,7 @@ function simulateBreaker(genome: Genome, xVelocityFactor: number, record: boolea
             frames.push({
                 paddleX: paddle.position.x,
                 ball: {x: ball.position.x, y: ball.position.y},
+                ballVelocity: {x: ball.velocity.x, y: ball.velocity.y},
                 bricks: Array.from(bricks.values()).map(brick => ({...brick})),
                 hits,
                 step: executedSteps,

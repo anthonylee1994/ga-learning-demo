@@ -66,6 +66,8 @@ export interface BreakerBrick extends Point {
 export interface BreakerFrame {
     paddleX: number;
     ball: Point;
+    /** Ball velocity at capture time — used to rebuild network inputs for live viz. */
+    ballVelocity?: Point;
     bricks: BreakerBrick[];
     hits: number;
     step: number;

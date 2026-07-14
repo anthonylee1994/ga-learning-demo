@@ -7,6 +7,11 @@ import type {Genome, NetworkTopology} from "../lib/types";
 interface GenomeTransferProps {
     topic: GenomeFileTopic;
     topology: NetworkTopology;
+    /**
+     * Override expected genome length when the flat genome is longer than the NN
+     * topology alone (stock = indicator periods + decision-head weights).
+     */
+    geneCount?: number;
     /** Current champion genome; export disabled when missing. */
     genome?: Genome | null;
     fitness?: number;
@@ -30,6 +35,7 @@ export const GenomeTransfer = React.memo<GenomeTransferProps>(props => {
             const file = buildGenomeFile({
                 topic: props.topic,
                 topology: props.topology,
+                geneCount: props.geneCount,
                 genome: props.genome,
                 fitness: props.fitness,
                 score: props.score,
@@ -64,7 +70,7 @@ export const GenomeTransfer = React.memo<GenomeTransferProps>(props => {
             } catch {
                 throw new Error("JSON 解析失敗，請確認檔案內容。");
             }
-            const genome = parseGenomeFile(raw, {topic: props.topic, topology: props.topology});
+            const genome = parseGenomeFile(raw, {topic: props.topic, topology: props.topology, geneCount: props.geneCount});
             props.onImport(genome);
             props.onMessage?.({type: "status", text: `已 import ${file.name}（${genome.length} genes）。`});
         } catch (error) {

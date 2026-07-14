@@ -48,4 +48,21 @@ describe("genomeIO", () => {
         file.topic = "snake";
         expect(() => parseGenomeFile(file, {topic: "snake", topology: SNAKE_TOPOLOGY})).toThrow(/Topology/);
     });
+
+    it("supports composite geneCount larger than the NN topology (stock-style)", () => {
+        const topology = {inputSize: 17, hiddenLayers: [4], outputSize: 3};
+        const networkGenes = calculateGeneCount(topology);
+        const compositeCount = networkGenes + 17;
+        const composite = Array.from({length: compositeCount}, (_, index) => index * 0.01);
+        const file = buildGenomeFile({
+            topic: "stock",
+            topology,
+            geneCount: compositeCount,
+            genome: composite,
+            fitness: 1.2,
+        });
+        expect(file.geneCount).toBe(compositeCount);
+        expect(parseGenomeFile(file, {topic: "stock", topology, geneCount: compositeCount})).toEqual(composite);
+        expect(() => parseGenomeFile(file, {topic: "stock", topology})).toThrow(/長度/);
+    });
 });

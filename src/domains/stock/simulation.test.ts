@@ -1,5 +1,5 @@
 import {createMarketData} from "../../test/marketFixture";
-import {buildNetworkFeatures, createTradingReplay, decidePositionFromNetwork, decidePositionFromRules, evaluateStockGenome, getIndicatorColumns} from "./simulation";
+import {buildNetworkFeatures, createTradingReplay, decidePositionFromNetwork, decidePositionFromRules, evaluateStockGenome, getIndicatorColumns, positionBeforeDate} from "./simulation";
 import {createStockSeedGenomes, decodeStockGenome, DEFAULT_INDICATOR_PARAMETERS, STOCK_GENE_COUNT, STOCK_TOPOLOGY} from "./strategyGenome";
 
 describe("stock simulation", () => {
@@ -34,6 +34,28 @@ describe("stock simulation", () => {
         expect(decidePositionFromNetwork([0.1, 0.9, 0.2], 1)).toBe(1);
         expect(decidePositionFromNetwork([0.1, 0.2, 0.9], 1)).toBe(0);
         expect(decidePositionFromNetwork([0.1, 0.9, 0.2], 0)).toBe(0);
+    });
+
+    it("tracks long/cash position from the trade log before a date", () => {
+        expect(
+            positionBeforeDate(
+                [
+                    {date: "2020-01-02", action: "buy", price: 100},
+                    {date: "2020-01-10", action: "sell", price: 110},
+                ],
+                "2020-01-05"
+            )
+        ).toBe(1);
+        expect(
+            positionBeforeDate(
+                [
+                    {date: "2020-01-02", action: "buy", price: 100},
+                    {date: "2020-01-10", action: "sell", price: 110},
+                ],
+                "2020-01-10"
+            )
+        ).toBe(0);
+        expect(positionBeforeDate([], "2020-01-01")).toBe(0);
     });
 
     it("builds a fixed-size feature vector from indicator columns", () => {
