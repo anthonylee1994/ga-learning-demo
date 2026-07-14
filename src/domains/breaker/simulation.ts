@@ -23,16 +23,20 @@ const PADDLE_WIDTH = 92;
 const MIN_BALL_VY = 2.4;
 const MIN_BALL_SPEED = 4;
 const MAX_BALL_SPEED = 7;
-/** Canonical launch used for champion replay AND as one of the eval seeds. */
-const REPLAY_LAUNCH = 0.86;
+
 /**
- * Multiple fixed launches so fitness is not a lucky single angle.
- * Must include REPLAY_LAUNCH so the on-screen game matches what was trained.
+ * Several distinct matches (launch × noise seed). Averaging forces general paddle skill
+ * instead of memorizing one fixed serve path ("背答案").
+ * Index 2 is the showcase replay scenario.
  */
-const EVAL_LAUNCHES = [0.72, 0.86, 1.0] as const;
-/** Fixed base seeds — noise is deterministic so GA comparisons stay fair. */
-const EVAL_NOISE_SEEDS = [0x51a7e, 0xb4e43, 0xc0ffee] as const;
-const REPLAY_NOISE_SEED = 0xb4e43;
+const EVAL_SCENARIOS = [
+    {launch: 0.58, noiseSeed: 0x51a7e1},
+    {launch: 0.72, noiseSeed: 0x62b8f2},
+    {launch: 0.86, noiseSeed: 0xb4e43},
+    {launch: 1.0, noiseSeed: 0xc0ffee},
+    {launch: 1.18, noiseSeed: 0xdead01},
+] as const;
+const REPLAY_SCENARIO = EVAL_SCENARIOS[2];
 
 /** Shared adapter so evaluate/replay do not allocate a new network graph per genome. */
 const networkAdapter = new NeuralNetworkAdapter(BREAKER_TOPOLOGY);
@@ -43,12 +47,12 @@ interface BreakerResult {
 }
 
 export function evaluateBreakerGenome(genome: Genome): number {
-    return EVAL_LAUNCHES.reduce((sum, launch, index) => sum + simulateBreaker(genome, launch, false, createRandom(EVAL_NOISE_SEEDS[index])).fitness, 0) / EVAL_LAUNCHES.length;
+    return EVAL_SCENARIOS.reduce((sum, scenario) => sum + simulateBreaker(genome, scenario.launch, false, createRandom(scenario.noiseSeed)).fitness, 0) / EVAL_SCENARIOS.length;
 }
 
 export function createBreakerReplay(genome: Genome): BreakerReplay {
-    // Same launch + noise seed as the middle eval slot so showcase matches trained physics.
-    return simulateBreaker(genome, REPLAY_LAUNCH, true, createRandom(REPLAY_NOISE_SEED)).replay;
+    // Showcase = middle eval scenario so on-screen play is one of the scored matches.
+    return simulateBreaker(genome, REPLAY_SCENARIO.launch, true, createRandom(REPLAY_SCENARIO.noiseSeed)).replay;
 }
 
 export const BREAKER_INPUT_LABELS = ["板 X", "球 X", "球 Y", "速 X", "速 Y", "磚 Δx", "磚 Δy", "剩餘磚"] as const;
@@ -82,14 +86,16 @@ export function buildBreakerInputFromFrame(frame: BreakerFrame): number[] {
 function simulateBreaker(genome: Genome, xVelocityFactor: number, record: boolean, random: RandomSource): BreakerResult {
     const engine = Matter.Engine.create({gravity: {x: 0, y: 0}});
     const runNetwork = networkAdapter.createRunner(genome);
-    const paddle = Matter.Bodies.rectangle(WIDTH / 2, HEIGHT - 28, PADDLE_WIDTH, 12, {
+    // Scenario-specific paddle start — cannot memorize one centre-only serve recovery.
+    const paddleStartX = clamp(WIDTH / 2 + (random.next() - 0.5) * 56, PADDLE_WIDTH / 2, WIDTH - PADDLE_WIDTH / 2);
+    const paddle = Matter.Bodies.rectangle(paddleStartX, HEIGHT - 28, PADDLE_WIDTH, 12, {
         isStatic: true,
         label: "paddle",
         restitution: 1,
     });
-    // Tiny start offset so every launch is not a perfect centre-line serve.
-    const startX = WIDTH / 2 + (random.next() - 0.5) * 12;
-    const ball = Matter.Bodies.circle(startX, HEIGHT - 58, 7, {
+    // Ball spawn offset so the first bounce geometry differs per scenario.
+    const ballStartX = clamp(WIDTH / 2 + (random.next() - 0.5) * 36, 24, WIDTH - 24);
+    const ball = Matter.Bodies.circle(ballStartX, HEIGHT - 58 - random.next() * 6, 7, {
         label: "ball",
         restitution: 1,
         friction: 0,
@@ -104,10 +110,13 @@ function simulateBreaker(genome: Genome, xVelocityFactor: number, record: boolea
     const brickBodies: Matter.Body[] = [];
     const bricks = new Map<number, BreakerBrick>();
     let brickId = 0;
+    // Slight whole-grid shift per scenario (still fully on-screen) so brick hit order changes.
+    const gridShiftX = (random.next() - 0.5) * 10;
+    const gridShiftY = (random.next() - 0.5) * 6;
     for (let row = 0; row < 5; row += 1) {
         for (let column = 0; column < 9; column += 1) {
-            const x = 42 + column * 59.5;
-            const y = 50 + row * 25;
+            const x = 42 + column * 59.5 + gridShiftX;
+            const y = 50 + row * 25 + gridShiftY;
             const brick = Matter.Bodies.rectangle(x, y, 52, 16, {
                 isStatic: true,
                 label: `brick:${brickId}`,
@@ -120,9 +129,9 @@ function simulateBreaker(genome: Genome, xVelocityFactor: number, record: boolea
     }
 
     Matter.Composite.add(engine.world, [paddle, ball, ...walls, ...brickBodies]);
-    // Base launch + light jitter (still deterministic via RandomSource seed).
-    const launchVx = 4.4 * xVelocityFactor + (random.next() - 0.5) * 0.45;
-    const launchVy = -4.4 + (random.next() - 0.5) * 0.25;
+    // Base launch + noticeable jitter (still deterministic via RandomSource seed).
+    const launchVx = 4.4 * xVelocityFactor + (random.next() - 0.5) * 1.05;
+    const launchVy = -4.4 + (random.next() - 0.5) * 0.55;
     Matter.Body.setVelocity(ball, {x: launchVx, y: launchVy});
     normalizeBallVelocity(ball);
     let hits = 0;
@@ -139,10 +148,10 @@ function simulateBreaker(genome: Genome, xVelocityFactor: number, record: boolea
             if (labels.includes("paddle") && labels.includes("ball")) {
                 hits += 1;
                 const offset = (ball.position.x - paddle.position.x) / (PADDLE_WIDTH / 2);
-                // Angle from contact point + small spin noise so rallies are not cookie-cutter.
-                const spin = (random.next() - 0.5) * 0.55;
+                // Contact angle + real spin noise — same offset does not always yield same rebound.
+                const spin = (random.next() - 0.5) * 1.15;
                 const bounceX = offset * 5.2 + spin;
-                const bounceY = -Math.max(MIN_BALL_VY, Math.abs(ball.velocity.y) || 4.4) - random.next() * 0.25;
+                const bounceY = -Math.max(MIN_BALL_VY, Math.abs(ball.velocity.y) || 4.4) - random.next() * 0.55;
                 Matter.Body.setVelocity(ball, {x: bounceX, y: bounceY});
                 normalizeBallVelocity(ball);
             }
@@ -154,13 +163,13 @@ function simulateBreaker(genome: Genome, xVelocityFactor: number, record: boolea
                     brick.active = false;
                     bricksCleared += 1;
                     Matter.Composite.remove(engine.world, brickBody);
-                    // Light post-brick scatter so paths diverge after each clear.
-                    nudgeBallVelocity(ball, random, 0.28);
+                    // Stronger post-brick scatter so the next approach is not a fixed script.
+                    nudgeBallVelocity(ball, random, 0.55);
                 }
             }
-            // Side / ceiling wall: tiny tangent jitter (keeps |vy| floor via normalize).
+            // Side / ceiling wall: tangent jitter (keeps |vy| floor via normalize).
             if (labels.includes("wall") && labels.includes("ball")) {
-                nudgeBallVelocity(ball, random, 0.16);
+                nudgeBallVelocity(ball, random, 0.32);
             }
         });
     };

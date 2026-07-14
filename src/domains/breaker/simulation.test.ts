@@ -21,6 +21,14 @@ describe("block breaker simulation", () => {
         expect(replayA.frames.length).toBe(replayB.frames.length);
     });
 
+    it("scores an average of multiple seeded scenarios (not free-running Math.random)", () => {
+        // Five noisy matches are averaged; re-running must be identical (seeded, fair GA).
+        const fitness = evaluateBreakerGenome(genome);
+        expect(Number.isFinite(fitness)).toBe(true);
+        expect(evaluateBreakerGenome(genome)).toBe(fitness);
+        expect(evaluateBreakerGenome(genome)).toBe(fitness);
+    });
+
     it("records a bounded champion replay", () => {
         const replay = createBreakerReplay(genome);
         expect(replay.frames.length).toBeGreaterThan(0);

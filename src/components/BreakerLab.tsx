@@ -56,7 +56,7 @@ export const BreakerLab = React.memo(() => {
     return (
         <DemoShell
             accent="breaker"
-            description="Matter.js 固定時間步重播；發球位置／角度同撞板／撞磚有少少 seeded 隨機抖動，AI 要跟住球速同位置預測接球，唔好只背死路線。"
+            description="每代用 5 場唔同發球／板位／磚位（seeded 隨機）計分，撞板撞磚再有抖動；AI 要真係跟球玩，唔可以背死一條路線。"
             icon={<Blocks size={20} strokeWidth={1.5} />}
             title="撞磚 · 神經演化"
         >
@@ -98,7 +98,7 @@ export const BreakerLab = React.memo(() => {
                         genome="Brain.js 8 → 12 → 3 網絡嘅所有權重同偏差"
                         inputs="擋板/球位置、球速、最近磚塊方向、剩餘比例"
                         outputs="向左、停住、向右"
-                        termination="球跌出底部、清晒 45 塊磚，或物理步數上限"
+                        termination="球跌出底部、清晒 45 塊磚，或物理步數上限；fitness = 5 場不同隨機場景平均"
                     />
                 </main>
                 <aside className="demo-sidebar">
