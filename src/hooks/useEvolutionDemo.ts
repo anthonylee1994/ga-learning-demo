@@ -55,6 +55,7 @@ export function useEvolutionDemo<TData, TReplay>(options: EvolutionDemoOptions<T
     const configRef = React.useRef(config);
     const storedChampionRef = React.useRef(stored?.champion);
     const persistTimerRef = React.useRef<number | null>(null);
+    const skipNextConfigPersistRef = React.useRef(false);
     /** Block live training champion thrash while paused / waiting for showcase. */
     const suppressChampionUpdatesRef = React.useRef(false);
     /** Next generation payload with a full replay is the pause showcase snapshot. */
@@ -160,7 +161,11 @@ export function useEvolutionDemo<TData, TReplay>(options: EvolutionDemoOptions<T
     }, [data]);
 
     React.useEffect(() => {
-        schedulePersist(config, storedChampionRef.current);
+        if (skipNextConfigPersistRef.current) {
+            skipNextConfigPersistRef.current = false;
+        } else {
+            schedulePersist(config, storedChampionRef.current);
+        }
         if (workerRef.current) {
             const command: WorkerCommand<TData> = {type: "update-config", config};
             workerRef.current.postMessage(command);
@@ -203,7 +208,8 @@ export function useEvolutionDemo<TData, TReplay>(options: EvolutionDemoOptions<T
             window.clearTimeout(persistTimerRef.current);
             persistTimerRef.current = null;
         }
-        writeStoredDemo(topic, defaultConfig);
+        skipNextConfigPersistRef.current = config !== defaultConfig;
+        clearStoredDemo(topic);
         setConfig(defaultConfig);
     };
     const loadChampion = (payload: LoadChampionPayload<TReplay>) => {
@@ -248,6 +254,24 @@ function writeStoredDemo(topic: DemoTopic, config: GAConfig, champion?: number[]
         localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     } catch {
         // Private browsing or storage quotas should not stop a training session.
+    }
+}
+
+function clearStoredDemo(topic: DemoTopic): void {
+    try {
+        const state = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null") as PersistedLabStateV1 | null;
+        if (state?.version !== 1) {
+            localStorage.removeItem(STORAGE_KEY);
+            return;
+        }
+        delete state.demos[topic];
+        if (Object.keys(state.demos).length === 0) {
+            localStorage.removeItem(STORAGE_KEY);
+            return;
+        }
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch {
+        // Storage can be unavailable in private browsing contexts.
     }
 }
 
