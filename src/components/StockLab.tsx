@@ -258,7 +258,7 @@ export const StockLab = React.memo(() => {
                                 </Button>
                             </div>
                             <div className="parameter-grid">
-                                <ParameterValue label="SMA" value={`${parameters.smaFastPeriod} / ${parameters.smaSlowPeriod}`} />
+                                <ParameterValue label="移動平均線" value={`${parameters.smaFastPeriod} / ${parameters.smaSlowPeriod}`} />
                                 <ParameterValue label="RSI" value={`${parameters.rsiPeriod} 日 · 買 ≤ ${parameters.rsiBuyThreshold} · 賣 ≥ ${parameters.rsiSellThreshold}`} />
                                 <ParameterValue label="保力加通道" value={`${parameters.bollingerPeriod} / ${parameters.bollingerMultiplier.toFixed(2)}σ`} />
                                 <ParameterValue label="ROC 週期" value={String(parameters.rocPeriod)} />
@@ -280,7 +280,7 @@ export const StockLab = React.memo(() => {
                                 <h3>市場與交易訊號</h3>
                             </div>
                             <select aria-label="技術指標" onChange={event => setIndicatorView(event.target.value as IndicatorView)} value={indicatorView}>
-                                <option value="price">SMA + 保力加通道</option>
+                                <option value="price">移動平均線 + 保力加通道</option>
                                 <option value="momentum">RSI + 威廉指標 + ROC</option>
                                 <option value="macd">MACD</option>
                                 <option value="risk">波動率 + 成交量</option>
@@ -357,18 +357,18 @@ export const StockLab = React.memo(() => {
                                     <h3>股票決策頭</h3>
                                 </div>
                             </div>
-                            <div className="empty-chart network-empty">規則模式開啟中 — 決策用 SMA / MACD / RSI / 威廉指標投票，決策頭權重未使用。</div>
+                            <div className="empty-chart network-empty">規則模式開啟中 — 決策用移動平均線 / MACD / RSI / 威廉指標投票，決策頭權重未使用。</div>
                         </section>
                     )}
                     <FitnessChart history={demo.history} />
                     <ApplicationPanel
                         fitness="70% 全段訓練 + 30% 最差半段：年化回報×100 + Sharpe×15 − 最大回撤×40 + 超額回報×35 − 較重 L2；鼓勵靠指標組合賺錢而唔係肥網絡"
                         genome={`${STOCK_PARAMETER_GENE_COUNT} 個指標週期 / 門檻基因（突變 ×3）+ ${STOCK_NETWORK_GENE_COUNT} 個細決策頭權重（突變 ×0.35；${describeStockNetwork()}）`}
-                        inputs="17 維：價格相對 SMA、威廉指標、ROC、RSI、MACD、保力加通道 %B、波動、成交量、N日新高、持倉狀態，加 RSI / 威廉指標距離買賣門檻（全部正規化到約 ±1）"
+                        inputs="17 維：價格相對移動平均線、威廉指標、ROC、RSI、MACD、保力加通道 %B、波動、成交量、N日新高、持倉狀態，加 RSI / 威廉指標距離買賣門檻（全部正規化到約 ±1）"
                         outputs={
                             useNetwork
                                 ? "薄隱藏層取最大 → 買入（全倉做多）/ 持有 / 賣出（全現金）；搜尋主力喺指標週期同門檻，唔用反向傳播"
-                                : "買入四票取二：SMA 趨勢、MACD、RSI 超賣、威廉指標超賣；持倉後 RSI 或 威廉指標 任一升穿賣出門檻就全現金"
+                                : "買入四票取二：移動平均線趨勢、MACD、RSI 超賣、威廉指標超賣；持倉後 RSI 或 威廉指標 任一升穿賣出門檻就全現金"
                         }
                         termination="用頭 80% 數據做選擇；最後 20% 測試數據絕不參與訓練；每代移民只重抽指標基因"
                     />
