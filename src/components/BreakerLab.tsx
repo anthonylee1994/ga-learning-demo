@@ -54,7 +54,12 @@ export const BreakerLab = React.memo(() => {
     }, [demo.champion]);
 
     return (
-        <DemoShell accent="breaker" description="Matter.js 固定時間步重播物理世界；AI 要從球速同位置預測下一次接球點。" icon={<Blocks size={20} strokeWidth={1.5} />} title="撞磚 · 神經演化">
+        <DemoShell
+            accent="breaker"
+            description="Matter.js 固定時間步重播；發球位置／角度同撞板／撞磚有少少 seeded 隨機抖動，AI 要跟住球速同位置預測接球，唔好只背死路線。"
+            icon={<Blocks size={20} strokeWidth={1.5} />}
+            title="撞磚 · 神經演化"
+        >
             <div className="workspace-grid">
                 <main className="demo-main">
                     <Metrics
@@ -89,7 +94,7 @@ export const BreakerLab = React.memo(() => {
                     />
                     <FitnessChart history={demo.history} />
                     <ApplicationPanel
-                        fitness="清磚分數 + 接球次數 + 存活時間 + 全清獎勵"
+                        fitness="清磚為主（每磚×140）+ 全清大獎；多餘接球（相對清磚數）扣分，禁止用 hit 數 chok 分；跟波塑造有上限"
                         genome="Brain.js 8 → 12 → 3 網絡嘅所有權重同偏差"
                         inputs="擋板/球位置、球速、最近磚塊方向、剩餘比例"
                         outputs="向左、停住、向右"

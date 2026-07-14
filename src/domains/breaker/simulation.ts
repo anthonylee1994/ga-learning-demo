@@ -1,5 +1,6 @@
 import Matter from "matter-js";
 import {argMax, NeuralNetworkAdapter} from "../../lib/neuralNetwork";
+import {createRandom, type RandomSource} from "../../lib/random";
 import type {BreakerBrick, BreakerFrame, BreakerReplay, Genome} from "../../lib/types";
 
 export const BREAKER_TOPOLOGY = {
@@ -29,6 +30,9 @@ const REPLAY_LAUNCH = 0.86;
  * Must include REPLAY_LAUNCH so the on-screen game matches what was trained.
  */
 const EVAL_LAUNCHES = [0.72, 0.86, 1.0] as const;
+/** Fixed base seeds — noise is deterministic so GA comparisons stay fair. */
+const EVAL_NOISE_SEEDS = [0x51a7e, 0xb4e43, 0xc0ffee] as const;
+const REPLAY_NOISE_SEED = 0xb4e43;
 
 /** Shared adapter so evaluate/replay do not allocate a new network graph per genome. */
 const networkAdapter = new NeuralNetworkAdapter(BREAKER_TOPOLOGY);
@@ -39,11 +43,12 @@ interface BreakerResult {
 }
 
 export function evaluateBreakerGenome(genome: Genome): number {
-    return EVAL_LAUNCHES.reduce((sum, launch) => sum + simulateBreaker(genome, launch, false).fitness, 0) / EVAL_LAUNCHES.length;
+    return EVAL_LAUNCHES.reduce((sum, launch, index) => sum + simulateBreaker(genome, launch, false, createRandom(EVAL_NOISE_SEEDS[index])).fitness, 0) / EVAL_LAUNCHES.length;
 }
 
 export function createBreakerReplay(genome: Genome): BreakerReplay {
-    return simulateBreaker(genome, REPLAY_LAUNCH, true).replay;
+    // Same launch + noise seed as the middle eval slot so showcase matches trained physics.
+    return simulateBreaker(genome, REPLAY_LAUNCH, true, createRandom(REPLAY_NOISE_SEED)).replay;
 }
 
 export const BREAKER_INPUT_LABELS = ["板 X", "球 X", "球 Y", "速 X", "速 Y", "磚 Δx", "磚 Δy", "剩餘磚"] as const;
@@ -74,7 +79,7 @@ export function buildBreakerInputFromFrame(frame: BreakerFrame): number[] {
     ];
 }
 
-function simulateBreaker(genome: Genome, xVelocityFactor: number, record: boolean): BreakerResult {
+function simulateBreaker(genome: Genome, xVelocityFactor: number, record: boolean, random: RandomSource): BreakerResult {
     const engine = Matter.Engine.create({gravity: {x: 0, y: 0}});
     const runNetwork = networkAdapter.createRunner(genome);
     const paddle = Matter.Bodies.rectangle(WIDTH / 2, HEIGHT - 28, PADDLE_WIDTH, 12, {
@@ -82,7 +87,9 @@ function simulateBreaker(genome: Genome, xVelocityFactor: number, record: boolea
         label: "paddle",
         restitution: 1,
     });
-    const ball = Matter.Bodies.circle(WIDTH / 2, HEIGHT - 58, 7, {
+    // Tiny start offset so every launch is not a perfect centre-line serve.
+    const startX = WIDTH / 2 + (random.next() - 0.5) * 12;
+    const ball = Matter.Bodies.circle(startX, HEIGHT - 58, 7, {
         label: "ball",
         restitution: 1,
         friction: 0,
@@ -113,7 +120,11 @@ function simulateBreaker(genome: Genome, xVelocityFactor: number, record: boolea
     }
 
     Matter.Composite.add(engine.world, [paddle, ball, ...walls, ...brickBodies]);
-    Matter.Body.setVelocity(ball, {x: 4.4 * xVelocityFactor, y: -4.4});
+    // Base launch + light jitter (still deterministic via RandomSource seed).
+    const launchVx = 4.4 * xVelocityFactor + (random.next() - 0.5) * 0.45;
+    const launchVy = -4.4 + (random.next() - 0.5) * 0.25;
+    Matter.Body.setVelocity(ball, {x: launchVx, y: launchVy});
+    normalizeBallVelocity(ball);
     let hits = 0;
     let bricksCleared = 0;
     let executedSteps = 0;
@@ -128,8 +139,11 @@ function simulateBreaker(genome: Genome, xVelocityFactor: number, record: boolea
             if (labels.includes("paddle") && labels.includes("ball")) {
                 hits += 1;
                 const offset = (ball.position.x - paddle.position.x) / (PADDLE_WIDTH / 2);
-                // Always launch upward with a solid |vy| so paddle hits never spawn a horizontal trap.
-                Matter.Body.setVelocity(ball, {x: offset * 5.2, y: -Math.max(MIN_BALL_VY, Math.abs(ball.velocity.y) || 4.4)});
+                // Angle from contact point + small spin noise so rallies are not cookie-cutter.
+                const spin = (random.next() - 0.5) * 0.55;
+                const bounceX = offset * 5.2 + spin;
+                const bounceY = -Math.max(MIN_BALL_VY, Math.abs(ball.velocity.y) || 4.4) - random.next() * 0.25;
+                Matter.Body.setVelocity(ball, {x: bounceX, y: bounceY});
                 normalizeBallVelocity(ball);
             }
             const brickBody = [pair.bodyA, pair.bodyB].find(body => body.label.startsWith("brick:"));
@@ -140,7 +154,13 @@ function simulateBreaker(genome: Genome, xVelocityFactor: number, record: boolea
                     brick.active = false;
                     bricksCleared += 1;
                     Matter.Composite.remove(engine.world, brickBody);
+                    // Light post-brick scatter so paths diverge after each clear.
+                    nudgeBallVelocity(ball, random, 0.28);
                 }
+            }
+            // Side / ceiling wall: tiny tangent jitter (keeps |vy| floor via normalize).
+            if (labels.includes("wall") && labels.includes("ball")) {
+                nudgeBallVelocity(ball, random, 0.16);
             }
         });
     };
@@ -222,12 +242,37 @@ function simulateBreaker(genome: Genome, xVelocityFactor: number, record: boolea
         Matter.Engine.clear(engine);
     }
 
-    const clearBonus = bricksCleared === bricks.size ? 2_000 : 0;
+    const totalBricks = bricks.size;
+    const clearedAll = bricksCleared === totalBricks;
+    const clearBonus = clearedAll ? 2_000 : 0;
+    /**
+     * Brick-first fitness. Deliberately do NOT pay for raw paddle hits — otherwise the
+     * policy farms endless rallies (choke score with hits) instead of clearing the board.
+     * Tracking is a tiny early-learning signal only; wasteful juggle hits are penalized.
+     */
+    // Allow ~2 defensive hits per brick cleared (plus a small free buffer); extras cost score.
+    const allowedHits = bricksCleared * 2 + 4;
+    const wasteHits = Math.max(0, hits - allowedHits);
+    const wastePenalty = wasteHits * 6;
+    // Prefer finishing sooner once bricks are gone; no reward for stalling with the ball.
+    const clearSpeedBonus = clearedAll ? Math.max(0, MAX_STEPS - executedSteps) * 0.04 : 0;
+    // Soft shape paddle under the ball while learning — cap so it never rivals a single brick.
+    const trackingCap = bricksCleared * 8 + 12;
+    const trackingScore = Math.min(trackingReward, trackingCap);
+
     return {
-        // Bricks dominate; steps are a tiny tie-breaker so micro-improvements don't thrash the UI.
-        fitness: bricksCleared * 110 + hits * 9 + trackingReward + executedSteps * 0.01 + clearBonus,
+        fitness: bricksCleared * 140 + clearBonus + clearSpeedBonus + trackingScore - wastePenalty,
         replay: {frames, bricksCleared, hits, steps: executedSteps},
     };
+}
+
+/** Apply a small random delta to velocity, then re-normalize speed / |vy|. */
+function nudgeBallVelocity(ball: Matter.Body, random: RandomSource, scale: number): void {
+    Matter.Body.setVelocity(ball, {
+        x: ball.velocity.x + (random.next() - 0.5) * scale * 2,
+        y: ball.velocity.y + (random.next() - 0.5) * scale,
+    });
+    normalizeBallVelocity(ball);
 }
 
 /**
