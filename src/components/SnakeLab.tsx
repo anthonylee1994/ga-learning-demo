@@ -67,12 +67,12 @@ export const SnakeLab = React.memo(() => {
                     <div className="simulation-stage snake-stage">
                         <div className="stage-overlay">
                             <span>20 × 20 格</span>
-                            <span>{demo.status === "paused" ? "暫停 · 最新冠軍玩到輸再重開" : "冠軍重播"}</span>
+                            <span>{demo.champion?.replay ? (demo.status === "running" ? "冠軍循環重播 · 進化中" : "冠軍循環重播") : "未有冠軍"}</span>
                         </div>
                         <SnakeCanvas
-                            loop={demo.status === "paused"}
+                            loop
                             onFrameChange={handleFrameChange}
-                            playing={demo.status === "running" || demo.status === "paused"}
+                            playing={Boolean(demo.champion?.replay)}
                             replay={demo.champion?.replay}
                             restartKey={demo.showcaseEpoch}
                             speed={demo.config.speed}

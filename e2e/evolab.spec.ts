@@ -39,10 +39,13 @@ test("desktop workspace runs all three evolution demos", async ({page}, testInfo
         return false;
     });
     expect(snakeHasGreenPixels).toBe(true);
-    await page.getByRole("button", {name: "暫停"}).click();
-    await expect(page.getByText("暫停 · 最新冠軍玩到輸再重開")).toBeVisible();
+    await expect(page.getByText("冠軍循環重播 · 進化中")).toBeVisible();
     const snakeCanvas = page.getByLabel("貪食蛇冠軍重播");
     await expect(snakeCanvas).toHaveAttribute("data-loop", "true");
+    await expect(snakeCanvas).toHaveAttribute("data-playing", "true");
+    await page.getByRole("button", {name: "暫停"}).click();
+    await expect(page.getByText("冠軍循環重播 · 進化中")).toHaveCount(0);
+    await expect(page.getByText("冠軍循環重播", {exact: true})).toBeVisible();
     await expectCompleteReplayLoop(snakeCanvas, /collision|starved|timeout/, page);
 
     await page.getByRole("button", {name: "打磚塊"}).click();
@@ -51,10 +54,13 @@ test("desktop workspace runs all three evolution demos", async ({page}, testInfo
     await page.getByRole("button", {name: "開始"}).click();
     await expectGeneration(page);
     await expect(page.getByLabel("打磚塊冠軍重播")).toBeVisible();
-    await page.getByRole("button", {name: "暫停"}).click();
-    await expect(page.getByText("暫停 · 最新冠軍玩到輸再重開")).toBeVisible();
+    await expect(page.getByText("冠軍循環重播 · 進化中")).toBeVisible();
     const breakerCanvas = page.getByLabel("打磚塊冠軍重播");
     await expect(breakerCanvas).toHaveAttribute("data-loop", "true");
+    await expect(breakerCanvas).toHaveAttribute("data-playing", "true");
+    await page.getByRole("button", {name: "暫停"}).click();
+    await expect(page.getByText("冠軍循環重播 · 進化中")).toHaveCount(0);
+    await expect(page.getByText("冠軍循環重播", {exact: true})).toBeVisible();
     await expectCompleteReplayLoop(breakerCanvas, /lost|cleared|timeout/, page);
 
     await page.getByRole("button", {name: "股票交易"}).click();
