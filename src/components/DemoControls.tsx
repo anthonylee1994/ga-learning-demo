@@ -1,6 +1,6 @@
 import React from "react";
 import {Button, Card, Chip, Tooltip} from "@heroui/react";
-import {Info, Pause, Play, RotateCcw} from "lucide-react";
+import {Pause, Play, RotateCcw} from "lucide-react";
 import type {EvolutionDemoState} from "../hooks/useEvolutionDemo";
 
 /** Only the fields DemoControls actually touches — keeps labs free of loadChampion variance issues. */
@@ -48,33 +48,9 @@ export const DemoControls = React.memo<DemoControlsProps>(({demo, disabled, chil
                     </Tooltip>
                 </div>
 
-                <ControlSlider
-                    description="個體越多，搜尋範圍越廣，但每一代需要更多運算。"
-                    label="族群大小"
-                    max={80}
-                    min={12}
-                    onChange={value => updateNumber("populationSize", value)}
-                    step={2}
-                    value={demo.config.populationSize}
-                />
-                <ControlSlider
-                    description="太低容易早熟收斂；太高會破壞已學到嘅結構。"
-                    label="突變率"
-                    max={0.4}
-                    min={0.01}
-                    onChange={value => updateNumber("mutationRate", value)}
-                    step={0.01}
-                    value={demo.config.mutationRate}
-                />
-                <ControlSlider
-                    description="調高會縮短代與代之間嘅等待；拉滿（5）= 唔再刻意等，盡量全速訓練。"
-                    label="播放速度"
-                    max={5}
-                    min={1}
-                    onChange={value => updateNumber("speed", value)}
-                    step={1}
-                    value={demo.config.speed}
-                />
+                <ControlSlider label="族群大小" max={80} min={12} onChange={value => updateNumber("populationSize", value)} step={2} value={demo.config.populationSize} />
+                <ControlSlider label="突變率" max={0.4} min={0.01} onChange={value => updateNumber("mutationRate", value)} step={0.01} value={demo.config.mutationRate} />
+                <ControlSlider label="播放速度" max={5} min={1} onChange={value => updateNumber("speed", value)} step={1} value={demo.config.speed} />
                 <label className="control-field">
                     <span className="control-label">隨機種子</span>
                     <input
@@ -95,7 +71,6 @@ export const DemoControls = React.memo<DemoControlsProps>(({demo, disabled, chil
 
 interface ControlSliderProps {
     label: string;
-    description: string;
     min: number;
     max: number;
     step: number;
@@ -108,17 +83,7 @@ const ControlSlider = React.memo<ControlSliderProps>(props => {
         <label className="control-field">
             <span className="control-label">
                 <span>{props.label}</span>
-                <span className="text-foreground inline-flex items-center gap-1 font-mono text-xs">
-                    {props.step < 1 ? props.value.toFixed(2) : props.value}
-                    <Tooltip delay={250}>
-                        <span aria-label={`${props.label} 說明`} className="help-icon" role="button" tabIndex={0}>
-                            <Info size={13} strokeWidth={1.5} />
-                        </span>
-                        <Tooltip.Content showArrow className="max-w-60 text-xs">
-                            {props.description}
-                        </Tooltip.Content>
-                    </Tooltip>
-                </span>
+                <span className="text-foreground inline-flex items-center gap-1 font-mono text-xs">{props.step < 1 ? props.value.toFixed(2) : props.value}</span>
             </span>
             <input
                 aria-label={props.label}

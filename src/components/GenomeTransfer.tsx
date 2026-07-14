@@ -1,6 +1,6 @@
 import React from "react";
-import {Button, Tooltip} from "@heroui/react";
-import {Download, Info, Upload} from "lucide-react";
+import {Button} from "@heroui/react";
+import {Download, Upload} from "lucide-react";
 import {buildGenomeFile, defaultGenomeFilename, downloadJsonFile, parseGenomeFile, readFileText, type GenomeFileTopic} from "../lib/genomeIO";
 import type {Genome, NetworkTopology} from "../lib/types";
 
@@ -84,14 +84,6 @@ export const GenomeTransfer = React.memo<GenomeTransferProps>(props => {
         <div className="genome-transfer">
             <div className="control-label">
                 <span>權重匯入匯出</span>
-                <Tooltip delay={250}>
-                    <span aria-label="權重匯入匯出說明" className="help-icon" role="button" tabIndex={0}>
-                        <Info size={13} strokeWidth={1.5} />
-                    </span>
-                    <Tooltip.Content className="max-w-60 text-xs" showArrow>
-                        匯出 / 匯入冠軍網絡嘅扁平權重同偏差（JSON）。匯入後會即刻重播，再撳「開始」會用呢個基因體做種子繼續演化。
-                    </Tooltip.Content>
-                </Tooltip>
             </div>
             <div className="genome-transfer-actions">
                 <Button isDisabled={props.disabled || !props.genome?.length || busy} onPress={handleExport} size="sm" variant="secondary">
