@@ -1,6 +1,6 @@
 import Matter from "matter-js";
 import {argMax, NeuralNetworkAdapter} from "../../lib/neuralNetwork";
-import {createRandom, type RandomSource} from "../../lib/random";
+import type {RandomSource} from "../../lib/random";
 import type {BreakerBrick, BreakerFrame, BreakerReplay, Genome} from "../../lib/types";
 
 export const BREAKER_TOPOLOGY = {
@@ -25,18 +25,10 @@ const MIN_BALL_SPEED = 4;
 const MAX_BALL_SPEED = 7;
 
 /**
- * Several distinct matches (launch × noise seed). Averaging forces general paddle skill
- * instead of memorizing one fixed serve path ("背答案").
- * Index 2 is the showcase replay scenario.
+ * Base launch angles for multi-match fitness. Each match draws fresh Math.random noise
+ * so the agent must track the ball — not memorize a fixed serve path.
  */
-const EVAL_SCENARIOS = [
-    {launch: 0.58, noiseSeed: 0x51a7e1},
-    {launch: 0.72, noiseSeed: 0x62b8f2},
-    {launch: 0.86, noiseSeed: 0xb4e43},
-    {launch: 1.0, noiseSeed: 0xc0ffee},
-    {launch: 1.18, noiseSeed: 0xdead01},
-] as const;
-const REPLAY_SCENARIO = EVAL_SCENARIOS[2];
+const EVAL_LAUNCHES = [0.58, 0.72, 0.86, 1.0, 1.18] as const;
 
 /** Shared adapter so evaluate/replay do not allocate a new network graph per genome. */
 const networkAdapter = new NeuralNetworkAdapter(BREAKER_TOPOLOGY);
@@ -46,13 +38,37 @@ interface BreakerResult {
     replay: BreakerReplay;
 }
 
+/** Live (non-seeded) RNG — every match looks different to the user. */
+function createLiveRandom(): RandomSource {
+    let spare: number | null = null;
+    return {
+        next: () => Math.random(),
+        integer(min: number, max: number) {
+            return Math.floor(Math.random() * (max - min + 1)) + min;
+        },
+        gaussian() {
+            if (spare !== null) {
+                const value = spare;
+                spare = null;
+                return value;
+            }
+            const u = Math.max(Math.random(), Number.EPSILON);
+            const v = Math.max(Math.random(), Number.EPSILON);
+            const magnitude = Math.sqrt(-2 * Math.log(u));
+            spare = magnitude * Math.sin(2 * Math.PI * v);
+            return magnitude * Math.cos(2 * Math.PI * v);
+        },
+    };
+}
+
 export function evaluateBreakerGenome(genome: Genome): number {
-    return EVAL_SCENARIOS.reduce((sum, scenario) => sum + simulateBreaker(genome, scenario.launch, false, createRandom(scenario.noiseSeed)).fitness, 0) / EVAL_SCENARIOS.length;
+    return EVAL_LAUNCHES.reduce((sum, launch) => sum + simulateBreaker(genome, launch, false, createLiveRandom()).fitness, 0) / EVAL_LAUNCHES.length;
 }
 
 export function createBreakerReplay(genome: Genome): BreakerReplay {
-    // Showcase = middle eval scenario so on-screen play is one of the scored matches.
-    return simulateBreaker(genome, REPLAY_SCENARIO.launch, true, createRandom(REPLAY_SCENARIO.noiseSeed)).replay;
+    // Fresh random each call so loop / re-roll shows a different version of the champion.
+    const launch = EVAL_LAUNCHES[Math.floor(Math.random() * EVAL_LAUNCHES.length)];
+    return simulateBreaker(genome, launch, true, createLiveRandom()).replay;
 }
 
 export const BREAKER_INPUT_LABELS = ["板 X", "球 X", "球 Y", "速 X", "速 Y", "磚 Δx", "磚 Δy", "剩餘磚"] as const;

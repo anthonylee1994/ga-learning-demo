@@ -14,13 +14,17 @@ interface Props {
     restartKey?: number | string;
     /** Fires whenever the visible frame changes (for live network activation). */
     onFrameChange?: (frame: BreakerFrame | null, frameIndex: number) => void;
+    /** Called when a looped replay reaches the end — parent can re-roll a fresh random match. */
+    onLoop?: () => void;
 }
 
-export const BreakerCanvas = React.memo<Props>(({replay, speed, playing = true, loop = true, restartKey = 0, onFrameChange}) => {
+export const BreakerCanvas = React.memo<Props>(({replay, speed, playing = true, loop = true, restartKey = 0, onFrameChange, onLoop}) => {
     const canvasRef = React.useRef<HTMLCanvasElement>(null);
     const [frameIndex, setFrameIndex] = React.useState(0);
     const onFrameChangeRef = React.useRef(onFrameChange);
+    const onLoopRef = React.useRef(onLoop);
     onFrameChangeRef.current = onFrameChange;
+    onLoopRef.current = onLoop;
 
     React.useEffect(() => {
         setFrameIndex(0);
@@ -40,7 +44,12 @@ export const BreakerCanvas = React.memo<Props>(({replay, speed, playing = true, 
                     return 0;
                 }
                 if (current >= last) {
-                    return loop ? 0 : last;
+                    if (loop) {
+                        // Ask parent for a new random rollout before restarting frames.
+                        onLoopRef.current?.();
+                        return 0;
+                    }
+                    return last;
                 }
                 return current + 1;
             });

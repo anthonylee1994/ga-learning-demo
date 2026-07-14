@@ -32,6 +32,8 @@ export const BreakerLab = React.memo(() => {
     });
     const [liveInput, setLiveInput] = React.useState<number[] | null>(null);
     const [transferMessage, setTransferMessage] = React.useState<{type: "status" | "error"; text: string} | null>(null);
+    /** Fresh random rollout of the current champion (re-rolled each loop). */
+    const [showcaseReplay, setShowcaseReplay] = React.useState<BreakerReplay | null>(null);
 
     const handleFrameChange = (frame: BreakerFrame | null) => {
         if (!frame) {
@@ -47,16 +49,26 @@ export const BreakerLab = React.memo(() => {
         demo.loadChampion({genome, replay, fitness});
     };
 
+    // When worker / import installs a champion, roll a live-random showcase match.
     React.useEffect(() => {
-        if (!demo.champion) {
+        if (!demo.champion?.genome) {
+            setShowcaseReplay(null);
             setLiveInput(null);
+            return;
         }
-    }, [demo.champion]);
+        setShowcaseReplay(createBreakerReplay(demo.champion.genome));
+    }, [demo.champion?.genome, demo.showcaseEpoch]);
+
+    const handleLoop = () => {
+        if (demo.champion?.genome) {
+            setShowcaseReplay(createBreakerReplay(demo.champion.genome));
+        }
+    };
 
     return (
         <DemoShell
             accent="breaker"
-            description="每代用 5 場唔同發球／板位／磚位（seeded 隨機）計分，撞板撞磚再有抖動；AI 要真係跟球玩，唔可以背死一條路線。"
+            description="每代用 5 場真·隨機場景（發球／板位／磚位／撞板抖動）平均計分；循環重播每次再抽一場，睇到唔同版本——AI 要真係識跟波，唔可以背死路線。"
             icon={<Blocks size={20} strokeWidth={1.5} />}
             title="撞磚 · 神經演化"
         >
@@ -64,22 +76,23 @@ export const BreakerLab = React.memo(() => {
                 <main className="demo-main">
                     <Metrics
                         extra={[
-                            {label: "清磚數", value: String(demo.champion?.replay.bricksCleared ?? 0)},
-                            {label: "接球次數", value: String(demo.champion?.replay.hits ?? 0)},
+                            {label: "清磚數", value: String(showcaseReplay?.bricksCleared ?? demo.champion?.replay.bricksCleared ?? 0)},
+                            {label: "接球次數", value: String(showcaseReplay?.hits ?? demo.champion?.replay.hits ?? 0)},
                         ]}
                         stats={demo.stats}
                     />
                     <div className="simulation-stage breaker-stage">
                         <div className="stage-overlay">
-                            <span>Matter.js · 60 Hz</span>
-                            <span>{demo.champion?.replay ? (demo.status === "running" ? "冠軍循環重播 · 進化中" : "冠軍循環重播") : "未有冠軍"}</span>
+                            <span>Matter.js · 60 Hz · 真隨機</span>
+                            <span>{showcaseReplay ? (demo.status === "running" ? "冠軍循環重播 · 進化中" : "冠軍循環重播 · 每圈新一場") : "未有冠軍"}</span>
                         </div>
                         <BreakerCanvas
                             loop
                             onFrameChange={handleFrameChange}
-                            playing={Boolean(demo.champion?.replay)}
-                            replay={demo.champion?.replay}
-                            restartKey={demo.showcaseEpoch}
+                            onLoop={handleLoop}
+                            playing={Boolean(showcaseReplay)}
+                            replay={showcaseReplay ?? undefined}
+                            restartKey={`${demo.showcaseEpoch}-${showcaseReplay?.steps ?? 0}-${showcaseReplay?.bricksCleared ?? 0}`}
                             speed={demo.config.speed}
                         />
                     </div>
@@ -98,7 +111,7 @@ export const BreakerLab = React.memo(() => {
                         genome="Brain.js 8 → 12 → 3 網絡嘅所有權重同偏差"
                         inputs="擋板/球位置、球速、最近磚塊方向、剩餘比例"
                         outputs="向左、停住、向右"
-                        termination="球跌出底部、清晒 45 塊磚，或物理步數上限；fitness = 5 場不同隨機場景平均"
+                        termination="球跌出底部、清晒 45 塊磚，或步數上限；fitness = 5 場真隨機場景平均；畫面每圈重抽一場"
                     />
                 </main>
                 <aside className="demo-sidebar">
