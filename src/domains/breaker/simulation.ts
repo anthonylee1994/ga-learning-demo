@@ -16,7 +16,7 @@ const HEIGHT = 420;
  */
 const MAX_STEPS = 100_000;
 /** UI playback only needs a short highlight reel (not one frame per physics step). */
-const MAX_REPLAY_FRAMES = 600;
+const MAX_REPLAY_FRAMES = MAX_STEPS * 2;
 const PADDLE_WIDTH = 92;
 /** Keep a meaningful vertical component so the ball cannot infinite-loop left↔right off the walls. */
 const MIN_BALL_VY = 2.4;
