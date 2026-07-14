@@ -1,5 +1,5 @@
 import React from "react";
-import {Button, Chip} from "@heroui/react";
+import {Button} from "@heroui/react";
 import {Blocks, BookOpen, CandlestickChart, Dices, Dna, Network} from "lucide-react";
 import {Navigate, Route, Routes, useLocation, useNavigate} from "react-router-dom";
 
@@ -56,9 +56,6 @@ export const App = React.memo(() => {
                     <div className="topbar-status">
                         <span className="live-dot" />
                         <span>本機模擬</span>
-                        <Chip color="warning" size="sm" variant="soft">
-                            brain.js beta
-                        </Chip>
                     </div>
                 </header>
                 <div className="content-scroll">
