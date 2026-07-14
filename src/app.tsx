@@ -9,10 +9,10 @@ const BreakerLab = React.lazy(() => import("./components/BreakerLab").then(modul
 const StockLab = React.lazy(() => import("./components/StockLab").then(module => ({default: module.StockLab})));
 
 const NAV_ITEMS = [
-    {id: "theory" as const, path: "/theory", label: "演算法原理", shortLabel: "原理", icon: BookOpen, color: "neutral"},
-    {id: "snake" as const, path: "/snake", label: "貪食蛇", shortLabel: "貪食蛇", icon: Dna, color: "snake"},
-    {id: "breaker" as const, path: "/breaker", label: "打磚塊", shortLabel: "打磚塊", icon: Blocks, color: "breaker"},
-    {id: "stock" as const, path: "/stock", label: "股票交易", shortLabel: "股票", icon: CandlestickChart, color: "stock"},
+    {id: "theory" as const, path: "/theory", label: "演算法原理", icon: BookOpen, color: "neutral"},
+    {id: "snake" as const, path: "/snake", label: "貪食蛇", icon: Dna, color: "snake"},
+    {id: "breaker" as const, path: "/breaker", label: "打磚塊", icon: Blocks, color: "breaker"},
+    {id: "stock" as const, path: "/stock", label: "股票交易", icon: CandlestickChart, color: "stock"},
 ];
 
 export const App = React.memo(() => {
@@ -46,10 +46,6 @@ export const App = React.memo(() => {
 
             <div className="main-column">
                 <header className="topbar">
-                    <div className="mobile-brand">
-                        <Network size={17} strokeWidth={1.5} />
-                        <strong>EvoLab</strong>
-                    </div>
                     <div className="breadcrumb">
                         <span>實驗室</span>
                         <span>/</span>
@@ -63,14 +59,6 @@ export const App = React.memo(() => {
                         </Chip>
                     </div>
                 </header>
-                <nav aria-label="手機實驗主題" className="mobile-nav">
-                    {NAV_ITEMS.map(item => (
-                        <Button className={activeItem.id === item.id ? "active" : ""} key={item.id} onPress={() => navigate(item.path)} size="sm" variant="tertiary">
-                            <item.icon size={15} strokeWidth={1.5} />
-                            {item.shortLabel}
-                        </Button>
-                    ))}
-                </nav>
                 <div className="content-scroll">
                     <React.Suspense fallback={<div className="lab-loading">載入實驗中…</div>}>
                         <Routes>

@@ -40,7 +40,8 @@ body,
 body {
     background: #0b0d10;
     color: #e8eaed;
-    overflow: hidden;
+    overflow-x: auto;
+    overflow-y: hidden;
 }
 button,
 input,
@@ -54,6 +55,7 @@ button {
 .app-shell {
     display: grid;
     grid-template-columns: 232px minmax(0, 1fr);
+    min-width: 1100px;
     height: 100vh;
     background: #0b0d10;
 }
@@ -227,10 +229,6 @@ button {
     border-radius: 50%;
     background: var(--snake);
     box-shadow: 0 0 0 3px rgba(88, 214, 141, 0.12);
-}
-.mobile-brand,
-.mobile-nav {
-    display: none;
 }
 .content-scroll {
     min-height: 0;
@@ -1141,216 +1139,4 @@ button {
     background-position: right 8px center;
     background-size: 12px;
     cursor: pointer;
-}
-
-@media (max-width: 1160px) {
-    .theory-grid {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-    .workspace-grid {
-        grid-template-columns: minmax(0, 1fr) 260px;
-    }
-    .metrics-grid {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-    .metric:nth-child(3) {
-        border-right: 0;
-    }
-    .metric:nth-child(-n + 3) {
-        border-bottom: 1px solid #282e35;
-    }
-    .mapping-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 16px 0;
-    }
-    .mapping-grid div:nth-child(odd) {
-        padding-left: 0;
-        border-left: 0;
-    }
-    .weight-heatmaps,
-    .activation-bars {
-        grid-template-columns: 1fr;
-    }
-}
-
-@media (max-width: 860px) {
-    body {
-        overflow: auto;
-    }
-    .app-shell {
-        display: block;
-        height: auto;
-        min-height: 100vh;
-    }
-    .sidebar {
-        display: none;
-    }
-    .main-column {
-        min-height: 100vh;
-    }
-    .topbar {
-        position: sticky;
-        z-index: 20;
-        top: 0;
-        min-height: 52px;
-        padding: 0 14px;
-    }
-    .mobile-brand {
-        display: flex;
-        align-items: center;
-        gap: 7px;
-        font-size: 15px;
-    }
-    .mobile-brand svg {
-        color: var(--snake);
-    }
-    .breadcrumb {
-        display: none;
-    }
-    .topbar-status > span:not(.live-dot) {
-        display: none;
-    }
-    .mobile-nav {
-        position: sticky;
-        z-index: 19;
-        top: 52px;
-        display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 3px;
-        overflow-x: auto;
-        border-bottom: 1px solid #252a31;
-        background: #101318;
-        padding: 7px 8px;
-    }
-    .mobile-nav .button {
-        min-width: 0;
-        border-radius: 5px;
-        color: #78818b;
-        font-size: 13px;
-        padding-inline: 5px;
-    }
-    .mobile-nav .button.active {
-        background: #20252b;
-        color: #edf0f2;
-    }
-    .content-scroll {
-        overflow: visible;
-        padding: 18px 12px 28px;
-    }
-    .theory-intro {
-        grid-template-columns: 1fr;
-        gap: 22px;
-    }
-    .theory-intro h2 {
-        font-size: 27px;
-    }
-    .intro-stat {
-        max-width: 320px;
-    }
-    .theory-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-    .genome-row {
-        grid-template-columns: 1fr;
-    }
-    .genome-row > div {
-        overflow-x: auto;
-        grid-template-columns: repeat(8, 58px);
-    }
-    .workspace-grid {
-        grid-template-columns: 1fr;
-    }
-    .demo-sidebar {
-        position: static;
-        grid-row: 1;
-    }
-    .control-panel .card__content {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 16px;
-    }
-    .control-panel .card__content > div:first-child {
-        grid-column: 1 / -1;
-    }
-    .simulation-stage {
-        min-height: 360px;
-    }
-    .mapping-grid {
-        grid-template-columns: 1fr;
-    }
-    .mapping-grid div {
-        padding: 0;
-        border-left: 0;
-    }
-    .stock-toolbar {
-        flex-wrap: wrap;
-    }
-    .disclaimer {
-        width: 100%;
-        margin-left: 0;
-    }
-}
-
-@media (max-width: 560px) {
-    .theory-grid {
-        grid-template-columns: 1fr;
-    }
-    .theory-card.card {
-        min-height: 0;
-    }
-    .parameter-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-    .parameter-grid div:nth-child(4n) {
-        border-right: 1px solid #2b323a;
-    }
-    .parameter-grid div:nth-child(even) {
-        border-right: 0;
-    }
-    .metrics-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-    .metric,
-    .metric:nth-child(3) {
-        border-right: 1px solid #282e35;
-        border-bottom: 1px solid #282e35;
-    }
-    .metric:nth-child(even) {
-        border-right: 0;
-    }
-    .metric:nth-last-child(-n + 2) {
-        border-bottom: 0;
-    }
-    .control-panel .card__content {
-        display: block;
-    }
-    .control-panel .card__content > * + * {
-        margin-top: 18px;
-    }
-    .simulation-stage {
-        min-height: 300px;
-        padding-inline: 8px;
-    }
-    .chart-height-lg {
-        height: 310px;
-    }
-    .chart-height-md {
-        height: 220px;
-    }
-    .stock-playback-hud {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-    .stock-heading {
-        align-items: flex-start;
-        flex-direction: column;
-    }
-    .stock-heading select {
-        width: 100%;
-    }
-    .demo-header h2 {
-        font-size: 23px;
-    }
-    .demo-header > div > p:last-child {
-        font-size: 15px;
-    }
 }

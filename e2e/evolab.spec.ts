@@ -161,15 +161,6 @@ test("stock evolution tunes RSI and Williams thresholds", async ({page}, testInf
     expect(consoleErrors).toEqual([]);
 });
 
-test("mobile workspace keeps navigation and theory readable", async ({page}, testInfo) => {
-    test.skip(testInfo.project.name !== "mobile", "Mobile-only responsive flow");
-    await page.setViewportSize({width: 390, height: 844});
-    await page.goto("/");
-    await expect(page.getByRole("navigation", {name: "手機實驗主題"})).toBeVisible();
-    await expect(page.getByRole("heading", {name: "用演化，搜尋一個夠好嘅決策腦"})).toBeVisible();
-    await page.screenshot({fullPage: true, path: testInfo.outputPath("theory-mobile.png")});
-});
-
 async function expectGeneration(page: import("@playwright/test").Page, timeout = 30_000): Promise<void> {
     const value = page.locator(".metric").filter({hasText: "世代"}).locator("strong");
     await expect(value).not.toHaveText("0", {timeout});

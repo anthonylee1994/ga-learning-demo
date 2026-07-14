@@ -7,10 +7,7 @@ export default defineConfig({
         baseURL: "http://127.0.0.1:5173",
         trace: "retain-on-failure",
     },
-    projects: [
-        {name: "desktop", use: {...devices["Desktop Chrome"]}},
-        {name: "mobile", use: {...devices["Pixel 7"]}},
-    ],
+    projects: [{name: "desktop", use: {...devices["Desktop Chrome"]}}],
     webServer: {
         command: "pnpm dev",
         url: "http://127.0.0.1:5173",
