@@ -22,8 +22,15 @@ export interface IndicatorColumns {
     macdHistogram: Float64Array;
     bollingerUpper: Float64Array;
     bollingerLower: Float64Array;
+    /** %B: 0=下軌, 1=上軌; can be <0 or >1 outside the channel. */
     bollingerPercentB: Float64Array;
+    /** (Upper−Lower)/Middle — absolute width of the channel. */
     bollingerBandwidth: Float64Array;
+    /**
+     * Squeeze release: bandwidth / rolling-min(bandwidth).
+     * ≈1 at multi-bar squeeze low; >1 when bands expand after compression (BB Squeeze).
+     */
+    bollingerSqueezeRatio: Float64Array;
     volatility: Float64Array;
     volumeZScore: Float64Array;
     nDayHigh: Float64Array;
@@ -49,6 +56,7 @@ export function calculateIndicatorColumns(points: MarketDataPoint[], parameters:
         bollingerLower: new Float64Array(length),
         bollingerPercentB: new Float64Array(length),
         bollingerBandwidth: new Float64Array(length),
+        bollingerSqueezeRatio: new Float64Array(length),
         volatility: new Float64Array(length),
         volumeZScore: new Float64Array(length),
         nDayHigh: new Float64Array(length),
@@ -96,6 +104,17 @@ export function calculateIndicatorColumns(points: MarketDataPoint[], parameters:
         columns.newHighRatio[cursor] = point.close / Math.max(nDayHigh, EPSILON);
     }
 
+    // Second pass: squeeze ratio needs the full bandwidth series.
+    const squeezeLookback = Math.max(60, parameters.bollingerPeriod * 3);
+    for (let cursor = 0; cursor < length; cursor += 1) {
+        let minBandwidth = columns.bollingerBandwidth[cursor];
+        const start = Math.max(0, cursor - squeezeLookback + 1);
+        for (let lookback = start; lookback < cursor; lookback += 1) {
+            minBandwidth = Math.min(minBandwidth, columns.bollingerBandwidth[lookback]);
+        }
+        columns.bollingerSqueezeRatio[cursor] = columns.bollingerBandwidth[cursor] / Math.max(minBandwidth, EPSILON);
+    }
+
     return columns;
 }
 
@@ -118,6 +137,7 @@ export function columnsToSnapshots(points: MarketDataPoint[], columns: Indicator
             bollingerLower: columns.bollingerLower[cursor],
             bollingerPercentB: columns.bollingerPercentB[cursor],
             bollingerBandwidth: columns.bollingerBandwidth[cursor],
+            bollingerSqueezeRatio: columns.bollingerSqueezeRatio[cursor],
             volatility: columns.volatility[cursor],
             volumeZScore: columns.volumeZScore[cursor],
             nDayHigh: columns.nDayHigh[cursor],

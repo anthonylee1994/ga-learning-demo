@@ -63,7 +63,7 @@ const MC_DEFAULT_CONFIG: GAConfig = {
     useNeuralNetwork: true,
 };
 
-type IndicatorView = "price" | "momentum" | "macd" | "risk" | "newHigh";
+type IndicatorView = "price" | "momentum" | "macd" | "risk" | "newHigh" | "bollinger";
 
 export const StockLab = React.memo(() => <StockLabView optimizer="ga" />);
 
@@ -345,7 +345,10 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
                                     label="RSI"
                                     value={`${parameters.rsiPeriod} 日 · 買 ≤ ${parameters.rsiBuyThreshold} · 賣 ≥ ${parameters.rsiSellThreshold}${masks && !masks.rsi ? " · 關" : ""}`}
                                 />
-                                <ParameterValue label="保力加通道" value={`${parameters.bollingerPeriod} / ${parameters.bollingerMultiplier.toFixed(2)}σ${masks && !masks.bollinger ? " · 關" : ""}`} />
+                                <ParameterValue
+                                    label="保力加 Squeeze"
+                                    value={`${parameters.bollingerPeriod} / ${parameters.bollingerMultiplier.toFixed(2)}σ · BB%+寬${masks && !masks.bollinger ? " · 關" : ""}`}
+                                />
                                 <ParameterValue label="ROC 週期" value={`${parameters.rocPeriod}${masks && !masks.roc ? " · 關" : ""}`} />
                                 <ParameterValue
                                     label="威廉指標"
@@ -419,6 +422,7 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
                             </div>
                             <select aria-label="技術指標" onChange={event => setIndicatorView(event.target.value as IndicatorView)} value={indicatorView}>
                                 <option value="price">移動平均線 + 保力加通道</option>
+                                <option value="bollinger">保力加 BB% / Width（Squeeze）</option>
                                 <option value="momentum">RSI + 威廉指標 + ROC</option>
                                 <option value="macd">MACD</option>
                                 <option value="risk">波動率 + 成交量</option>
@@ -508,11 +512,9 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
                                 : `${STOCK_PARAMETER_GENE_COUNT} 週期/門檻 + ${STOCK_MASK_GENE_COUNT} 個 on/off mask（一齊突變 ×3）+ ${STOCK_NETWORK_GENE_COUNT} 決策頭權重（×0.35；${describeStockNetwork()}）`
                         }
                         genomeLabel={isMonteCarlo ? "參數向量" : "基因體"}
-                        inputs="17 維特徵；被 mask 關掉嘅指標家族會強制填 0。持倉狀態永遠開啟。"
+                        inputs="19 維特徵；保力加用 BB% + BB 寬 + Squeeze 擴張（波幅突破，唔係頂沽底買）。被 mask 關掉嘅指標填 0；持倉永遠開。"
                         outputs={
-                            useNetwork
-                                ? "薄隱藏層取最大 → 買 / 持 / 賣；搜尋主力喺 mask + 週期 / 門檻"
-                                : "啟用中嘅 SMA / MACD / RSI / 威廉 多數票買入；RSI / 威廉過熱賣出（兩者都關則買入條件失敗就離場）"
+                            useNetwork ? "薄隱藏層取最大 → 買 / 持 / 賣；搜尋主力喺 mask + 週期 / 門檻" : "SMA / MACD / RSI / 威廉 / 保力加 Squeeze 多數票買入；RSI／威廉過熱或 Squeeze 向下爆邊賣出"
                         }
                         termination={isMonteCarlo ? "頭 80% 做選擇；尾 20% 唔入訓練；每批保留全域最佳，暫停時重播冠軍" : "頭 80% 做選擇；尾 20% 唔入訓練；移民只重抽 head（參數 + mask）"}
                         title={isMonteCarlo ? "點樣套用蒙地卡羅優化" : "點樣套用遺傳演算法"}
@@ -574,6 +576,9 @@ type MarketChartDatum = {
     macdSignal?: number;
     bollingerUpper?: number;
     bollingerLower?: number;
+    bollingerPercentB?: number;
+    bollingerBandwidth?: number;
+    bollingerSqueezeRatio?: number;
     volatility?: number;
     volumeZScore?: number;
     nDayHigh?: number;
@@ -607,7 +612,7 @@ const MarketChart = React.memo<MarketChartProps>(
                     <CartesianGrid stroke="#252a31" strokeDasharray="3 3" vertical={false} />
                     <XAxis dataKey="date" minTickGap={70} stroke="#747b86" tick={{fontSize: 12}} tickLine={false} />
                     <YAxis domain={["auto", "auto"]} stroke="#747b86" tick={{fontSize: 12}} tickLine={false} width={58} yAxisId="price" />
-                    {(indicatorView === "momentum" || indicatorView === "macd" || indicatorView === "risk" || indicatorView === "newHigh") && hasReplay ? (
+                    {(indicatorView === "momentum" || indicatorView === "macd" || indicatorView === "risk" || indicatorView === "newHigh" || indicatorView === "bollinger") && hasReplay ? (
                         <YAxis domain={["auto", "auto"]} orientation="right" stroke="#747b86" tick={{fontSize: 12}} tickLine={false} width={48} yAxisId="indicator" />
                     ) : null}
                     <Tooltip contentStyle={{background: "#15191f", border: "1px solid #303640", borderRadius: 8}} />
@@ -623,8 +628,23 @@ const MarketChart = React.memo<MarketChartProps>(
                         <React.Fragment>
                             <Line dataKey="smaFast" dot={false} isAnimationActive={false} name={`SMA${parameters.smaFastPeriod}`} stroke="#e7b955" strokeWidth={1} yAxisId="price" />
                             <Line dataKey="smaSlow" dot={false} isAnimationActive={false} name={`SMA${parameters.smaSlowPeriod}`} stroke="#5da6d9" strokeWidth={1} yAxisId="price" />
-                            <Line dataKey="bollingerUpper" dot={false} isAnimationActive={false} name="布林上軌" stroke="#6f7782" strokeDasharray="4 4" strokeWidth={1} yAxisId="price" />
-                            <Line dataKey="bollingerLower" dot={false} isAnimationActive={false} name="布林下軌" stroke="#6f7782" strokeDasharray="4 4" strokeWidth={1} yAxisId="price" />
+                            <Line dataKey="bollingerUpper" dot={false} isAnimationActive={false} name="保力加上軌" stroke="#6f7782" strokeDasharray="4 4" strokeWidth={1} yAxisId="price" />
+                            <Line dataKey="bollingerLower" dot={false} isAnimationActive={false} name="保力加下軌" stroke="#6f7782" strokeDasharray="4 4" strokeWidth={1} yAxisId="price" />
+                        </React.Fragment>
+                    ) : null}
+                    {indicatorView === "bollinger" && hasReplay ? (
+                        <React.Fragment>
+                            <Line dataKey="bollingerPercentB" dot={false} isAnimationActive={false} name="BB%（0=下軌 1=上軌）" stroke="#63c6a1" strokeWidth={1.5} yAxisId="indicator" />
+                            <Line dataKey="bollingerBandwidth" dot={false} isAnimationActive={false} name="BB Width" stroke="#e7b955" strokeWidth={1.5} yAxisId="indicator" />
+                            <Line dataKey="bollingerSqueezeRatio" dot={false} isAnimationActive={false} name="Squeeze 擴張" stroke="#d48bd4" strokeWidth={1} yAxisId="indicator" />
+                            <ReferenceLine
+                                label={{value: "中軸 %B=0.5", fill: "#63c6a1", fontSize: 10, position: "insideTopRight"}}
+                                stroke="#63c6a1"
+                                strokeDasharray="4 4"
+                                strokeOpacity={0.45}
+                                y={0.5}
+                                yAxisId="indicator"
+                            />
                         </React.Fragment>
                     ) : null}
                     {indicatorView === "newHigh" && hasReplay && parameters ? (

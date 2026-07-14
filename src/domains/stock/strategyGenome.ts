@@ -5,16 +5,18 @@ import type {Genome, NetworkTopology, OptimizedIndicatorParameters} from "../../
  * Normalized indicator features, tuned threshold distances, and current position → buy / hold / sell.
  * Thin decision head on purpose: the GA is steered to spend most of its search
  * budget on indicator periods / masks (see STOCK_MUTATION_PROFILE), not a fat hidden net.
+ *
+ * Bollinger family uses BB% + BB Width + Squeeze release (not mean-reversion band fades).
  */
 export const STOCK_TOPOLOGY: NetworkTopology = {
-    inputSize: 17,
+    inputSize: 19,
     hiddenLayers: [10, 5],
     outputSize: 3,
 };
 
 /**
  * Selectable indicator families. Each mask zeroes the listed NN feature indexes
- * (feature 12 = position is always on). Rule mode only uses sma / macd / rsi / williams votes.
+ * (feature 12 = position is always on). Rule mode: sma / macd / rsi / williams / bollinger Squeeze.
  */
 export const INDICATOR_MASK_DEFS = [
     {id: "sma", label: "移動平均線", shortLabel: "SMA", featureIndexes: [0, 1, 2]},
@@ -22,7 +24,8 @@ export const INDICATOR_MASK_DEFS = [
     {id: "roc", label: "ROC", shortLabel: "ROC", featureIndexes: [4]},
     {id: "rsi", label: "RSI", shortLabel: "RSI", featureIndexes: [5, 13, 14]},
     {id: "macd", label: "MACD", shortLabel: "MACD", featureIndexes: [6, 7]},
-    {id: "bollinger", label: "保力加通道", shortLabel: "BB", featureIndexes: [8]},
+    /** BB% + Width + Squeeze 擴張 — 跟 Bollinger 原著波幅突破，唔係頂沽底買。 */
+    {id: "bollinger", label: "保力加 Squeeze", shortLabel: "BB", featureIndexes: [8, 17, 18]},
     {id: "volatility", label: "波動率", shortLabel: "Vol", featureIndexes: [9]},
     {id: "volume", label: "成交量", shortLabel: "量", featureIndexes: [10]},
     {id: "newHigh", label: "N日新高", shortLabel: "新高", featureIndexes: [11]},

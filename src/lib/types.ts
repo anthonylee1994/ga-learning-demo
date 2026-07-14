@@ -133,8 +133,12 @@ export interface IndicatorSnapshot {
     macdHistogram: number;
     bollingerUpper: number;
     bollingerLower: number;
+    /** %B — price location in the band (0 lower, 1 upper; outside bands ok). */
     bollingerPercentB: number;
+    /** Band width relative to middle: (upper−lower)/middle. */
     bollingerBandwidth: number;
+    /** Bandwidth / recent min bandwidth (≥1). Squeeze release when rising from ~1. */
+    bollingerSqueezeRatio: number;
     volatility: number;
     volumeZScore: number;
     /** Rolling N-day highest high. */
@@ -164,6 +168,9 @@ export interface TradingPoint {
     macdSignal: number;
     bollingerUpper: number;
     bollingerLower: number;
+    bollingerPercentB: number;
+    bollingerBandwidth: number;
+    bollingerSqueezeRatio: number;
     volatility: number;
     volumeZScore: number;
     nDayHigh: number;

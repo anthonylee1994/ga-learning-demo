@@ -71,7 +71,12 @@ bollingerDeviation = ta.stdev(close, bollingerPeriod) * bollingerMultiplier
 bollingerUpper = bollingerBasis + bollingerDeviation
 bollingerLower = bollingerBasis - bollingerDeviation
 bollingerRange = math.max(bollingerUpper - bollingerLower, 0.000000001)
+// %B and Band Width (key derived series in Bollinger on Bollinger Bands).
 bollingerPercentB = (close - bollingerLower) / bollingerRange
+bollingerBandwidth = bollingerRange / math.max(bollingerBasis, 0.000000001)
+// Squeeze release ≈ width / rolling min width (bands expanding after compression).
+squeezeLookback = math.max(60, bollingerPeriod * 3)
+bollingerSqueezeRatio = bollingerBandwidth / math.max(ta.lowest(bollingerBandwidth, squeezeLookback), 0.000000001)
 dailyReturn = close / close[1] - 1.0
 volatility = ta.stdev(dailyReturn, volatilityPeriod) * math.sqrt(252.0)
 volumeAverage = ta.sma(volume, volumeZScorePeriod)
@@ -129,6 +134,7 @@ export function createNetworkDecisionLines(networkGenome: Genome, masks: Indicat
         `f5 = useRsi ? clamp((rsi - 50.0) / 50.0) : 0.0`,
         `f6 = useMacd ? clamp(macdLine / close * 25.0) : 0.0`,
         `f7 = useMacd ? clamp(macdSignal / close * 25.0) : 0.0`,
+        // BB% / Width / Squeeze — volatility breakout features, not mean-reversion fades.
         `f8 = useBollinger ? clamp((bollingerPercentB - 0.5) * 2.0) : 0.0`,
         `f9 = useVolatility ? clamp(volatility * 5.0) : 0.0`,
         `f10 = useVolume ? clamp(volumeZScore / 3.0) : 0.0`,
@@ -138,6 +144,8 @@ export function createNetworkDecisionLines(networkGenome: Genome, masks: Indicat
         `f14 = useRsi ? clamp((rsi - rsiSellThreshold) / 20.0) : 0.0`,
         `f15 = useWilliams ? clamp((williamsBuyThreshold - williamsR) / 25.0) : 0.0`,
         `f16 = useWilliams ? clamp((williamsR - williamsSellThreshold) / 25.0) : 0.0`,
+        `f17 = useBollinger ? clamp(bollingerBandwidth * 20.0 - 0.5) : 0.0`,
+        `f18 = useBollinger ? clamp((bollingerSqueezeRatio - 1.0) * 2.0) : 0.0`,
         "",
     ];
 
@@ -164,22 +172,25 @@ export function createNetworkDecisionLines(networkGenome: Genome, masks: Indicat
     return lines;
 }
 
-/** Rule mode（唔用 NN）：threshold 買賣規則，同 simulation.ts decidePositionFromRules 保持一致。 */
+/** Rule mode（唔用 NN）：同 simulation.ts decidePositionFromRules 一致；BB = Squeeze 爆邊唔係頂沽底買。 */
 function createRuleDecisionLines(masks: IndicatorMaskState): string[] {
     return [
         "trendVote = useSma and smaFast > smaSlow ? 1 : 0",
         "macdVote = useMacd and macdLine > macdSignal ? 1 : 0",
         "rsiBuyVote = useRsi and rsi <= rsiBuyThreshold ? 1 : 0",
         "williamsBuyVote = useWilliams and williamsR <= williamsBuyThreshold ? 1 : 0",
-        "activeVotes = (useSma ? 1 : 0) + (useMacd ? 1 : 0) + (useRsi ? 1 : 0) + (useWilliams ? 1 : 0)",
-        "buyVotes = trendVote + macdVote + rsiBuyVote + williamsBuyVote",
+        // Bollinger Bands Squeeze: expand off compression + price above mid band.
+        "bbSqueezeLong = useBollinger and bollingerSqueezeRatio >= 1.12 and bollingerPercentB > 0.5 ? 1 : 0",
+        "activeVotes = (useSma ? 1 : 0) + (useMacd ? 1 : 0) + (useRsi ? 1 : 0) + (useWilliams ? 1 : 0) + (useBollinger ? 1 : 0)",
+        "buyVotes = trendVote + macdVote + rsiBuyVote + williamsBuyVote + bbSqueezeLong",
         "neededVotes = math.max(1, int(math.ceil(activeVotes / 2.0)))",
         "buySignal = ready and activeVotes > 0 and buyVotes >= neededVotes",
         "rsiSell = useRsi and rsi >= rsiSellThreshold",
         "williamsSell = useWilliams and williamsR >= williamsSellThreshold",
-        "fallbackSell = not useRsi and not useWilliams and activeVotes > 0 and buyVotes < neededVotes",
-        "sellSignal = ready and (rsiSell or williamsSell or fallbackSell)",
-        `// rule masks: sma=${masks.sma} macd=${masks.macd} rsi=${masks.rsi} williams=${masks.williams}`,
+        "bbSqueezeExit = useBollinger and bollingerSqueezeRatio >= 1.12 and bollingerPercentB < 0.45",
+        "fallbackSell = not useRsi and not useWilliams and not useBollinger and activeVotes > 0 and buyVotes < neededVotes",
+        "sellSignal = ready and (rsiSell or williamsSell or bbSqueezeExit or fallbackSell)",
+        `// rule masks: sma=${masks.sma} macd=${masks.macd} rsi=${masks.rsi} williams=${masks.williams} bollinger=${masks.bollinger} (Squeeze)`,
     ];
 }
 
@@ -211,7 +222,7 @@ export function decodeLayers(networkGenome: Genome): DenseLayer[] {
 
 /**
  * Evaluate the same affine+tanh stack the Pine export emits (for parity tests).
- * Input is the 17-d feature vector already built (masks applied).
+ * Input is the feature vector already built (masks applied; length = STOCK_TOPOLOGY.inputSize).
  */
 export function evaluatePineNetwork(networkGenome: Genome, input: number[]): number[] {
     const layers = decodeLayers(networkGenome);

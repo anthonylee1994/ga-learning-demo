@@ -38,7 +38,7 @@ describe("Pine Script export", () => {
         expect(script).toMatch(/outBuy = tanh\([^)]*h2_0/);
         expect(script).toContain(`f${STOCK_TOPOLOGY.inputSize - 1}`);
         expect(script).toContain("useSma ? clamp");
-        expect(script).toContain("17 → 10 → 5 → 3");
+        expect(script).toContain("19 → 10 → 5 → 3");
         expect(script).toContain('strategy.entry("Long", strategy.long)');
         expect(script).toContain('strategy.close("Long")');
         expect(script).not.toContain("strategy.short");
@@ -51,7 +51,7 @@ describe("Pine Script export", () => {
         const layers = decodeLayers(networkGenome);
         expect(layers).toHaveLength(3);
         expect(layers[0].biases).toHaveLength(10);
-        expect(layers[0].weights[0]).toHaveLength(17);
+        expect(layers[0].weights[0]).toHaveLength(19);
         expect(layers[1].biases).toHaveLength(5);
         expect(layers[1].weights[0]).toHaveLength(10);
         expect(layers[2].biases).toHaveLength(3);
