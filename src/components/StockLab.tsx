@@ -241,16 +241,9 @@ export const StockLab = React.memo(() => {
                     <div className="simulation-stage stock-stage">
                         <div className="stage-overlay">
                             <span>{marketData?.symbol ?? "QQQ"} · 逐日重播</span>
-                            <span>{demo.status === "paused" ? "暫停 · 最新冠軍播到尾再重開" : demo.status === "running" ? "冠軍重播 · 進化中" : replay ? "等待開始訓練" : "未有冠軍"}</span>
+                            <span>{replay ? (demo.status === "running" ? "冠軍循環重播 · 進化中" : "冠軍循環重播") : "未有冠軍"}</span>
                         </div>
-                        <StockPlaybackCanvas
-                            loop={demo.status === "paused"}
-                            onDayChange={handleDayChange}
-                            playing={Boolean(replay) && (demo.status === "running" || demo.status === "paused")}
-                            replay={replay}
-                            restartKey={demo.showcaseEpoch}
-                            speed={demo.config.speed}
-                        />
+                        <StockPlaybackCanvas loop onDayChange={handleDayChange} playing={Boolean(replay)} replay={replay} restartKey={demo.showcaseEpoch} speed={demo.config.speed} />
                     </div>
                     {parameters ? (
                         <section className="optimized-panel">
