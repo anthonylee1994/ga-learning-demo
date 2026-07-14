@@ -1,0 +1,16 @@
+{
+    "$schema": "https://openapi.vercel.sh/vercel.json",
+    "installCommand": "pnpm install",
+    "buildCommand": "pnpm exec tsc -b && pnpm exec vite build",
+    "outputDirectory": "dist",
+    "framework": "vite",
+    "rewrites": [
+        {"source": "/api/(.*)", "destination": "/api"},
+        {"source": "/((?!api/).*)", "destination": "/index.html"}
+    ],
+    "functions": {
+        "api/index.ts": {
+            "maxDuration": 60
+        }
+    }
+}

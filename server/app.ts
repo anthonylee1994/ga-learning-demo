@@ -102,10 +102,14 @@ export function createApp(): express.Express {
         }
     });
 
-    const distPath = path.resolve(process.cwd(), "dist");
-    if (existsSync(distPath)) {
-        app.use(express.static(distPath));
-        app.use((_request, response) => response.sendFile(path.join(distPath, "index.html")));
+    // On Vercel, static assets come from `dist` via CDN; express.static is ignored.
+    // Keep this path for local `pnpm start` after `pnpm build`.
+    if (!process.env.VERCEL) {
+        const distPath = path.resolve(process.cwd(), "dist");
+        if (existsSync(distPath)) {
+            app.use(express.static(distPath));
+            app.use((_request, response) => response.sendFile(path.join(distPath, "index.html")));
+        }
     }
 
     return app;
