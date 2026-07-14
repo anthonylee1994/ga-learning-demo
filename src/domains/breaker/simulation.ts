@@ -246,22 +246,24 @@ function simulateBreaker(genome: Genome, xVelocityFactor: number, record: boolea
     const clearedAll = bricksCleared === totalBricks;
     const clearBonus = clearedAll ? 2_000 : 0;
     /**
-     * Brick-first fitness. Deliberately do NOT pay for raw paddle hits — otherwise the
-     * policy farms endless rallies (choke score with hits) instead of clearing the board.
-     * Tracking is a tiny early-learning signal only; wasteful juggle hits are penalized.
+     * Brick-first + speed. Faster full clears score much higher; raw paddle hits are not paid
+     * (and wasteful juggling is penalized) so the agent cannot farm rallies instead of clearing.
      */
     // Allow ~2 defensive hits per brick cleared (plus a small free buffer); extras cost score.
     const allowedHits = bricksCleared * 2 + 4;
     const wasteHits = Math.max(0, hits - allowedHits);
     const wastePenalty = wasteHits * 6;
-    // Prefer finishing sooner once bricks are gone; no reward for stalling with the ball.
-    const clearSpeedBonus = clearedAll ? Math.max(0, MAX_STEPS - executedSteps) * 0.04 : 0;
+    // Pace: bricks cleared per step — rewards quick progress even before a full clear.
+    const paceBonus = executedSteps > 0 ? (bricksCleared / executedSteps) * 1_400 : 0;
+    // Full clear: remaining time is a big deal (quadratic so "much faster" >> "slightly faster").
+    const finishRatio = clearedAll ? Math.max(0, 1 - executedSteps / MAX_STEPS) : 0;
+    const clearSpeedBonus = finishRatio * finishRatio * 2_200 + finishRatio * 500;
     // Soft shape paddle under the ball while learning — cap so it never rivals a single brick.
     const trackingCap = bricksCleared * 8 + 12;
     const trackingScore = Math.min(trackingReward, trackingCap);
 
     return {
-        fitness: bricksCleared * 140 + clearBonus + clearSpeedBonus + trackingScore - wastePenalty,
+        fitness: bricksCleared * 140 + clearBonus + clearSpeedBonus + paceBonus + trackingScore - wastePenalty,
         replay: {frames, bricksCleared, hits, steps: executedSteps},
     };
 }
