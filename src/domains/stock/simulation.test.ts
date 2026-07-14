@@ -216,6 +216,27 @@ describe("stock simulation", () => {
         expect(buyReplay.trainReturn).toBeGreaterThan(0.15);
     });
 
+    it("prefers higher-return policies over cash-heavy ones on a rising market", () => {
+        const rising = createMarketData(600);
+        const buySeed = createStockSeedGenomes()[0];
+        // Trend-ish seed with all-on masks vs same gene head but force-off most signals → flatter.
+        const sparse = buySeed.slice();
+        for (let index = 0; index < STOCK_MASK_GENE_COUNT; index += 1) {
+            // Keep only SMA + MACD for a weaker / more selective policy.
+            const id = ["sma", "williams", "roc", "rsi", "macd", "bollinger", "volatility", "volume", "newHigh"][index];
+            sparse[STOCK_PARAMETER_GENE_COUNT + index] = encodeMask(id === "sma" || id === "macd");
+        }
+        const buyReplay = createTradingReplay(buySeed, rising, true);
+        const sparseReplay = createTradingReplay(sparse, rising, true);
+        const buyFitness = evaluateStockGenome(buySeed, rising, true);
+        const sparseFitness = evaluateStockGenome(sparse, rising, true);
+        // When buy-seed actually earns more train return, fitness must agree (return-first).
+        if (buyReplay.trainReturn > sparseReplay.trainReturn + 0.02) {
+            expect(buyFitness).toBeGreaterThan(sparseFitness);
+        }
+        expect(buyReplay.trainReturn).toBeGreaterThan(0.1);
+    });
+
     it("ablates enabled masks and ranks by fitness drop", () => {
         const seed = createStockSeedGenomes()[0];
         const result = ablateIndicatorMasks(seed, points, true);

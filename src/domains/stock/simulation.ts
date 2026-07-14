@@ -33,16 +33,15 @@ const TRANSACTION_COST = 0.001;
 /** Keep a small LRU of indicator series — Float64Array columns, ~1MB per full history entry. */
 const MAX_INDICATOR_CACHE = 16;
 /**
- * Mild weight decay: enough to discourage overweight nets, not enough to swamp return signal.
- * (Was 2.5 — dominated small CAGR differences and pushed evolution toward near-cash policies.)
+ * Mild weight decay — keep below return-scale so L2 never prefers cash over investing.
  */
-const WEIGHT_L2_PENALTY = 1.0;
+const WEIGHT_L2_PENALTY = 0.55;
 /**
  * Soft sparsity: keep feature selection pressure without starving the decision head of inputs.
  * First FREE_MASK_COUNT families free; each extra costs a little fitness.
  */
 const FREE_MASK_COUNT = 5;
-const SPARSITY_PENALTY_PER_MASK = 0.65;
+const SPARSITY_PENALTY_PER_MASK = 0.45;
 /** Hard floor when every indicator family is off (only position feature left). */
 const EMPTY_MASK_PENALTY = 80;
 
@@ -132,13 +131,13 @@ export function evaluateStockGenome(genome: Genome, points: MarketDataPoint[], u
     const fullScore = scoreSegment(full, columns, 0, trainLength);
     const halfA = scoreSegment(firstHalf, columns, 0, mid + 1);
     const halfB = scoreSegment(secondHalf, columns, mid, trainLength);
-    // Soft robust: pure min was crushing bull-market train returns (one bad half nuked fitness).
-    const robustScore = 0.35 * Math.min(halfA, halfB) + 0.65 * ((halfA + halfB) / 2);
+    // Soft robust: light floor so one weak half does not erase a strong train return.
+    const robustScore = 0.22 * Math.min(halfA, halfB) + 0.78 * ((halfA + halfB) / 2);
     // Rule mode ignores the NN tail entirely — penalizing unused weights would just add noise.
     const regularization = useNetwork ? WEIGHT_L2_PENALTY * meanSquare(networkGenome) : 0;
     const sparsity = SPARSITY_PENALTY_PER_MASK * Math.max(0, activeCount - FREE_MASK_COUNT);
-    // Full-segment performance dominates — matches what the UI "訓練回報" shows.
-    return fullScore * 0.82 + robustScore * 0.18 - regularization - sparsity;
+    // Full-segment return dominates — aligns with UI "訓練回報".
+    return fullScore * 0.9 + robustScore * 0.1 - regularization - sparsity;
 }
 
 /**
@@ -182,8 +181,8 @@ export function ablateIndicatorMasks(genome: Genome, points: MarketDataPoint[], 
 }
 
 /**
- * Prefer cumulative + annualized return (what "訓練回報" shows), with softer risk terms.
- * Pure cash still loses on bulls via excess + under-exposure penalties; drawdown no longer dominates.
+ * Return-first segment score (what "訓練回報" shows), with light risk terms.
+ * Bias: capture bull markets and beat buy-and-hold; do not reward cash-for-safety.
  */
 function scoreSegment(metrics: SegmentMetrics, columns: IndicatorColumns, start: number, end: number): number {
     const first = columns.close[start] || 1;
@@ -193,14 +192,34 @@ function scoreSegment(metrics: SegmentMetrics, columns: IndicatorColumns, start:
     const strategyCagr = annualize(metrics.totalReturn, years);
     const benchmarkCagr = annualize(benchmarkReturn, years);
     const excess = strategyCagr - benchmarkCagr;
-    // Flat / near-zero equity path.
-    const idlePenalty = Math.abs(metrics.totalReturn) < 0.03 ? 14 : 0;
-    // Sitting in cash through a rising train segment looks "safe" on DD but tanks train return.
-    const bullMarket = benchmarkReturn > 0.08;
-    const underExposed = metrics.meanExposure < 0.3;
-    const laggingReturn = metrics.totalReturn < benchmarkReturn * 0.35;
-    const underInvestedPenalty = bullMarket && underExposed && laggingReturn ? 16 : 0;
-    return strategyCagr * 130 + metrics.totalReturn * 55 + metrics.sharpe * 10 - metrics.maxDrawdown * 22 + excess * 22 + metrics.meanExposure * 8 - idlePenalty - underInvestedPenalty;
+    // How much of the market move we captured (bulls); clip so disasters don't explode the term.
+    const capture = benchmarkReturn > 0.02 ? Math.min(2.5, Math.max(-0.5, metrics.totalReturn / benchmarkReturn)) : 0;
+
+    // Flat / near-zero equity path — stronger than before so "do nothing" dies fast.
+    const idlePenalty = Math.abs(metrics.totalReturn) < 0.04 ? 22 : 0;
+    // Sitting in cash (or half-cash) through a rising segment looks "safe" on DD but tanks train return.
+    const bullMarket = benchmarkReturn > 0.06;
+    const underExposed = metrics.meanExposure < 0.45;
+    const laggingReturn = metrics.totalReturn < benchmarkReturn * 0.55;
+    const underInvestedPenalty = bullMarket && underExposed && laggingReturn ? 32 : 0;
+    // Even if exposure looks ok, lagging buy-and-hold hard still costs (missed the move).
+    const lagPenalty = bullMarket && metrics.totalReturn < benchmarkReturn * 0.45 ? 18 : 0;
+    // Mild bonus when we beat the market on total return (not just smoother path).
+    const beatMarketBonus = metrics.totalReturn > benchmarkReturn + 0.01 ? 10 : 0;
+
+    return (
+        strategyCagr * 200 +
+        metrics.totalReturn * 95 +
+        excess * 55 +
+        capture * 28 +
+        metrics.meanExposure * 16 +
+        metrics.sharpe * 5 -
+        metrics.maxDrawdown * 10 +
+        beatMarketBonus -
+        idlePenalty -
+        underInvestedPenalty -
+        lagPenalty
+    );
 }
 
 function annualize(totalReturn: number, years: number): number {
