@@ -563,7 +563,7 @@ const MarketChart = React.memo<MarketChartProps>(
                     ) : null}
                     <Tooltip contentStyle={{background: "#15191f", border: "1px solid #303640", borderRadius: 8}} />
                     <Legend wrapperStyle={{fontSize: 12}} />
-                    <Line dataKey="close" dot={false} isAnimationActive={false} name="收市" stroke="#dfe3e8" strokeWidth={1.5} type="monotone" yAxisId="price" />
+                    <Line dataKey="close" dot={false} isAnimationActive={false} name="收市價" stroke="#dfe3e8" strokeWidth={1.5} type="monotone" yAxisId="price" />
                     {hasReplay ? (
                         <React.Fragment>
                             <Line connectNulls={false} dataKey="buy" dot={BUY_DOT} isAnimationActive={false} name="買入" stroke="none" yAxisId="price" />
