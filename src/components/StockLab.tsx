@@ -37,13 +37,15 @@ import {DemoShell} from "./SnakeLab";
 import {StockPlaybackCanvas, type StockPlaybackDay} from "./StockPlaybackCanvas";
 
 const DEFAULT_CONFIG: GAConfig = {
-    populationSize: 48,
+    // Slightly leaner default — stock fitness walks multi-year bars per genome.
+    populationSize: 36,
     // Base rates; stock worker multiplies indicator genes ~3× and NN genes ~0.35×.
     mutationRate: 0.12,
     mutationScale: 0.22,
     eliteRate: 0.08,
     seed: Math.round(Math.random() * 1_000_000),
-    speed: 3,
+    // Max speed ⇒ 0ms inter-generation delay (see workerRuntime scheduleNext).
+    speed: 5,
     useNeuralNetwork: true,
 };
 

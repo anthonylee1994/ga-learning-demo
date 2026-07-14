@@ -49,12 +49,16 @@ export class NeuralNetworkAdapter {
     }
 
     createRunner(genome: Genome): (input: number[]) => number[] {
+        // Pure JS forward is faster than brain.js on the stock hot path (thousands of
+        // bar-steps × population × generations) and matches tanh stack used elsewhere.
+        return createForwardRunner(genome, this.topology);
+    }
+
+    /** brain.js path kept for adapters that need a live Network instance. */
+    createBrainRunner(genome: Genome): (input: number[]) => number[] {
         if (genome.length !== this.geneCount) {
             throw new Error(`Genome length ${genome.length} does not match ${this.geneCount}`);
         }
-
-        // Reuse one network instance per adapter — avoid allocating a fresh
-        // brain.js graph on every genome evaluation (was a major GC pressure source).
         if (!this.network) {
             this.network = new NeuralNetwork<number[], number[]>({
                 inputSize: this.topology.inputSize,
@@ -64,7 +68,6 @@ export class NeuralNetworkAdapter {
             });
             this.network.initialize();
         }
-
         applyGenome(this.network, genome);
         const network = this.network;
         return (input: number[]) => {
@@ -74,6 +77,37 @@ export class NeuralNetworkAdapter {
             return Array.from(network.run(input));
         };
     }
+}
+
+/**
+ * Zero-allocation-friendly pure forward pass (tanh every layer).
+ * Decode weights once; reuse layer buffers across calls — critical for stock fitness.
+ */
+export function createForwardRunner(genome: Genome, topology: NetworkTopology): (input: number[]) => number[] {
+    const inspection = inspectGenome(genome, topology);
+    const buffers = inspection.layers.map(layer => new Array<number>(layer.biases.length));
+    const inputSize = topology.inputSize;
+
+    return (input: number[]) => {
+        if (input.length !== inputSize) {
+            throw new Error(`Input length ${input.length} does not match ${inputSize}`);
+        }
+        let prev = input;
+        for (let layerIndex = 0; layerIndex < inspection.layers.length; layerIndex += 1) {
+            const {biases, weights} = inspection.layers[layerIndex];
+            const next = buffers[layerIndex];
+            for (let node = 0; node < biases.length; node += 1) {
+                let sum = biases[node];
+                const inbound = weights[node];
+                for (let prevNode = 0; prevNode < inbound.length; prevNode += 1) {
+                    sum += inbound[prevNode] * prev[prevNode];
+                }
+                next[node] = Math.tanh(sum);
+            }
+            prev = next;
+        }
+        return prev;
+    };
 }
 
 export function calculateGeneCount(topology: NetworkTopology): number {

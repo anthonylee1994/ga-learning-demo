@@ -1,4 +1,4 @@
-import {argMax, NeuralNetworkAdapter} from "../../lib/neuralNetwork";
+import {argMax, createForwardRunner} from "../../lib/neuralNetwork";
 import type {Genome, IndicatorMaskState, MarketDataPoint, OptimizedIndicatorParameters, TradeMarker, TradingPoint, TradingReplay} from "../../lib/types";
 import type {IndicatorColumns} from "./indicators";
 import {calculateIndicatorColumns, columnsToSnapshots} from "./indicators";
@@ -45,9 +45,6 @@ const FREE_MASK_COUNT = 5;
 const SPARSITY_PENALTY_PER_MASK = 0.65;
 /** Hard floor when every indicator family is off (only position feature left). */
 const EMPTY_MASK_PENALTY = 80;
-
-/** Shared adapter — avoid allocating a fresh brain.js graph per genome. */
-const networkAdapter = new NeuralNetworkAdapter(STOCK_TOPOLOGY);
 
 /**
  * Cache indicator columns by the exact points array reference.
@@ -129,8 +126,8 @@ export function evaluateStockGenome(genome: Genome, points: MarketDataPoint[], u
 
     const decide = createPositionDecider(columns, parameters, masks, networkGenome, useNetwork);
     const mid = Math.floor(trainLength / 2);
-    const full = simulateColumnMetrics(decide, columns, 0, 0, trainLength);
-    const firstHalf = simulateColumnMetrics(decide, columns, 0, 0, mid + 1);
+    // One pass for full + first half (was two full walks); second half still restarts equity.
+    const {full, firstHalf} = simulateFullAndFirstHalf(decide, columns, trainLength, mid);
     const secondHalf = simulateColumnMetrics(decide, columns, firstHalf.endingPosition, mid, trainLength);
     const fullScore = scoreSegment(full, columns, 0, trainLength);
     const halfA = scoreSegment(firstHalf, columns, 0, mid + 1);
@@ -397,7 +394,8 @@ function createPositionDecider(columns: IndicatorColumns, parameters: OptimizedI
     if (!useNetwork) {
         return (index, position) => decidePositionFromRules(columns, index, position, parameters, masks);
     }
-    const runNetwork = networkAdapter.createRunner(networkGenome);
+    // Pure forward runner: decode weights once per genome; reuse feature buffer every bar.
+    const runNetwork = createForwardRunner(networkGenome, STOCK_TOPOLOGY);
     const features = new Array<number>(STOCK_TOPOLOGY.inputSize);
     return (index, position) => decidePositionFromNetwork(runNetwork(buildNetworkFeatures(columns, index, position, parameters, masks, features)), position);
 }
@@ -452,6 +450,76 @@ function simulateColumnMetrics(decide: PositionDecider, columns: IndicatorColumn
         maxDrawdown,
         endingPosition: position,
         meanExposure: returnCount > 0 ? exposureSum / returnCount : 0,
+    };
+}
+
+/**
+ * Walk the full train window once while also accumulating first-half metrics
+ * (same semantics as separate simulateColumnMetrics calls for full + first half).
+ */
+function simulateFullAndFirstHalf(decide: PositionDecider, columns: IndicatorColumns, trainLength: number, mid: number): {full: SegmentMetrics; firstHalf: SegmentMetrics} {
+    let equity = STARTING_EQUITY;
+    let position = 0;
+    let peak = equity;
+    let maxDrawdown = 0;
+    let returnSum = 0;
+    let returnSqSum = 0;
+    let returnCount = 0;
+    let exposureSum = 0;
+
+    let halfEquity = STARTING_EQUITY;
+    let halfPeak = halfEquity;
+    let halfMaxDrawdown = 0;
+    let halfReturnSum = 0;
+    let halfReturnSqSum = 0;
+    let halfReturnCount = 0;
+    let halfExposureSum = 0;
+    let halfEndingPosition = 0;
+    const halfEnd = mid + 1;
+
+    for (let index = 1; index < trainLength; index += 1) {
+        const previous = index - 1;
+        const targetPosition = decide(previous, position);
+        const turnover = Math.abs(targetPosition - position);
+        const priceReturn = columns.close[index] / columns.close[previous] - 1;
+        const dailyReturn = position * priceReturn - turnover * TRANSACTION_COST;
+        equity *= Math.max(0.01, 1 + dailyReturn);
+        returnSum += dailyReturn;
+        returnSqSum += dailyReturn * dailyReturn;
+        returnCount += 1;
+        exposureSum += position;
+        peak = Math.max(peak, equity);
+        maxDrawdown = Math.max(maxDrawdown, peak > 0 ? (peak - equity) / peak : 0);
+
+        if (index < halfEnd) {
+            halfEquity *= Math.max(0.01, 1 + dailyReturn);
+            halfReturnSum += dailyReturn;
+            halfReturnSqSum += dailyReturn * dailyReturn;
+            halfReturnCount += 1;
+            halfExposureSum += position;
+            halfPeak = Math.max(halfPeak, halfEquity);
+            halfMaxDrawdown = Math.max(halfMaxDrawdown, halfPeak > 0 ? (halfPeak - halfEquity) / halfPeak : 0);
+            halfEndingPosition = targetPosition;
+        }
+
+        position = targetPosition;
+    }
+
+    return {
+        full: {
+            totalReturn: equity / STARTING_EQUITY - 1,
+            sharpe: calculateSharpeFromMoments(returnSum, returnSqSum, returnCount),
+            maxDrawdown,
+            endingPosition: position,
+            meanExposure: returnCount > 0 ? exposureSum / returnCount : 0,
+        },
+        firstHalf: {
+            totalReturn: halfEquity / STARTING_EQUITY - 1,
+            sharpe: calculateSharpeFromMoments(halfReturnSum, halfReturnSqSum, halfReturnCount),
+            maxDrawdown: halfMaxDrawdown,
+            endingPosition: halfEndingPosition,
+            meanExposure: halfReturnCount > 0 ? halfExposureSum / halfReturnCount : 0,
+        },
     };
 }
 

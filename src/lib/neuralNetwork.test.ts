@@ -1,4 +1,4 @@
-import {calculateGeneCount, forwardWithActivations, inspectGenome, NeuralNetworkAdapter} from "./neuralNetwork";
+import {calculateGeneCount, createForwardRunner, forwardWithActivations, inspectGenome, NeuralNetworkAdapter} from "./neuralNetwork";
 
 describe("NeuralNetworkAdapter", () => {
     const topology = {inputSize: 3, hiddenLayers: [4], outputSize: 2};
@@ -7,7 +7,7 @@ describe("NeuralNetworkAdapter", () => {
         expect(calculateGeneCount(topology)).toBe(26);
     });
 
-    it("runs a deterministic Brain.js network from a genome", () => {
+    it("runs a deterministic pure forward network from a genome", () => {
         const adapter = new NeuralNetworkAdapter(topology);
         const genome = Array.from({length: adapter.geneCount}, (_, index) => (index - 10) / 20);
         const runner = adapter.createRunner(genome);
@@ -24,13 +24,15 @@ describe("NeuralNetworkAdapter", () => {
         const adapter = new NeuralNetworkAdapter(topology);
         const genome = Array.from({length: adapter.geneCount}, (_, index) => Math.sin(index * 0.37) * 0.8);
         const input = [0.2, -0.4, 0.7];
-        const brainOut = adapter.run(genome, input);
+        const brainOut = adapter.createBrainRunner(genome)(input);
+        const pureOut = createForwardRunner(genome, topology)(input);
         const detailed = forwardWithActivations(genome, topology, input);
         expect(detailed.outputs).toHaveLength(2);
         expect(detailed.activations).toHaveLength(3);
         expect(detailed.activations[0]).toEqual(input);
         for (let index = 0; index < brainOut.length; index += 1) {
             expect(detailed.outputs[index]).toBeCloseTo(brainOut[index], 5);
+            expect(pureOut[index]).toBeCloseTo(brainOut[index], 5);
         }
         expect(detailed.decision).toBe(brainOut[0] >= brainOut[1] ? 0 : 1);
     });

@@ -67,7 +67,7 @@ export const DemoControls = React.memo<DemoControlsProps>(({demo, disabled, chil
                     value={demo.config.mutationRate}
                 />
                 <ControlSlider
-                    description="只影響每代之間嘅等待時間，唔改變適應度計分。"
+                    description="調高會縮短代與代之間嘅等待；拉滿（5）= 唔再刻意等，盡量全速訓練。"
                     label="播放速度"
                     max={5}
                     min={1}

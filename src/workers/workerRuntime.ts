@@ -50,7 +50,9 @@ export function setupEvolutionWorker<TData, TReplay>(definition: WorkerDefinitio
     }
 
     function scheduleNext(token: number): void {
-        const delay = config ? Math.max(0, 220 - config.speed * 35) : 0;
+        // speed 1 → ~160ms gap (readable UI); speed 5 → 0ms (train as fast as the worker can).
+        // Always go through setTimeout so pause/reset messages can interleave even at full tilt.
+        const delay = config ? Math.max(0, (5 - config.speed) * 40) : 0;
         clearScheduled();
         scheduledHandle = scope.setTimeout(() => {
             scheduledHandle = null;
