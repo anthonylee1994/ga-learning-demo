@@ -710,6 +710,83 @@ button {
     max-width: 760px;
     aspect-ratio: 4 / 3;
 }
+.simulation-stage.stock-stage {
+    min-height: 0;
+    place-items: stretch;
+    padding: 42px 14px 14px;
+}
+.stock-playback {
+    display: grid;
+    gap: 10px;
+    width: 100%;
+    min-width: 0;
+}
+.stock-playback-canvas {
+    width: 100%;
+    max-width: none;
+    height: auto;
+    aspect-ratio: 900 / 360;
+    border-radius: 6px;
+}
+.stock-playback-hud {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+}
+.stock-hud-stat {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+    border: 1px solid #242a31;
+    border-radius: 6px;
+    background: #0d1115;
+    padding: 8px 10px;
+}
+.stock-hud-stat span {
+    color: #6e7781;
+    font-size: 11px;
+    letter-spacing: 0.02em;
+}
+.stock-hud-stat strong {
+    overflow: hidden;
+    color: #e3e6e9;
+    font-size: 13px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.stock-hud-stat--long strong {
+    color: #58d68d;
+}
+.stock-hud-stat--cash strong {
+    color: #8b939e;
+}
+.stock-hud-stat--buy {
+    border-color: rgba(88, 214, 141, 0.45);
+    background: rgba(88, 214, 141, 0.08);
+}
+.stock-hud-stat--buy strong {
+    color: #58d68d;
+}
+.stock-hud-stat--sell {
+    border-color: rgba(227, 111, 91, 0.45);
+    background: rgba(227, 111, 91, 0.08);
+}
+.stock-hud-stat--sell strong {
+    color: #e36f5b;
+}
+.stock-playback-progress {
+    height: 3px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #1a1f25;
+}
+.stock-playback-progress-fill {
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #5da6d9, #58d68d 55%, #e7b955);
+    transition: width 80ms linear;
+}
 .chart-panel,
 .market-panel,
 .optimized-panel,
@@ -1251,6 +1328,9 @@ button {
     }
     .chart-height-md {
         height: 220px;
+    }
+    .stock-playback-hud {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
     .stock-heading {
         align-items: flex-start;

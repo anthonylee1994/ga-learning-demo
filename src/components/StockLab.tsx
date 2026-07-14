@@ -23,6 +23,7 @@ import {GenomeTransfer} from "./GenomeTransfer";
 import {Metrics} from "./Metrics";
 import {NetworkPanel} from "./NetworkPanel";
 import {DemoShell} from "./SnakeLab";
+import {StockPlaybackCanvas, type StockPlaybackDay} from "./StockPlaybackCanvas";
 
 const DEFAULT_CONFIG: GAConfig = {
     populationSize: 48,
@@ -157,9 +158,24 @@ export const StockLab = React.memo(() => {
         [replay]
     );
 
-    /** Index into warm-up-aligned indicator columns for NN activation scrub. */
+    /** Index into warm-up-aligned indicator columns for NN activation (driven by playback). */
     const [previewIndex, setPreviewIndex] = React.useState(0);
+    const [liveDay, setLiveDay] = React.useState<StockPlaybackDay | null>(null);
     const networkGenome = decoded?.networkGenome ?? null;
+
+    const handleDayChange = (day: StockPlaybackDay | null) => {
+        setLiveDay(day);
+        if (day) {
+            setPreviewIndex(day.index);
+        }
+    };
+
+    React.useEffect(() => {
+        if (!demo.champion) {
+            setLiveDay(null);
+        }
+    }, [demo.champion]);
+
     const networkPreview = React.useMemo(() => {
         if (!useNetwork || !demo.champion?.genome || !marketData?.points.length || !decoded) {
             return null;
@@ -171,7 +187,7 @@ export const StockLab = React.memo(() => {
             }
             const index = Math.min(Math.max(0, previewIndex), columns.length - 1);
             const date = marketData.points[columns.warmup + index]?.date ?? "";
-            const position = replay ? positionBeforeDate(replay.trades, date) : 0;
+            const position = liveDay?.index === index ? liveDay.position : replay ? positionBeforeDate(replay.trades, date) : 0;
             const input = buildNetworkFeatures(columns, index, position, decoded.parameters);
             return {
                 input,
@@ -183,25 +199,7 @@ export const StockLab = React.memo(() => {
         } catch {
             return null;
         }
-    }, [useNetwork, demo.champion?.genome, marketData, decoded, previewIndex, replay]);
-
-    React.useEffect(() => {
-        if (!marketData?.points.length || !decoded) {
-            return;
-        }
-        try {
-            const columns = getIndicatorColumns(marketData.points, decoded.parameters);
-            if (columns.length === 0) {
-                return;
-            }
-            // Default preview near the end of the training segment.
-            const trainEnd = Math.max(0, Math.floor(columns.length * 0.8) - 1);
-            setPreviewIndex(trainEnd);
-        } catch {
-            // Ignore decode / indicator failures; panel stays empty.
-        }
-        // Reset when champion genome or ticker changes — not on every generation parameter tick.
-    }, [demo.champion?.genome, marketData?.symbol]);
+    }, [useNetwork, demo.champion?.genome, marketData, decoded, previewIndex, replay, liveDay]);
 
     return (
         <DemoShell
@@ -240,6 +238,20 @@ export const StockLab = React.memo(() => {
             <div className="workspace-grid">
                 <main className="demo-main">
                     <Metrics extra={metricsExtra} stats={demo.stats} />
+                    <div className="simulation-stage stock-stage">
+                        <div className="stage-overlay">
+                            <span>{marketData?.symbol ?? "QQQ"} · 逐日重播</span>
+                            <span>{demo.status === "paused" ? "暫停 · 最新冠軍播到尾再重開" : demo.status === "running" ? "冠軍重播 · 進化中" : replay ? "等待開始訓練" : "未有冠軍"}</span>
+                        </div>
+                        <StockPlaybackCanvas
+                            loop={demo.status === "paused"}
+                            onDayChange={handleDayChange}
+                            playing={Boolean(replay) && (demo.status === "running" || demo.status === "paused")}
+                            replay={replay}
+                            restartKey={demo.showcaseEpoch}
+                            speed={demo.config.speed}
+                        />
+                    </div>
                     {parameters ? (
                         <section className="optimized-panel">
                             <div className="panel-heading">
@@ -271,7 +283,7 @@ export const StockLab = React.memo(() => {
                     <section className="market-panel">
                         <div className="panel-heading stock-heading">
                             <div>
-                                <p className="eyebrow">{marketData?.symbol ?? "QQQ"} · 日線</p>
+                                <p className="eyebrow">{marketData?.symbol ?? "QQQ"} · 日線 · 全段檢視</p>
                                 <h3>市場與交易訊號</h3>
                             </div>
                             <select aria-label="技術指標" onChange={event => setIndicatorView(event.target.value as IndicatorView)} value={indicatorView}>
@@ -318,7 +330,7 @@ export const StockLab = React.memo(() => {
                             input={networkPreview?.input ?? null}
                             inputLabels={STOCK_INPUT_LABELS}
                             outputLabels={STOCK_OUTPUT_LABELS}
-                            subtitle="只顯示決策頭（週期基因另見上方參數表）。拖下面滑桿睇某一日嘅前向運算。"
+                            subtitle="只顯示決策頭（週期基因另見上方參數表）。節點亮度跟住上方逐日重播；亦可拖滑桿手動 scrub。"
                             title="股票決策頭"
                             topology={STOCK_TOPOLOGY}
                         >
@@ -328,6 +340,7 @@ export const StockLab = React.memo(() => {
                                         <span>網絡預覽日</span>
                                         <strong className="font-mono text-xs">
                                             {networkPreview.date || "—"} · {networkPreview.segment}
+                                            {liveDay?.trade ? ` · ${liveDay.trade.action === "buy" ? "買" : "賣"}` : ""}
                                         </strong>
                                     </span>
                                     <input
