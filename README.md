@@ -1,202 +1,206 @@
-# EvoLab — Genetic Algorithm 說明
+# EvoLab 係咩？
 
-EvoLab 用 **neuroevolution**：唔做 backpropagation，而係用遺傳演算法（GA）直接搜尋 neural network weights（同 Stock 嘅 indicator periods / on-off masks）。三個實驗（Snake、Block Breaker、Stock）共用同一套 GA engine。
+用一句講：**教電腦自己試錯，學做決定。**
 
-核心實作：`src/lib/ga.ts`  
-每代循環：`src/workers/workerRuntime.ts`
+唔係人手寫「見到紅燈就停」咁啲死規則，而係：
 
----
+1. 隨機出一班「策略」
+2. 睇邊個做得好
+3. 好嘅留下來生仔
+4. 仔有少少突變
+5. 重複幾百代
 
-## 一代流程
+呢套做法叫 **遺傳演算法（Genetic Algorithm）**。  
+自然界進化物種；呢度進化「玩遊戲／炒股票」嘅方法。
 
-```
-初始化 Population
-        ↓
-評估 Fitness（每個 genome 跑一次 domain simulate）
-        ↓
-按 fitness 排序
-        ↓
-Elitism：保留最好嘅幾個，原封不動帶去下一代
-        ↓
-其餘空位用 Selection → Crossover → Mutation 填滿
-        ↓
-Random Immigrant：最後一個 slot 換成新鮮 genome（維持探索）
-        ↓
-下一代
-```
-
-Worker 每一代做嘅事大致係：
-
-1. `population.map(evaluate)` — 計齊所有個體嘅 fitness
-2. `evolvePopulation(...)` — 由今代繁殖出下一代
-3. 把 best genome / stats /（有需要時）champion replay 傳返 UI
+> **重要：** 呢個專案係 **教學 demo**，唔係投資軟件。股票頁只係示範演算法，**唔係投資建議**。
 
 ---
 
-## Genome
+## 點樣跑起嚟？
 
-一個 **genome** 就係一個 `number[]`（扁平化基因）。
-
-| Demo            | Genome 內容                                                                                           |
-| --------------- | ----------------------------------------------------------------------------------------------------- |
-| Snake / Breaker | Brain.js 嘅 weights + biases                                                                          |
-| Stock           | Head = 17 個 period/threshold + 9 個 indicator mask；Tail = decision head（`17 → 10 → 5 → 3`）weights |
-
-初始化時每個 gene 大約係 `gaussian() * 0.55`。可選 champion 會放喺第 0 位；Stock 仲會注入幾組經典 indicator seed（含 dense / sparse mask 先驗）。
-
-### Stock genome 明細
-
-| 區段 | Genes | 解碼                                                                         |
-| ---- | ----- | ---------------------------------------------------------------------------- |
-| 週期 | 0–16  | SMA / Williams / ROC / RSI / MACD / BB / 波動 / 成交量 / N 日新高 週期與門檻 |
-| Mask | 17–25 | 9 個指標家族 on/off（`gene > 0` → ON）                                       |
-| NN   | 26…   | Brain.js decision head weights + biases                                      |
-
-**Mask 家族**（feature selection）：移動平均線、威廉指標、ROC、RSI、MACD、保力加通道、波動率、成交量、N 日新高。  
-關掉嘅家族喺 NN 輸入會填 0；規則模式只讓 ON 嘅家族投票。持倉狀態（feature 12）永遠開啟。
-
----
-
-## Selection — Roulette Wheel Selection
-
-每個 genome 嘅 fitness 會轉成輪盤權重，fitness 愈高，抽中做 parent 嘅機會愈大。
-
-```
-rouletteWheelSelect(candidates, random):
-  將 fitness 轉成非負權重
-  隨機抽一個落點
-  回傳落點所在區段嘅 genome
+```bash
+pnpm install
+pnpm dev
 ```
 
-每次製造一個 child 會轉兩次輪盤，得到 `parentA`、`parentB`。
+瀏覽器開住之後，可以揀三個實驗：
 
-- fitness 高 → 輪盤區段較大，偏向 exploitation
-- fitness 低 → 仍然保留繁殖機會，維持 exploration
-- 有負 fitness 時會先平移成非負權重
-- 全部權重都係 0 時會退回均勻隨機選擇
+| 頁面     | 電腦要學咩               | 你會見到咩         |
+| -------- | ------------------------ | ------------------ |
+| 貪食蛇   | 點樣唔撞牆、食到果       | 蛇自己爬           |
+| 打磚塊   | 點樣接波、清磚           | 板同波自己郁       |
+| 股票交易 | 幾時買、幾時賣、用咩指標 | 圖表、買賣點、回報 |
 
-同 tournament selection 唔同，roulette wheel selection 唔需要 `tournamentSize` 設定。
+撳 **開始** 就會一代代進化；**暫停** 可以睇清楚；**重設** 由頭嚟。
 
 ---
 
-## Crossover — Uniform Crossover
+## 核心概念（生活化版）
 
-每個 gene **獨立** 以 50% 機率由父或母繼承：
+### 1. 族群（一班學生）
+
+每一代有幾十個「學生」（例如 36 個）。  
+每個學生代表 **一套做法**。
+
+### 2. 基因體（學生嘅筆記）
+
+每個學生身上有一串數字，叫 **基因體（genome）**。  
+可以想像成考試溫書筆記：
+
+- 貪食蛇／打磚塊：筆記 = 大腦入面「見到咩就點做」嘅參數
+- 股票：筆記 = **用邊啲技術指標** + **指標點調** + **點決定買賣**
+
+### 3. 適應度（考試分數）
+
+每個學生考一次試，攞一個 **分數（fitness）**：
+
+- 蛇：食到幾多、行得幾耐
+- 打磚塊：清幾多磚、接住幾耐
+- 股票：訓練期賺幾多、穩唔穩、會唔會成日空手坐住
+
+**分數高 → 較容易生仔傳去下一代。**
+
+### 4. 一代之內發生咩事？
+
+好似一班人考試完再收生：
 
 ```
-child[i] = random() < 0.5 ? parentA[i] : parentB[i]
+一班學生考試
+    ↓
+分數高嘅幾個「保送」直接入下一代（精英）
+    ↓
+其餘多數位：抽兩個家長 → 合併筆記 → 加少少突變 → 成新學生
+    ↓
+最後一個位塞一個「外來插班生」（保持新鮮諗法）
+    ↓
+成新一班，再考
 ```
 
-即係 `uniformCrossover`：唔係單點 / 雙點 crossover，而係逐個 gene 擲銅板。長度同 parents 一樣。
+#### 抽家長（輪盤）
+
+分數愈高，輪盤上佔位愈大，愈容易被抽中做阿爸阿媽。  
+差生都有少少機會——唔好殺晒探索。
+
+#### 合併筆記（雜交）
+
+仔女每一格筆記，50% 機會抄阿爸、50% 抄阿媽。  
+好似兩本溫書各撕一半砌埋。
+
+#### 突變
+
+合併完之後，有機會改亂幾格：
+
+- 多數：喺原數上面抖少少
+- 少數：整格重寫
+
+用意：避免成班人永遠困喺同一個壞習慣。
+
+#### 精英
+
+最好嗰幾個 **原封不動** 帶落下一代。  
+唔好因為運氣差，把今代冠軍弄丟。
+
+#### 插班生
+
+每代最後一個位，換一個新面孔。  
+股票頁特別啲：插班生 **只重抽「用邊啲指標／點樣調」**，大腦決策部分可以沿用——持續試新指標組合，又唔使次次打亂已經學識嘅買賣習慣。
 
 ---
 
-## Mutation — Gaussian + Reset
+## 三個實驗分別學咩？
 
-Crossover 之後，每個 child 會經過 `mutateGenome`。
+### 貪食蛇
 
-對每個 gene：
+電腦要學：
 
-1. 以 `mutationRate`（可再乘 profile multiplier）決定是否突變
-2. 若突變：
+- 邊度有牆、邊度有自己身體
+- 果喺邊
+- 下一步向上下左右邊個
 
-- **20%**（`RESET_MUTATION_SHARE`）：整粒 gene 重抽 → `gaussian() * 0.55`（reset）
-    - **80%**：喺原值上加噪聲 → `gene + gaussian() * mutationScale`（perturb）
+成功 = 食得多、唔死。
 
-Reset 用意：避免 `tanh` 解碼嘅 period genes 飽和之後變相「鎖死」，亦令收斂後嘅 population 仍可跳離 local optimum。
+### 打磚塊
 
-### Mutation Profile（Stock 專用）
+電腦要學：
 
-Stock 用 `STOCK_MUTATION_PROFILE`，把 genome 分成 head / tail：
+- 板應該移左定移右
+- 點樣接住波、撞落磚
 
-| 區段                                 | Genes | Rate 倍數 | Scale 倍數 |
-| ------------------------------------ | ----- | --------- | ---------- |
-| Head（periods + thresholds + masks） | 0–25  | ×3        | ×1.5       |
-| Tail（NN weights）                   | 其餘  | ×0.35     | ×0.45      |
+成功 = 分高、接波穩。
 
-即係 **indicator-first evolution**：搜尋預算多數花喺「用邊啲指標 + 點樣調參數」，NN 只係薄 decision head，突變較少。
+### 股票交易（最複雜嗰頁）
 
----
+電腦要學三樣嘢：
 
-## Elitism
+| 學咩     | 白話解釋                                     |
+| -------- | -------------------------------------------- |
+| 指標開關 | RSI、MACD 呢啲工具，用定唔用？               |
+| 指標參數 | 例如「14 日 RSI」定「21 日」？買賣線畫喺邊？ |
+| 買賣決定 | 見到呢堆訊號，應該買、持有、定賣？           |
 
-```
-eliteCount = max(1, floor(populationSize * eliteRate))
-```
-
-排序後最好嘅 `eliteCount` 個 genome **原樣複製**入下一代，唔經 crossover / mutation。保證當代最佳解唔會因為隨機操作而消失。
-
-例如 Stock 預設 `eliteRate: 0.08`、`populationSize: 48` → 約保留 3 個 elite。
+可以開 **神經網絡**（複雜少少嘅大腦），或者關咗用 **簡單投票規則**（例如趨勢 + MACD + RSI 多數贊成先買）。
 
 ---
 
-## Random Immigrant
+## 股票頁：點解有「訓練」同「測試」？
 
-每代填完之後，**最後一個 slot** 會被換成「移民」：
+想像你溫書：
 
-- 一般情況：完全隨機新 genome
-- Stock（`immigrantHeadOnly: true`）：用當代 elite 做模板，**只重抽 head（periods + masks）**，保留 NN tail
+- **前 80% 日子** = 溫習卷（訓練）  
+  電腦用呢段時間計分數、揀邊個學生生仔。
+- **後 20% 日子** = 真正考試（測試）  
+  **唔參與收生**。只係俾你睇：溫習好嘅人，考生卷係咪一樣叻。
 
-咁樣收斂後仍會持續試新 indicator 組合同 on/off 配置，又唔會每次都打亂已經穩定嘅 decision head。
+如果訓練好靚、測試好醜，好多時係 **背熟舊卷、唔係真本事**（過度擬合）。  
+呢個正正係股票 demo 想教嘅一課。
 
----
+畫面會有：
 
-## Stock fitness 同 feature selection
-
-Fitness **只睇時間序前 80% training**；最後 20% 係 sample 外測試，**唔入 selection**。
-
-大致組成：
-
-| 項               | 作用                                                                             |
-| ---------------- | -------------------------------------------------------------------------------- |
-| 全段訓練 score   | **82%**：年化×130 + **累積回報×55** + Sharpe×10 − 回撤×22 + 超額×22 + 倉位暴露×8 |
-| Soft-robust 半段 | **18%**：前半/後半 `0.35·min + 0.65·avg`（唔再用純 min 壓死回報）                |
-| 閒置 / 低倉罰    | 近零回報、或牛市低倉位又遠輸 B&H → 額外扣分（防「躺平避險」）                    |
-| L2（NN on 時）   | 輕量懲罰大 weight（×1.0）                                                        |
-| Sparsity         | 前 **5** 個開着嘅指標家族免費；之後每個 **−0.65**；全部關 → 硬罰                 |
-
-設計取向：**優先推高「訓練回報」**；風險同 sparsity 只係軟約束，避免 GA 為低回撤 / 少指標而揀出接近現金嘅冠軍。
-
-**Ablation（UI）**：冠軍出現後，逐個關 ON 緊嘅 mask，重計 fitness。
-
-- `Δ fitness > 0` → 關掉會差 → 呢個指標對當前策略有貢獻
-- `Δ fitness ≤ 0` → 關掉唔差甚至更好 → 傾向裝飾品 / 可關
-
-進化中 ablation 跟 throttled champion showcase 更新，暫停後跟 live 冠軍。
+- 股價同買賣點
+- 策略資產 vs 死買唔賣（buy-and-hold）
+- 冠軍用緊邊啲指標（開／關）
+- **Ablation 表**：逐個關掉指標，睇分數跌唔跌
+    - 關掉就大跌 → 呢個指標好似有用
+    - 關掉都唔差 → 可能係多餘裝飾
 
 ---
 
-## 可調參數（`GAConfig`）
+## 股票分數大概點計？（唔使背公式）
 
-| 參數               | 作用                                       |
-| ------------------ | ------------------------------------------ |
-| `populationSize`   | 每代個體數                                 |
-| `mutationRate`     | 每個 gene 突變機率（再經 profile 調整）    |
-| `mutationScale`    | Gaussian 擾動幅度                          |
-| `eliteRate`        | 直接保留到下一代嘅比例                     |
-| `seed`             | 可重現嘅 RNG seed                          |
-| `speed`            | Worker 代與代之間嘅延遲（只影響 UI 節奏）  |
-| `useNeuralNetwork` | Stock：開 NN decision head；關則用規則投票 |
+目標大致係：
 
----
+- **賺得多** 好
+- **太過驚、成日空手坐牛市** 差
+- **跌得好勁** 要扣分
+- **開太多無關指標** 要輕輕罰（鼓勵精簡）
+- 大腦參數大到離譜 亦輕輕罰
 
-## 關鍵原始碼
-
-| 功能                                                                          | 位置                                                                               |
-| ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `createPopulation` / `uniformCrossover` / `mutateGenome` / `evolvePopulation` | `src/lib/ga.ts`                                                                    |
-| Roulette wheel selection                                                      | `src/lib/ga.ts` → `rouletteWheelSelect`                                            |
-| Seeded RNG（含 Gaussian）                                                     | `src/lib/random.ts`                                                                |
-| 每代 evaluate → evolve 循環                                                   | `src/workers/workerRuntime.ts`                                                     |
-| Stock genome 解碼、mask 定義、mutation profile、seeds                         | `src/domains/stock/strategyGenome.ts`                                              |
-| Stock fitness、mask 應用、ablation                                            | `src/domains/stock/simulation.ts` → `evaluateStockGenome` / `ablateIndicatorMasks` |
-| Pine Script 匯出（含 mask）                                                   | `src/domains/stock/pineScript.ts`                                                  |
-| Stock UI（參數、mask chips、ablation 表）                                     | `src/components/StockLab.tsx`                                                      |
+所以電腦唔會淨係學「永遠現金最安全」——因為牛市空手會俾人笑。
 
 ---
 
-## 一句總結
+## 畫面上可以扭嘅掣
 
-每代：**評估 → 保留精英 → roulette wheel 揀父母 → uniform crossover → Gaussian/reset mutation → 塞一個 immigrant**，再重複。  
-Stock 額外用 **mask + sparsity** 做指標選擇，再用 **ablation** 解釋冠軍邊啲指標真係有用。  
-GA 係 stochastic search，同一 seed 可重現；唔保證全局最佳，亦唔係投資建議。
+| 掣       | 白話                       | 扭高會點               | 扭低會點           |
+| -------- | -------------------------- | ---------------------- | ------------------ |
+| 族群大小 | 每代幾多學生               | 試多啲組合，但慢       | 快，但可能睇得窄   |
+| 突變率   | 筆記有幾易亂改             | 多新諗法，易亂         | 穩，但易早收斂     |
+| 播放速度 | 代同代之間等多耐           | **5 = 幾乎唔等，最快** | 慢啲，易睇變化     |
+| 隨機種子 | 開局運氣編號               | 同一個種子可重現實驗   | —                  |
+| 神經網絡 | 股票：用複雜大腦定簡單規則 | 表達力強、計得多       | 規則模式快、易解釋 |
+
+---
+
+## 常見問題
+
+### 點解股票訓練好慢？
+
+因為每一個學生，都要喺好多年日線上面「假裝交易」一次。  
+學生愈多、歷史愈長，愈慢。
+
+想快：
+
+- 播放速度拉去 **5**
+- 族群細少少
+- 試下關神經網絡（規則模式）
