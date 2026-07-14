@@ -11,7 +11,7 @@ export const BREAKER_TOPOLOGY = {
 const WIDTH = 560;
 const HEIGHT = 420;
 /** Cap physics steps so long rallies cannot explode worker memory / postMessage size. */
-const MAX_STEPS = 9_999;
+const MAX_STEPS = 10_000;
 /** UI playback only needs a short highlight reel. */
 const MAX_REPLAY_FRAMES = MAX_STEPS * 2;
 const PADDLE_WIDTH = 92;

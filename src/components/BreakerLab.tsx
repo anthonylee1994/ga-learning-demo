@@ -15,7 +15,7 @@ const DEFAULT_CONFIG: GAConfig = {
     mutationScale: 0.26,
     eliteRate: 0.1,
     seed: Math.round(Math.random() * 1_000_000),
-    speed: 3,
+    speed: 5,
 };
 
 export const BreakerLab = React.memo(() => {

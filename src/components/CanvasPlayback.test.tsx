@@ -69,7 +69,7 @@ describe("champion replay playback", () => {
         const canvas = screen.getByLabelText("Block Breaker champion replay");
         expect(canvas).toHaveAttribute("data-frame-index", "0");
 
-        act(() => vi.advanceTimersByTime(35));
+        act(() => vi.advanceTimersByTime(12));
         expect(canvas).toHaveAttribute("data-frame-index", "1");
 
         act(() => vi.advanceTimersByTime(899));

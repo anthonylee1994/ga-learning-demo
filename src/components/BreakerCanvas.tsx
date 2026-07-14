@@ -14,7 +14,7 @@ interface Props {
     restartKey?: number | string;
 }
 
-export const BreakerCanvas = React.memo<Props>(({ replay, speed, playing = true, loop = true, restartKey = 0 }) => {
+export const BreakerCanvas = React.memo<Props>(({replay, speed, playing = true, loop = true, restartKey = 0}) => {
     const canvasRef = React.useRef<HTMLCanvasElement>(null);
     const [frameIndex, setFrameIndex] = React.useState(0);
 
@@ -26,7 +26,7 @@ export const BreakerCanvas = React.memo<Props>(({ replay, speed, playing = true,
         if (!playing || !replay?.frames.length) {
             return;
         }
-        const frameMs = Math.max(24, 110 - speed * 15);
+        const frameMs = Math.max(12, 80 - speed * 14);
         const currentFrame = replay.frames[frameIndex];
         const delay = currentFrame?.terminal && loop ? TERMINAL_HOLD_MS : frameMs;
         const timer = window.setTimeout(() => {
