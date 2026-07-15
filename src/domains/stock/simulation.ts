@@ -1,5 +1,5 @@
 import {argMax, createForwardRunner} from "../../lib/neuralNetwork";
-import type {Genome, IndicatorMaskState, MarketDataPoint, OptimizedIndicatorParameters, StockTrainingData, TradeMarker, TradingPoint, TradingReplay} from "../../lib/types";
+import type {Genome, IndicatorMaskState, MarketDataPoint, OptimizedIndicatorParameters, TradeMarker, TradingPoint, TradingReplay} from "../../lib/types";
 import type {IndicatorColumns} from "./indicators";
 import {calculateIndicatorColumns, columnsToSnapshots} from "./indicators";
 import {ALL_INDICATOR_MASKS_ON, countActiveMasks, decodeStockGenome, INDICATOR_MASK_DEFS, type IndicatorMaskId, STOCK_TOPOLOGY, withMaskOverride} from "./strategyGenome";
@@ -138,31 +138,6 @@ export function evaluateStockGenome(genome: Genome, points: MarketDataPoint[], u
     const sparsity = SPARSITY_PENALTY_PER_MASK * Math.max(0, activeCount - FREE_MASK_COUNT);
     // Full-segment excess vs buy-and-hold dominates; halves only guard against one-half flukes.
     return fullScore * 0.9 + robustScore * 0.1 - regularization - sparsity;
-}
-
-/**
- * Cross-market anti-overfit fitness: score the same genome on the primary series plus every
- * auxiliary series (different tickers / asset classes). Mean keeps the shared signal; the min
- * floor kills strategies that only "work" on one chart — the classic single-history overfit.
- * Excess-vs-benchmark scoring makes tickers comparable regardless of their absolute drift.
- */
-export function evaluateStockGenomeMulti(genome: Genome, data: StockTrainingData, useNetwork = true): number {
-    const scores = [evaluateStockGenome(genome, data.primary, useNetwork)];
-    for (const series of data.auxiliary) {
-        if (series.points.length) {
-            scores.push(evaluateStockGenome(genome, series.points, useNetwork));
-        }
-    }
-    if (scores.length === 1) {
-        return scores[0];
-    }
-    let sum = 0;
-    let min = Infinity;
-    for (const score of scores) {
-        sum += score;
-        min = Math.min(min, score);
-    }
-    return 0.75 * (sum / scores.length) + 0.25 * min;
 }
 
 /**

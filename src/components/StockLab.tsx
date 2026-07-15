@@ -3,14 +3,13 @@ import {Button, Spinner, Switch} from "@heroui/react";
 import {CandlestickChart, Dices, FileDown, TriangleAlert} from "lucide-react";
 import {Brush, CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis} from "recharts";
 import {useEvolutionDemo} from "../hooks/useEvolutionDemo";
-import type {GAConfig, Genome, MarketDataResponse, StockAuxiliarySeries, StockTrainingData, TopicId, TradingPoint, TradingReplay} from "../lib/types";
+import type {GAConfig, Genome, MarketDataPoint, MarketDataResponse, TopicId, TradingPoint, TradingReplay} from "../lib/types";
 import {createPineScript} from "../domains/stock/pineScript";
 import {
     ablateIndicatorMasks,
     buildNetworkFeatures,
     createTradingReplay,
     evaluateStockGenome,
-    evaluateStockGenomeMulti,
     getIndicatorColumns,
     positionBeforeDate,
     STOCK_INPUT_LABELS,
@@ -67,12 +66,6 @@ const MC_DEFAULT_CONFIG: GAConfig = {
 
 type IndicatorView = "price" | "momentum" | "macd" | "risk" | "newHigh";
 
-/**
- * Extra series scored alongside the user's ticker (anti-overfit): SPY = broad equity beta,
- * GLD = uncorrelated asset class. A strategy must hold up on all of them to breed.
- */
-const AUXILIARY_FITNESS_SYMBOLS = ["SPY", "GLD", "GOOG", "NVDA", "TSM", "AVGO"] as const;
-
 export const StockLab = React.memo(() => <StockLabView optimizer="ga" />);
 
 /** 同一交易 lab，參數搜尋改用蒙地卡羅隨機抽樣。 */
@@ -88,35 +81,17 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
     const [fetchError, setFetchError] = React.useState<string | null>(null);
     const [indicatorView, setIndicatorView] = React.useState<IndicatorView>("price");
     const [transferMessage, setTransferMessage] = React.useState<{type: "status" | "error"; text: string} | null>(null);
-    /** null = still fetching; [] = all auxiliary fetches failed (train on primary only). */
-    const [auxiliarySeries, setAuxiliarySeries] = React.useState<StockAuxiliarySeries[] | null>(null);
     const requestIdRef = React.useRef(0);
 
-    React.useEffect(() => {
-        let cancelled = false;
-        Promise.allSettled(AUXILIARY_FITNESS_SYMBOLS.map(symbol => loadMarketData(symbol))).then(results => {
-            if (cancelled) {
-                return;
-            }
-            setAuxiliarySeries(results.flatMap(result => (result.status === "fulfilled" && result.value.points.length ? [{symbol: result.value.symbol, points: result.value.points}] : [])));
-        });
-        return () => {
-            cancelled = true;
-        };
-    }, []);
-
-    // New object only when a series actually changes — useEvolutionDemo resets the worker on every data ref.
-    const trainingData = React.useMemo<StockTrainingData | undefined>(() => {
-        if (!marketData?.points.length || auxiliarySeries === null) {
+    // Pass points only when loaded — useEvolutionDemo resets the worker on every data ref change.
+    const trainingData = React.useMemo<MarketDataPoint[] | undefined>(() => {
+        if (!marketData?.points.length) {
             return undefined;
         }
-        return {
-            primary: marketData.points,
-            auxiliary: auxiliarySeries.filter(series => series.symbol !== marketData.symbol),
-        };
-    }, [marketData, auxiliarySeries]);
+        return marketData.points;
+    }, [marketData]);
 
-    const demo = useEvolutionDemo<StockTrainingData, TradingReplay>({
+    const demo = useEvolutionDemo<MarketDataPoint[], TradingReplay>({
         topic,
         createWorker: () =>
             isMonteCarlo
@@ -168,8 +143,7 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
         }
         const nnOn = demo.config.useNeuralNetwork !== false;
         const nextReplay = createTradingReplay(genome, marketData.points, nnOn);
-        // Match training fitness (cross-market) when auxiliary data is ready; otherwise primary only.
-        const fitness = trainingData ? evaluateStockGenomeMulti(genome, trainingData, nnOn) : evaluateStockGenome(genome, marketData.points, nnOn);
+        const fitness = evaluateStockGenome(genome, marketData.points, nnOn);
         demo.loadChampion({genome, replay: nextReplay, fitness});
     };
 
@@ -537,7 +511,7 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
                     <FitnessChart eyebrow={isMonteCarlo ? "搜尋訊號" : "演化訊號"} history={demo.history} title={isMonteCarlo ? "批次適應度趨勢" : "適應度趨勢"} />
                     <ApplicationPanel
                         eyebrow={isMonteCarlo ? "蒙地卡羅對應" : "GA 對應"}
-                        fitness={`超額回報主軸：log(策略資產 ÷ 買入持有資產)，打和大市 = 0 分；年化超額×250 + 累積超額×40 + 回報×12 + Sharpe×2 − 回撤×8 − 輕 L2 − soft sparsity（超過 5 個各 −0.45）。同一基因體再喺 ${AUXILIARY_FITNESS_SYMBOLS.join(" / ")} 上評分（75% 平均 + 25% 最差），單一市場先啱用嘅策略會被淘汰`}
+                        fitness="超額回報主軸：log(策略資產 ÷ 買入持有資產)，打和大市 = 0 分；年化超額×250 + 累積超額×40 + 回報×12 + Sharpe×2 − 回撤×8 − 輕 L2 − soft sparsity（超過 5 個各 −0.45）"
                         genome={
                             isMonteCarlo
                                 ? `${STOCK_PARAMETER_GENE_COUNT} 週期/門檻 + ${STOCK_MASK_GENE_COUNT} mask + ${STOCK_NETWORK_GENE_COUNT} 決策頭；每批混合全域隨機抽樣 + 冠軍附近局部遊走（局部比例 = 滑桿）`
@@ -578,13 +552,6 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
                                 使用神經網絡
                             </Switch.Content>
                         </Switch>
-                        <p className="status-message">
-                            {trainingData && trainingData.auxiliary.length
-                                ? `跨市場評分：${marketData?.symbol ?? "QQQ"} + ${trainingData.auxiliary.map(series => series.symbol).join(" + ")}（防過擬合）`
-                                : trainingData
-                                  ? "跨市場數據載入失敗，暫時只用單一市場評分。"
-                                  : "載入跨市場評分數據中……"}
-                        </p>
                         <GenomeTransfer
                             disabled={!trainingData || loading}
                             fitness={demo.champion?.fitness}
