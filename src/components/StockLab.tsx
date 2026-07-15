@@ -352,7 +352,7 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
                                 <ParameterValue label="成交量" value={`${parameters.volumeZScorePeriod}`} />
                                 <ParameterValue label="N日新高" value={`${parameters.newHighPeriod}`} />
                                 <ParameterValue label="Head 基因" value={`${STOCK_HEAD_GENE_COUNT}（週期 / 門檻，突變 ×3）`} />
-                                <ParameterValue label="決策頭" value={useNetwork ? describeStockNetwork() : "SMA / MACD / RSI / 威廉票多數；RSI / 威廉過熱賣出"} />
+                                <ParameterValue label="決策頭" value={useNetwork ? describeStockNetwork() : "SMA / MACD / RSI / 威廉票多數；升勢雙過熱先賣，否則單一過熱賣"} />
                                 <ParameterValue label="網絡基因" value={useNetwork ? `${STOCK_NETWORK_GENE_COUNT}（突變 ×0.35）` : `${STOCK_NETWORK_GENE_COUNT}（規則模式未使用）`} />
                             </div>
                         </section>
@@ -404,15 +404,15 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
                     <FitnessChart eyebrow={isMonteCarlo ? "搜尋訊號" : "演化訊號"} history={demo.history} title={isMonteCarlo ? "批次適應度趨勢" : "適應度趨勢"} />
                     <ApplicationPanel
                         eyebrow={isMonteCarlo ? "蒙地卡羅對應" : "GA 對應"}
-                        fitness="超額回報主軸：log(策略資產 ÷ 買入持有資產)，打和大市 = 0 分；年化超額×250 + 累積超額×40 + 回報×12 + Sharpe×2 − 回撤×8 − 輕 L2"
+                        fitness="超額回報主軸：log(策略資產 ÷ 買入持有資產)，打和大市 = 0 分；年化超額×250 + 累積超額×40 + 回報×40 + 持倉×18 + Sharpe×2 − 回撤×8 − 換手×35 − 輕 L2"
                         genome={
                             isMonteCarlo
-                                ? `${STOCK_PARAMETER_GENE_COUNT} 週期/門檻 + ${STOCK_NETWORK_GENE_COUNT} 決策頭；每批混合全域隨機抽樣 + 冠軍附近局部遊走（局部比例 = 滑桿）`
-                                : `${STOCK_PARAMETER_GENE_COUNT} 週期/門檻（突變 ×3）+ ${STOCK_NETWORK_GENE_COUNT} 決策頭權重（×0.35；${describeStockNetwork()}）`
+                                ? `${STOCK_PARAMETER_GENE_COUNT} 週期/門檻 + ${STOCK_NETWORK_GENE_COUNT} 決策頭；每批混合全域隨機抽樣 + 冠軍附近局部遊走（局部比例 = 滑桿）；開局有接近買入持有等種子`
+                                : `${STOCK_PARAMETER_GENE_COUNT} 週期/門檻（突變 ×3）+ ${STOCK_NETWORK_GENE_COUNT} 決策頭權重（×0.35；${describeStockNetwork()}）；開局有接近買入持有等種子`
                         }
                         genomeLabel={isMonteCarlo ? "參數向量" : "基因體"}
                         inputs="17 維特徵（全部指標常開）+ 持倉狀態。"
-                        outputs={useNetwork ? "薄隱藏層取最大 → 買 / 持 / 賣；搜尋主力喺週期 / 門檻" : "SMA / MACD / RSI / 威廉 多數票買入；RSI / 威廉過熱賣出"}
+                        outputs={useNetwork ? "薄隱藏層取最大 → 買 / 持 / 賣；搜尋主力喺週期 / 門檻" : "SMA / MACD / RSI / 威廉 多數票買入；升勢要 RSI+威廉齊過熱先賣，否則單一過熱賣"}
                         termination={isMonteCarlo ? "頭 80% 做選擇；尾 20% 唔入訓練；每批保留全域最佳，暫停時重播冠軍" : "頭 80% 做選擇；尾 20% 唔入訓練；移民只重抽 head（參數）"}
                         title={isMonteCarlo ? "點樣套用蒙地卡羅優化" : "點樣套用遺傳演算法"}
                     />

@@ -51,6 +51,8 @@ interface SegmentMetrics {
     endingPosition: number;
     /** Average long exposure in [0, 1] over the segment (cash-only ≈ 0). */
     meanExposure: number;
+    /** Mean |Δposition| per bar — thrashy policies sit high (≈ frequent full flips). */
+    meanTurnover: number;
 }
 
 interface SegmentResult extends SegmentMetrics {
@@ -112,12 +114,11 @@ export function evaluateStockGenome(genome: Genome, points: MarketDataPoint[], u
 }
 
 /**
- * Excess-return-first segment score: the main term is log(strategy equity / benchmark equity),
- * so matching buy-and-hold scores ~0 and fitness can only be earned by actually beating it.
- * Cash through a bull (negative excess) and riding a crash (worse than cash's excess) both
- * penalize themselves — no bespoke idle/lag penalties needed. Light risk terms break ties
- * toward smoother paths; a small absolute-return term keeps participation preferred when
- * two policies tie on excess.
+ * Excess-return-first segment score, with a stronger absolute-return / participation bias so
+ * bull-market demos do not collapse into cash thrash. Main term is still
+ * log(strategy equity / benchmark equity); matching buy-and-hold ≈ 0 on excess alone.
+ * Absolute return + mean exposure pull the search toward staying invested; mean turnover
+ * penalizes fee-bleeding flip-flops that look lucky on a single half-segment.
  */
 function scoreSegment(metrics: SegmentMetrics, columns: IndicatorColumns, start: number, end: number): number {
     const first = columns.close[start] || 1;
@@ -127,7 +128,7 @@ function scoreSegment(metrics: SegmentMetrics, columns: IndicatorColumns, start:
     const logExcess = Math.log(1 + Math.max(metrics.totalReturn, -0.99)) - Math.log(1 + Math.max(benchmarkReturn, -0.99));
     const annualizedExcess = logExcess / years;
 
-    return annualizedExcess * 250 + logExcess * 40 + metrics.totalReturn * 12 + metrics.sharpe * 2 - metrics.maxDrawdown * 8;
+    return annualizedExcess * 250 + logExcess * 40 + metrics.totalReturn * 40 + metrics.meanExposure * 18 + metrics.sharpe * 2 - metrics.maxDrawdown * 8 - metrics.meanTurnover * 35;
 }
 
 function meanSquare(genome: Genome): number {
@@ -262,13 +263,23 @@ export function buildNetworkFeatures(
 
 /**
  * Rule mode: SMA / MACD / RSI / Williams cast buy votes.
- * Buy = majority of the 4 votes (min 2). Sell = RSI or Williams overbought.
+ * Buy = majority of the 4 votes (min 2).
+ * Sell: RSI / Williams overbought, but in an uptrend (fast SMA > slow) require *both*
+ * exit signals — single-indicator "overbought" exits bleed train return on strong bulls.
  */
 export function decidePositionFromRules(columns: IndicatorColumns, index: number, position: number, parameters: OptimizedIndicatorParameters): number {
     const hasRsiExit = columns.rsi[index] >= parameters.rsiSellThreshold;
     const hasWilliamsExit = columns.williamsR[index] >= parameters.williamsSellThreshold;
     if (position > 0 && (hasRsiExit || hasWilliamsExit)) {
-        return 0;
+        const uptrend = columns.smaFast[index] > columns.smaSlow[index];
+        if (uptrend) {
+            // Strong trend: only exit when both momentum exits fire.
+            if (hasRsiExit && hasWilliamsExit) {
+                return 0;
+            }
+        } else if (hasRsiExit || hasWilliamsExit) {
+            return 0;
+        }
     }
 
     const votes = [
@@ -325,6 +336,7 @@ function simulateColumnMetrics(decide: PositionDecider, columns: IndicatorColumn
     let returnSqSum = 0;
     let returnCount = 0;
     let exposureSum = 0;
+    let turnoverSum = 0;
 
     for (let index = start + 1; index < end; index += 1) {
         const previous = index - 1;
@@ -337,6 +349,7 @@ function simulateColumnMetrics(decide: PositionDecider, columns: IndicatorColumn
         returnSqSum += dailyReturn * dailyReturn;
         returnCount += 1;
         exposureSum += position;
+        turnoverSum += turnover;
         peak = Math.max(peak, equity);
         maxDrawdown = Math.max(maxDrawdown, peak > 0 ? (peak - equity) / peak : 0);
         position = targetPosition;
@@ -348,6 +361,7 @@ function simulateColumnMetrics(decide: PositionDecider, columns: IndicatorColumn
         maxDrawdown,
         endingPosition: position,
         meanExposure: returnCount > 0 ? exposureSum / returnCount : 0,
+        meanTurnover: returnCount > 0 ? turnoverSum / returnCount : 0,
     };
 }
 
@@ -364,6 +378,7 @@ function simulateFullAndFirstHalf(decide: PositionDecider, columns: IndicatorCol
     let returnSqSum = 0;
     let returnCount = 0;
     let exposureSum = 0;
+    let turnoverSum = 0;
 
     let halfEquity = STARTING_EQUITY;
     let halfPeak = halfEquity;
@@ -372,6 +387,7 @@ function simulateFullAndFirstHalf(decide: PositionDecider, columns: IndicatorCol
     let halfReturnSqSum = 0;
     let halfReturnCount = 0;
     let halfExposureSum = 0;
+    let halfTurnoverSum = 0;
     let halfEndingPosition = 0;
     const halfEnd = mid + 1;
 
@@ -386,6 +402,7 @@ function simulateFullAndFirstHalf(decide: PositionDecider, columns: IndicatorCol
         returnSqSum += dailyReturn * dailyReturn;
         returnCount += 1;
         exposureSum += position;
+        turnoverSum += turnover;
         peak = Math.max(peak, equity);
         maxDrawdown = Math.max(maxDrawdown, peak > 0 ? (peak - equity) / peak : 0);
 
@@ -395,6 +412,7 @@ function simulateFullAndFirstHalf(decide: PositionDecider, columns: IndicatorCol
             halfReturnSqSum += dailyReturn * dailyReturn;
             halfReturnCount += 1;
             halfExposureSum += position;
+            halfTurnoverSum += turnover;
             halfPeak = Math.max(halfPeak, halfEquity);
             halfMaxDrawdown = Math.max(halfMaxDrawdown, halfPeak > 0 ? (halfPeak - halfEquity) / halfPeak : 0);
             halfEndingPosition = targetPosition;
@@ -410,6 +428,7 @@ function simulateFullAndFirstHalf(decide: PositionDecider, columns: IndicatorCol
             maxDrawdown,
             endingPosition: position,
             meanExposure: returnCount > 0 ? exposureSum / returnCount : 0,
+            meanTurnover: returnCount > 0 ? turnoverSum / returnCount : 0,
         },
         firstHalf: {
             totalReturn: halfEquity / STARTING_EQUITY - 1,
@@ -417,6 +436,7 @@ function simulateFullAndFirstHalf(decide: PositionDecider, columns: IndicatorCol
             maxDrawdown: halfMaxDrawdown,
             endingPosition: halfEndingPosition,
             meanExposure: halfReturnCount > 0 ? halfExposureSum / halfReturnCount : 0,
+            meanTurnover: halfReturnCount > 0 ? halfTurnoverSum / halfReturnCount : 0,
         },
     };
 }
@@ -431,6 +451,7 @@ function simulateColumnReplay(decide: PositionDecider, columns: IndicatorColumns
     let returnSqSum = 0;
     let returnCount = 0;
     let exposureSum = 0;
+    let turnoverSum = 0;
     const equityCurve = new Array<number>(length);
     if (length > 0) {
         equityCurve[0] = equity;
@@ -448,6 +469,7 @@ function simulateColumnReplay(decide: PositionDecider, columns: IndicatorColumns
         returnSqSum += dailyReturn * dailyReturn;
         returnCount += 1;
         exposureSum += position;
+        turnoverSum += turnover;
         equityCurve[index - start] = equity;
         peak = Math.max(peak, equity);
         maxDrawdown = Math.max(maxDrawdown, peak > 0 ? (peak - equity) / peak : 0);
@@ -470,6 +492,7 @@ function simulateColumnReplay(decide: PositionDecider, columns: IndicatorColumns
         maxDrawdown,
         endingPosition: position,
         meanExposure: returnCount > 0 ? exposureSum / returnCount : 0,
+        meanTurnover: returnCount > 0 ? turnoverSum / returnCount : 0,
     };
 }
 

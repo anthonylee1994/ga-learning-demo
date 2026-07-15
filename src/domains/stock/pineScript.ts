@@ -162,7 +162,9 @@ function createRuleDecisionLines(): string[] {
         "buySignal = ready and buyVotes >= neededVotes",
         "rsiSell = rsi >= rsiSellThreshold",
         "williamsSell = williamsR >= williamsSellThreshold",
-        "sellSignal = ready and (rsiSell or williamsSell)",
+        "uptrend = smaFast > smaSlow",
+        // Uptrend: need both exits (matches decidePositionFromRules trend gate).
+        "sellSignal = ready and (uptrend ? (rsiSell and williamsSell) : (rsiSell or williamsSell))",
     ];
 }
 

@@ -109,20 +109,23 @@ export function encodeGene(value: number, min: number, max: number): number {
 /**
  * Classic indicator setups + lightly biased networks so evolution starts from
  * coherent long/cash priors instead of pure noise weights.
+ * First seed is near buy-and-hold (strong buy, hard exits) so bull-market train
+ * return has a high baseline the GA can improve from rather than thrash from cash.
  */
 export function createStockSeedGenomes(): Genome[] {
     return [
+        // Near buy-and-hold: enter fast, almost never sell on classic thresholds.
         seedGenome(
             {
                 smaFast: 10,
                 smaSlow: 40,
                 williams: 14,
                 williamsBuy: -80,
-                williamsSell: -20,
+                williamsSell: -8,
                 roc: 12,
                 rsi: 14,
-                rsiBuy: 30,
-                rsiSell: 70,
+                rsiBuy: 35,
+                rsiSell: 88,
                 macdFast: 12,
                 macdSlow: 26,
                 macdSignal: 9,
@@ -132,7 +135,7 @@ export function createStockSeedGenomes(): Genome[] {
                 volumeZ: 20,
                 newHigh: 20,
             },
-            {buyBias: 1.2, holdBias: 0.2, sellBias: -0.8, weightScale: 0.05}
+            {buyBias: 2.2, holdBias: 0.6, sellBias: -1.8, weightScale: 0.03}
         ),
         seedGenome(
             {
@@ -154,7 +157,7 @@ export function createStockSeedGenomes(): Genome[] {
                 volumeZ: 20,
                 newHigh: 55,
             },
-            {buyBias: 0.4, holdBias: 0.1, sellBias: -0.2, weightScale: 0.12}
+            {buyBias: 1.0, holdBias: 0.2, sellBias: -0.6, weightScale: 0.08}
         ),
         seedGenome(
             {
@@ -176,7 +179,7 @@ export function createStockSeedGenomes(): Genome[] {
                 volumeZ: 20,
                 newHigh: 40,
             },
-            {buyBias: 0.1, holdBias: 0.3, sellBias: 0.1, weightScale: 0.18}
+            {buyBias: 0.5, holdBias: 0.25, sellBias: -0.2, weightScale: 0.12}
         ),
         seedGenome(
             {
@@ -198,7 +201,30 @@ export function createStockSeedGenomes(): Genome[] {
                 volumeZ: 30,
                 newHigh: 100,
             },
-            {buyBias: 0.8, holdBias: 0, sellBias: -0.4, weightScale: 0.08}
+            {buyBias: 0.9, holdBias: 0.1, sellBias: -0.5, weightScale: 0.08}
+        ),
+        // Mean-reversion-ish: easier exits for choppy regimes / diversification.
+        seedGenome(
+            {
+                smaFast: 8,
+                smaSlow: 34,
+                williams: 10,
+                williamsBuy: -90,
+                williamsSell: -15,
+                roc: 8,
+                rsi: 10,
+                rsiBuy: 20,
+                rsiSell: 72,
+                macdFast: 8,
+                macdSlow: 21,
+                macdSignal: 5,
+                bollinger: 15,
+                bollingerMult: 1.8,
+                volatility: 14,
+                volumeZ: 15,
+                newHigh: 30,
+            },
+            {buyBias: 0.3, holdBias: 0.15, sellBias: 0.05, weightScale: 0.15}
         ),
     ];
 }

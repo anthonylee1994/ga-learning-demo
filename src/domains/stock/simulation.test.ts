@@ -101,8 +101,26 @@ describe("stock simulation", () => {
         columns.williamsR[index] = DEFAULT_INDICATOR_PARAMETERS.williamsBuyThreshold;
         expect(decidePositionFromRules(columns, index, 0, DEFAULT_INDICATOR_PARAMETERS)).toBe(1);
 
+        // Downtrend: a single overbought exit is enough to sell.
         columns.rsi[index] = DEFAULT_INDICATOR_PARAMETERS.rsiSellThreshold;
         columns.williamsR[index] = -50;
+        expect(decidePositionFromRules(columns, index, 1, DEFAULT_INDICATOR_PARAMETERS)).toBe(0);
+    });
+
+    it("requires both exits to sell while the SMA trend is up (rule mode)", () => {
+        const columns = getIndicatorColumns(points, DEFAULT_INDICATOR_PARAMETERS);
+        const index = Math.min(50, columns.length - 1);
+        columns.smaFast[index] = 110;
+        columns.smaSlow[index] = 100;
+        columns.macd[index] = 0;
+        columns.macdSignal[index] = 1;
+        columns.rsi[index] = DEFAULT_INDICATOR_PARAMETERS.rsiSellThreshold;
+        columns.williamsR[index] = -50;
+        // Uptrend + only RSI hot → stay long.
+        expect(decidePositionFromRules(columns, index, 1, DEFAULT_INDICATOR_PARAMETERS)).toBe(1);
+
+        columns.williamsR[index] = DEFAULT_INDICATOR_PARAMETERS.williamsSellThreshold;
+        // Both exits fire → allow sell even in uptrend.
         expect(decidePositionFromRules(columns, index, 1, DEFAULT_INDICATOR_PARAMETERS)).toBe(0);
     });
 
