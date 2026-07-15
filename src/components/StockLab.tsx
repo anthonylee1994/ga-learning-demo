@@ -54,7 +54,7 @@ const MC_DEFAULT_CONFIG: GAConfig = {
     useNeuralNetwork: true,
 };
 
-type IndicatorView = "price" | "momentum" | "macd" | "risk" | "newHigh";
+type IndicatorView = "price" | "momentum" | "macd" | "risk" | "newHigh" | "newLow";
 
 export const StockLab = React.memo(() => <StockLabView optimizer="ga" />);
 
@@ -358,6 +358,7 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
                                 <ParameterValue label="波動率" value={`${parameters.volatilityPeriod}`} />
                                 <ParameterValue label="成交量" value={`${parameters.volumeZScorePeriod}`} />
                                 <ParameterValue label="N日新高" value={`${parameters.newHighPeriod}`} />
+                                <ParameterValue label="N日新低" value={`${parameters.newLowPeriod}`} />
                                 <ParameterValue label="Head 基因" value={`${STOCK_HEAD_GENE_COUNT}（週期 / 門檻，突變 ×3）`} />
                                 <ParameterValue label="決策頭" value={useNetwork ? describeStockNetwork() : "SMA / MACD / RSI / 威廉票多數；升勢雙過熱先賣，否則單一過熱賣"} />
                                 <ParameterValue label="網絡基因" value={useNetwork ? `${STOCK_NETWORK_GENE_COUNT}（突變 ×0.35）` : `${STOCK_NETWORK_GENE_COUNT}（規則模式未使用）`} />
@@ -376,6 +377,7 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
                                 <option value="macd">MACD</option>
                                 <option value="risk">波動率 + 成交量</option>
                                 <option value="newHigh">N 日高</option>
+                                <option value="newLow">N 日低</option>
                             </select>
                         </div>
                         <div className="chart-height-lg">
@@ -418,7 +420,7 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
                                 : `${STOCK_PARAMETER_GENE_COUNT} 週期/門檻（突變 ×3）+ ${STOCK_NETWORK_GENE_COUNT} 決策頭權重（×0.35；${describeStockNetwork()}）；開局有接近買入持有等種子`
                         }
                         genomeLabel={isMonteCarlo ? "參數向量" : "基因體"}
-                        inputs="21 維特徵：高低開收 + 全部指標常開 + 持倉狀態。"
+                        inputs="22 維特徵：高低開收 + 全部指標常開（含 N 日新高／新低）+ 持倉狀態。"
                         outputs={useNetwork ? "薄隱藏層取最大 → 買 / 持 / 賣；搜尋主力喺週期 / 門檻" : "SMA / MACD / RSI / 威廉 多數票買入；升勢要 RSI+威廉齊過熱先賣，否則單一過熱賣"}
                         termination={isMonteCarlo ? "頭 80% 做選擇；尾 20% 唔入訓練；每批保留全域最佳，暫停時重播冠軍" : "頭 80% 做選擇；尾 20% 唔入訓練；移民只重抽 head（參數）"}
                         title={isMonteCarlo ? "點樣套用蒙地卡羅優化" : "點樣套用遺傳演算法"}
@@ -485,6 +487,8 @@ type MarketChartDatum = {
     volumeZScore?: number;
     nDayHigh?: number;
     newHighRatio?: number;
+    nDayLow?: number;
+    newLowRatio?: number;
 };
 
 interface MarketChartProps {
@@ -514,7 +518,7 @@ const MarketChart = React.memo<MarketChartProps>(
                     <CartesianGrid stroke="#252a31" strokeDasharray="3 3" vertical={false} />
                     <XAxis dataKey="date" minTickGap={70} stroke="#747b86" tick={{fontSize: 12}} tickLine={false} />
                     <YAxis domain={["auto", "auto"]} stroke="#747b86" tick={{fontSize: 12}} tickLine={false} width={58} yAxisId="price" />
-                    {(indicatorView === "momentum" || indicatorView === "macd" || indicatorView === "risk" || indicatorView === "newHigh") && hasReplay ? (
+                    {(indicatorView === "momentum" || indicatorView === "macd" || indicatorView === "risk" || indicatorView === "newHigh" || indicatorView === "newLow") && hasReplay ? (
                         <YAxis domain={["auto", "auto"]} orientation="right" stroke="#747b86" tick={{fontSize: 12}} tickLine={false} width={48} yAxisId="indicator" />
                     ) : null}
                     <Tooltip contentStyle={{background: "#15191f", border: "1px solid #303640", borderRadius: 8}} />
@@ -538,6 +542,12 @@ const MarketChart = React.memo<MarketChartProps>(
                         <React.Fragment>
                             <Line dataKey="nDayHigh" dot={false} isAnimationActive={false} name={`${parameters.newHighPeriod} 日高`} stroke="#d48bd4" strokeWidth={1.5} yAxisId="price" />
                             <Line dataKey="newHighRatio" dot={false} isAnimationActive={false} name="收市 / N 日高" stroke="#63c6a1" strokeWidth={1} yAxisId="indicator" />
+                        </React.Fragment>
+                    ) : null}
+                    {indicatorView === "newLow" && hasReplay && parameters ? (
+                        <React.Fragment>
+                            <Line dataKey="nDayLow" dot={false} isAnimationActive={false} name={`${parameters.newLowPeriod} 日低`} stroke="#5da6d9" strokeWidth={1.5} yAxisId="price" />
+                            <Line dataKey="newLowRatio" dot={false} isAnimationActive={false} name="N 日低 / 收市" stroke="#e7b955" strokeWidth={1} yAxisId="indicator" />
                         </React.Fragment>
                     ) : null}
                     {indicatorView === "momentum" && hasReplay ? (

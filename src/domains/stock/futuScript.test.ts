@@ -16,11 +16,12 @@ describe("Futu Python export", () => {
         expect(script).toContain(`WILL_P = ${parameters.williamsPeriod}`);
         expect(script).toContain(`BB_P = ${parameters.bollingerPeriod}`);
         expect(script).toContain(`NEW_H_P = ${parameters.newHighPeriod}`);
+        expect(script).toContain(`NEW_L_P = ${parameters.newLowPeriod}`);
         expect(script).toContain("H1 = [");
         expect(script).toContain("H2 = [");
         expect(script).toContain("OUT = [");
         expect(script).toContain("def _dense(inputs, row):");
-        expect(script).toContain("feats.append(f16)");
+        expect(script).toContain("feats.append(f17)");
         expect(script).toContain("buy_signal = (out_buy >= out_hold + 0.08) and (out_buy >= out_sell)");
         expect(script).toContain("MIN_BARS_LONG = 15");
         expect(script).toContain("MIN_BARS_CASH = 15");
@@ -30,6 +31,7 @@ describe("Futu Python export", () => {
         expect(script).toContain('plot("SMA Slow", sma_s_seq, Color.blue)');
         expect(script).toContain('plot("BB Upper", bb_up_seq, Color.gray)');
         expect(script).toContain('plot("N-day High", ndh_seq, Color.limagenta)');
+        expect(script).toContain('plot("N-day Low", ndl_seq, Color.cyan)');
         expect(script).toContain("Shape.labelup");
         expect(script).toContain("Shape.labeldown");
         expect(script).toContain("Color.white");
@@ -47,7 +49,7 @@ describe("Futu Python export", () => {
         expect(script).toContain("H1 = []");
         expect(script).toContain("buy_votes = trend_vote + macd_vote");
         expect(script).toContain("buy_signal = buy_votes >= 2");
-        expect(script).not.toContain("feats.append(f16)");
+        expect(script).not.toContain("feats.append(f17)");
         expect(script).not.toContain("out_buy = _dense");
     });
 });

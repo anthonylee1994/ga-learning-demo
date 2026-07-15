@@ -118,6 +118,8 @@ export interface OptimizedIndicatorParameters {
     volumeZScorePeriod: number;
     /** Lookback for N-day highest high (breakout / new-high signal). */
     newHighPeriod: number;
+    /** Lookback for N-day lowest low (support / new-low signal). */
+    newLowPeriod: number;
 }
 
 export interface IndicatorSnapshot {
@@ -141,6 +143,10 @@ export interface IndicatorSnapshot {
     nDayHigh: number;
     /** close / nDayHigh — 1.0 means at the N-day high. */
     newHighRatio: number;
+    /** Rolling N-day lowest low. */
+    nDayLow: number;
+    /** nDayLow / close — 1.0 means at the N-day low. */
+    newLowRatio: number;
 }
 
 export interface TradeMarker {
@@ -168,6 +174,8 @@ export interface TradingPoint {
     volumeZScore: number;
     nDayHigh: number;
     newHighRatio: number;
+    nDayLow: number;
+    newLowRatio: number;
 }
 
 export interface TradingReplay {

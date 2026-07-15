@@ -78,7 +78,8 @@ describe("stock simulation", () => {
             expect(value).toBeGreaterThanOrEqual(-1);
             expect(value).toBeLessThanOrEqual(1);
         });
-        expect(features[16]).toBe(1);
+        // 持倉特徵喺 index 17（N 日新低喺 16）
+        expect(features[17]).toBe(1);
     });
 
     it("includes OHLC candle structure in the feature vector", () => {
@@ -102,18 +103,19 @@ describe("stock simulation", () => {
         columns.rsi[index] = 20;
         columns.williamsR[index] = -90;
         const oversold = buildNetworkFeatures(columns, index, 0, DEFAULT_INDICATOR_PARAMETERS);
-        expect(oversold[17]).toBeGreaterThan(0);
-        expect(oversold[18]).toBeLessThan(0);
-        expect(oversold[19]).toBeGreaterThan(0);
-        expect(oversold[20]).toBeLessThan(0);
+        // 18–21：RSI 買距 / 賣距 / W% 買距 / 賣距
+        expect(oversold[18]).toBeGreaterThan(0);
+        expect(oversold[19]).toBeLessThan(0);
+        expect(oversold[20]).toBeGreaterThan(0);
+        expect(oversold[21]).toBeLessThan(0);
 
         columns.rsi[index] = 80;
         columns.williamsR[index] = -10;
         const overbought = buildNetworkFeatures(columns, index, 1, DEFAULT_INDICATOR_PARAMETERS);
-        expect(overbought[17]).toBeLessThan(0);
-        expect(overbought[18]).toBeGreaterThan(0);
-        expect(overbought[19]).toBeLessThan(0);
-        expect(overbought[20]).toBeGreaterThan(0);
+        expect(overbought[18]).toBeLessThan(0);
+        expect(overbought[19]).toBeGreaterThan(0);
+        expect(overbought[20]).toBeLessThan(0);
+        expect(overbought[21]).toBeGreaterThan(0);
     });
 
     it("uses tuned RSI and Williams thresholds in rule mode", () => {

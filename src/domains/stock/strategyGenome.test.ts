@@ -41,6 +41,8 @@ describe("stock strategy genome", () => {
         expect(decoded.parameters.macdSlowPeriod).toBeGreaterThan(decoded.parameters.macdFastPeriod);
         expect(decoded.parameters.newHighPeriod).toBeGreaterThanOrEqual(10);
         expect(decoded.parameters.newHighPeriod).toBeLessThanOrEqual(120);
+        expect(decoded.parameters.newLowPeriod).toBeGreaterThanOrEqual(10);
+        expect(decoded.parameters.newLowPeriod).toBeLessThanOrEqual(120);
         expect(decoded.networkGenome).toHaveLength(STOCK_NETWORK_GENE_COUNT);
     });
 

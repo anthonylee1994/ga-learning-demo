@@ -5,8 +5,8 @@ import {decodeStockGenome} from "./strategyGenome";
 /**
  * Futu Python indicator export (IndicatorParser-compatible).
  * - No generator expressions / list comprehensions with `for` inside calls
- * - True state machine + f16 position feedback (matches Pine process_orders_on_close)
- * - Plots SMA / BB / nDayHigh + buy/sell icons
+ * - True state machine + f17 position feedback (matches Pine process_orders_on_close)
+ * - Plots SMA / BB / nDayHigh / nDayLow + buy/sell icons
  */
 export function createFutuPythonScript(genome: Genome, useNetwork = true): string {
     const {parameters, networkGenome} = decodeStockGenome(genome);
@@ -34,6 +34,7 @@ BB_M = ${formatNum(parameters.bollingerMultiplier)}
 VLT_P = ${parameters.volatilityPeriod}
 VZ_P = ${parameters.volumeZScorePeriod}
 NEW_H_P = ${parameters.newHighPeriod}
+NEW_L_P = ${parameters.newLowPeriod}
 
 ${weightBlock}
 NAN = float("nan")
@@ -237,7 +238,7 @@ def compute_signals():
     n = len(c)
     empty = []
     if n == 0:
-        return empty, empty, empty, empty, empty, empty, empty
+        return empty, empty, empty, empty, empty, empty, empty, empty
 
     sma_f = _sma(c, SMA_FAST)
     sma_s = _sma(c, SMA_SLOW)
@@ -274,6 +275,7 @@ def compute_signals():
     vol_ma = _sma(v, VZ_P)
     vol_sd = _stdev(v, VZ_P)
     ndh = _hhv(h, NEW_H_P)
+    ndl = _llv(l, NEW_L_P)
 
     roc = []
     i = 0
@@ -368,6 +370,8 @@ def compute_signals():
         warm = VZ_P
     if NEW_H_P > warm:
         warm = NEW_H_P
+    if NEW_L_P > warm:
+        warm = NEW_L_P
 
     i = 0
     while i < n:
@@ -395,6 +399,8 @@ def compute_signals():
                 ready = False
             if not _valid(ndh[i]):
                 ready = False
+            if not _valid(ndl[i]):
+                ready = False
             if not _valid(c[i]):
                 ready = False
             if not _valid(o[i]):
@@ -407,9 +413,9 @@ def compute_signals():
                 ready = False
 
         if position > 0:
-            f16 = 1.0
+            f17 = 1.0
         else:
-            f16 = -1.0
+            f17 = -1.0
 
         if not ready:
             i = i + 1
@@ -429,7 +435,7 @@ ${decisionBlock}
 
         i = i + 1
 
-    return enter, exit_, sma_f, sma_s, bb_up, bb_lo, ndh
+    return enter, exit_, sma_f, sma_s, bb_up, bb_lo, ndh, ndl
 
 
 def _nan_to_plot(values):
@@ -476,7 +482,7 @@ def _to_float_seq(values):
 
 
 if __name__ == "__main__":
-    enter, exit_, sma_f, sma_s, bb_up, bb_lo, ndh = compute_signals()
+    enter, exit_, sma_f, sma_s, bb_up, bb_lo, ndh, ndl = compute_signals()
 
     enter_f = []
     exit_f = []
@@ -502,12 +508,14 @@ if __name__ == "__main__":
     bb_up_seq = _to_float_seq(_nan_to_plot(bb_up))
     bb_lo_seq = _to_float_seq(_nan_to_plot(bb_lo))
     ndh_seq = _to_float_seq(_nan_to_plot(ndh))
+    ndl_seq = _to_float_seq(_nan_to_plot(ndl))
 
     plot("SMA Fast", sma_f_seq, Color.yellow)
     plot("SMA Slow", sma_s_seq, Color.blue)
     plot("BB Upper", bb_up_seq, Color.gray)
     plot("BB Lower", bb_lo_seq, Color.gray)
     plot("N-day High", ndh_seq, Color.limagenta)
+    plot("N-day Low", ndl_seq, Color.cyan)
 
     plot_icon("buy", enter_seq > 0, low(), Shape.labelup, Color.white, 1, 0, 10)
     plot_icon("sell", exit_seq > 0, high(), Shape.labeldown, Color.white, 1, 0, 10)
@@ -521,6 +529,7 @@ if __name__ == "__main__":
         BbUpper=bb_up_seq,
         BbLower=bb_lo_seq,
         NDayHigh=ndh_seq,
+        NDayLow=ndl_seq,
     )
 `;
 }
@@ -577,7 +586,9 @@ function emitNetworkDecisionLoop(): string {
         feats.append(_clamp(vlt[i] * 5.0))
         feats.append(_clamp(volz / 3.0))
         feats.append(_clamp((nhr - 0.95) * 20.0))
-        feats.append(f16)
+        nlr = ndl[i] / _max2(c[i], 1e-9)
+        feats.append(_clamp((nlr - 0.95) * 20.0))
+        feats.append(f17)
         feats.append(_clamp((RSI_BUY - rsi[i]) / 20.0))
         feats.append(_clamp((rsi[i] - RSI_SELL) / 20.0))
         feats.append(_clamp((WILL_BUY - wr) / 25.0))

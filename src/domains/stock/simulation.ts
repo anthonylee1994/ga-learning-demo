@@ -7,7 +7,7 @@
  * 3. 每 bar：decider 決定目標倉位 0|1 → 收日回報 − 換手手續費
  *
  * 兩種決策模式：
- * - useNetwork=true：NN 睇 21 維特徵 → 買／持／賣（要有 margin 先轉倉）
+ * - useNetwork=true：NN 睇 22 維特徵 → 買／持／賣（要有 margin 先轉倉）
  * - useNetwork=false：規則投票（SMA / MACD / RSI / Williams）
  *
  * 兩者外層都包 withHoldCooldown，防止日日 thrash 俾 fee 食晒。
@@ -20,7 +20,7 @@ import {decodeStockGenome, STOCK_TOPOLOGY} from "./strategyGenome";
 
 export {STOCK_TOPOLOGY} from "./strategyGenome";
 
-/** 對應 21 維 NN 輸入（畀 UI activation 標籤） */
+/** 對應 22 維 NN 輸入（畀 UI activation 標籤） */
 export const STOCK_INPUT_LABELS = [
     "開",
     "高",
@@ -38,6 +38,7 @@ export const STOCK_INPUT_LABELS = [
     "波動率",
     "成交量",
     "N日新高",
+    "N日新低",
     "持倉",
     "RSI買距",
     "RSI賣距",
@@ -251,6 +252,8 @@ export function createTradingReplay(genome: Genome, points: MarketDataPoint[], u
             volumeZScore: columns.volumeZScore[index],
             nDayHigh: columns.nDayHigh[index],
             newHighRatio: columns.newHighRatio[index],
+            nDayLow: columns.nDayLow[index],
+            newLowRatio: columns.newLowRatio[index],
         };
     }
 
@@ -300,15 +303,15 @@ export function positionBeforeDate(trades: TradeMarker[], date: string): number 
 }
 
 /**
- * 組 21 維 NN 特徵，大致 clamp 到 [-1, 1]，等 tanh 單元 scale 一致。
+ * 組 22 維 NN 特徵，大致 clamp 到 [-1, 1]，等 tanh 單元 scale 一致。
  * 可傳入 `out` buffer 重用，避免每 bar new array。
  *
  * 特徵分組：
  *   0–3   K 線結構 + 日回報
  *   4–6   SMA 快慢／交叉
- *   7–15  動量／波動／量／新高
- *   16    目前持倉（±1）
- *   17–20 離 genome 解出嘅 RSI／Williams 買賣門檻距離
+ *   7–16  動量／波動／量／新高／新低
+ *   17    目前持倉（±1）
+ *   18–21 離 genome 解出嘅 RSI／Williams 買賣門檻距離
  */
 export function buildNetworkFeatures(
     columns: IndicatorColumns,
@@ -341,11 +344,13 @@ export function buildNetworkFeatures(
     out[14] = clamp(columns.volumeZScore[index] / 3);
     // close / N-day high ≈ 1 係突破；把 ~[0.9, 1.0] 拉開到 roughly [-1, 1]
     out[15] = clamp((columns.newHighRatio[index] - 0.95) * 20);
-    out[16] = position > 0 ? 1 : -1;
-    out[17] = clamp((parameters.rsiBuyThreshold - columns.rsi[index]) / 20);
-    out[18] = clamp((columns.rsi[index] - parameters.rsiSellThreshold) / 20);
-    out[19] = clamp((parameters.williamsBuyThreshold - columns.williamsR[index]) / 25);
-    out[20] = clamp((columns.williamsR[index] - parameters.williamsSellThreshold) / 25);
+    // nDayLow / close ≈ 1 係貼近 N 日低（同新高 ratio 對稱）
+    out[16] = clamp((columns.newLowRatio[index] - 0.95) * 20);
+    out[17] = position > 0 ? 1 : -1;
+    out[18] = clamp((parameters.rsiBuyThreshold - columns.rsi[index]) / 20);
+    out[19] = clamp((columns.rsi[index] - parameters.rsiSellThreshold) / 20);
+    out[20] = clamp((parameters.williamsBuyThreshold - columns.williamsR[index]) / 25);
+    out[21] = clamp((columns.williamsR[index] - parameters.williamsSellThreshold) / 25);
     return out;
 }
 
@@ -450,6 +455,7 @@ function createIndicatorCacheKey(parameters: OptimizedIndicatorParameters): stri
         parameters.volatilityPeriod,
         parameters.volumeZScorePeriod,
         parameters.newHighPeriod,
+        parameters.newLowPeriod,
     ].join(":");
 }
 

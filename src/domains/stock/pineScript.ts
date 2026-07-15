@@ -35,6 +35,7 @@ bollingerMultiplier = ${formatNumber(parameters.bollingerMultiplier)}
 volatilityPeriod = ${parameters.volatilityPeriod}
 volumeZScorePeriod = ${parameters.volumeZScorePeriod}
 newHighPeriod = ${parameters.newHighPeriod}
+newLowPeriod = ${parameters.newLowPeriod}
 
 clamp(value) => math.min(1.0, math.max(-1.0, nz(value)))
 tanh(value) =>
@@ -67,8 +68,10 @@ volumeDeviation = ta.stdev(volume, volumeZScorePeriod)
 volumeZScore = (volume - volumeAverage) / math.max(volumeDeviation, 0.000000001)
 nDayHigh = ta.highest(high, newHighPeriod)
 newHighRatio = close / math.max(nDayHigh, 0.000000001)
+nDayLow = ta.lowest(low, newLowPeriod)
+newLowRatio = nDayLow / math.max(close, 0.000000001)
 
-ready = not na(smaSlow) and not na(williamsR) and not na(roc) and not na(rsi) and not na(macdSignal) and not na(bollingerUpper) and not na(volatility) and not na(volumeZScore) and not na(nDayHigh)
+ready = not na(smaSlow) and not na(williamsR) and not na(roc) and not na(rsi) and not na(macdSignal) and not na(bollingerUpper) and not na(volatility) and not na(volumeZScore) and not na(nDayHigh) and not na(nDayLow)
 ${decisionLines.join("\n")}
 
 if buySignal and strategy.position_size <= 0
@@ -79,6 +82,7 @@ if sellSignal and strategy.position_size > 0
 plot(smaFast, "Optimized SMA Fast", color=color.yellow)
 plot(smaSlow, "Optimized SMA Slow", color=color.blue)
 plot(nDayHigh, "N-day High", color=color.fuchsia)
+plot(nDayLow, "N-day Low", color=color.aqua)
 upperPlot = plot(bollingerUpper, "Optimized BB Upper", color=color.new(color.gray, 35))
 lowerPlot = plot(bollingerLower, "Optimized BB Lower", color=color.new(color.gray, 35))
 fill(upperPlot, lowerPlot, color=color.new(color.gray, 92))
@@ -125,11 +129,12 @@ export function createNetworkDecisionLines(networkGenome: Genome): string[] {
         `f13 = clamp(volatility * 5.0)`,
         `f14 = clamp(volumeZScore / 3.0)`,
         `f15 = clamp((newHighRatio - 0.95) * 20.0)`,
-        "f16 = strategy.position_size > 0 ? 1.0 : -1.0",
-        `f17 = clamp((rsiBuyThreshold - rsi) / 20.0)`,
-        `f18 = clamp((rsi - rsiSellThreshold) / 20.0)`,
-        `f19 = clamp((williamsBuyThreshold - williamsR) / 25.0)`,
-        `f20 = clamp((williamsR - williamsSellThreshold) / 25.0)`,
+        `f16 = clamp((newLowRatio - 0.95) * 20.0)`,
+        "f17 = strategy.position_size > 0 ? 1.0 : -1.0",
+        `f18 = clamp((rsiBuyThreshold - rsi) / 20.0)`,
+        `f19 = clamp((rsi - rsiSellThreshold) / 20.0)`,
+        `f20 = clamp((williamsBuyThreshold - williamsR) / 25.0)`,
+        `f21 = clamp((williamsR - williamsSellThreshold) / 25.0)`,
         "",
     ];
 

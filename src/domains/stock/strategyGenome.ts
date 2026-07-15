@@ -7,14 +7,14 @@ import type {Genome, NetworkTopology, OptimizedIndicatorParameters} from "../../
  * budget on indicator periods / thresholds (see STOCK_MUTATION_PROFILE), not a fat hidden net.
  */
 export const STOCK_TOPOLOGY: NetworkTopology = {
-    /** 高低開收 4 維 + 指標/門檻距離/持倉 17 維。 */
-    inputSize: 21,
+    /** 高低開收 4 維 + 指標/門檻距離/持倉 18 維（含 N 日新高／新低）。 */
+    inputSize: 22,
     hiddenLayers: [10, 5],
     outputSize: 3,
 };
 
-/** Period/threshold genes (0–16). */
-export const STOCK_PARAMETER_GENE_COUNT = 17;
+/** Period/threshold genes (0–17). */
+export const STOCK_PARAMETER_GENE_COUNT = 18;
 /** Parameter genes — mutated harder than the NN tail. */
 export const STOCK_HEAD_GENE_COUNT = STOCK_PARAMETER_GENE_COUNT;
 export const STOCK_NETWORK_GENE_COUNT = calculateGeneCount(STOCK_TOPOLOGY);
@@ -53,6 +53,7 @@ export const DEFAULT_INDICATOR_PARAMETERS: OptimizedIndicatorParameters = {
     volatilityPeriod: 20,
     volumeZScorePeriod: 20,
     newHighPeriod: 55,
+    newLowPeriod: 55,
 };
 
 export interface DecodedStockGenome {
@@ -90,6 +91,7 @@ export function decodeStockGenome(genome: Genome): DecodedStockGenome {
             volatilityPeriod: value(10, 10, 60),
             volumeZScorePeriod: value(11, 10, 60),
             newHighPeriod: value(12, 10, 120),
+            newLowPeriod: value(17, 10, 120),
         },
         networkGenome: genome.slice(STOCK_HEAD_GENE_COUNT),
     };
@@ -137,6 +139,7 @@ export function createStockSeedGenomes(): Genome[] {
                 volatility: 20,
                 volumeZ: 20,
                 newHigh: 20,
+                newLow: 20,
             },
             {buyBias: 2.2, holdBias: 0.6, sellBias: -1.8, weightScale: 0.03}
         ),
@@ -159,6 +162,7 @@ export function createStockSeedGenomes(): Genome[] {
                 volatility: 20,
                 volumeZ: 20,
                 newHigh: 55,
+                newLow: 55,
             },
             {buyBias: 1.0, holdBias: 0.2, sellBias: -0.6, weightScale: 0.08}
         ),
@@ -181,6 +185,7 @@ export function createStockSeedGenomes(): Genome[] {
                 volatility: 14,
                 volumeZ: 20,
                 newHigh: 40,
+                newLow: 40,
             },
             {buyBias: 0.5, holdBias: 0.25, sellBias: -0.2, weightScale: 0.12}
         ),
@@ -203,6 +208,7 @@ export function createStockSeedGenomes(): Genome[] {
                 volatility: 30,
                 volumeZ: 30,
                 newHigh: 100,
+                newLow: 100,
             },
             {buyBias: 0.9, holdBias: 0.1, sellBias: -0.5, weightScale: 0.08}
         ),
@@ -226,6 +232,7 @@ export function createStockSeedGenomes(): Genome[] {
                 volatility: 14,
                 volumeZ: 15,
                 newHigh: 30,
+                newLow: 30,
             },
             {buyBias: 0.3, holdBias: 0.15, sellBias: 0.05, weightScale: 0.15}
         ),
@@ -266,6 +273,7 @@ function seedGenome(
         volatility: number;
         volumeZ: number;
         newHigh: number;
+        newLow: number;
     },
     network: {buyBias: number; holdBias: number; sellBias: number; weightScale: number}
 ): Genome {
@@ -287,6 +295,7 @@ function seedGenome(
     genome[14] = encodeGene(periods.rsiSell, 55, 90);
     genome[15] = encodeGene(periods.williamsBuy, -95, -55);
     genome[16] = encodeGene(periods.williamsSell, -45, -5);
+    genome[17] = encodeGene(periods.newLow, 10, 120);
 
     // Deterministic small weights + explicit output biases (buy / hold / sell).
     // Offset must skip every hidden layer (not only the first) — multi-layer heads

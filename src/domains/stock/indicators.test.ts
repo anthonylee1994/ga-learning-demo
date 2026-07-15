@@ -20,10 +20,13 @@ describe("stock indicators", () => {
                 volumeZScore: expect.any(Number),
                 nDayHigh: expect.any(Number),
                 newHighRatio: expect.any(Number),
+                nDayLow: expect.any(Number),
+                newLowRatio: expect.any(Number),
             })
         );
-        expect(rows.every(row => Number.isFinite(row.rsi) && Number.isFinite(row.volumeZScore) && Number.isFinite(row.newHighRatio))).toBe(true);
+        expect(rows.every(row => Number.isFinite(row.rsi) && Number.isFinite(row.volumeZScore) && Number.isFinite(row.newHighRatio) && Number.isFinite(row.newLowRatio))).toBe(true);
         expect(rows.every(row => row.newHighRatio > 0 && row.newHighRatio <= 1 + 1e-9)).toBe(true);
+        expect(rows.every(row => row.newLowRatio > 0 && row.newLowRatio <= 1 + 1e-9)).toBe(true);
     });
 
     it("changes indicator output when the GA parameters change", () => {
@@ -55,6 +58,19 @@ describe("stock indicators", () => {
         expect(last!.nDayHigh).toBeGreaterThanOrEqual(last!.close);
     });
 
+    it("marks a falling trough near the N-day low", () => {
+        const points = createMarketData(120).map((point, index) => {
+            // Steady decline so the last bar sits near the lookback low.
+            const price = 200 - index;
+            return {...point, open: price, high: price + 1, low: price - 1, close: price};
+        });
+        const rows = calculateIndicators(points, {...DEFAULT_INDICATOR_PARAMETERS, newLowPeriod: 20});
+        const last = rows.at(-1);
+        expect(last).toBeDefined();
+        expect(last!.newLowRatio).toBeGreaterThan(0.95);
+        expect(last!.nDayLow).toBeLessThanOrEqual(last!.close);
+    });
+
     it("forgets an older peak when the N-day lookback is shorter", () => {
         const points = createMarketData(200);
         // Spike ~50 bars before the end: long (80) still sees it, short (20) does not.
@@ -65,6 +81,17 @@ describe("stock indicators", () => {
         expect(longLookback.at(-1)?.nDayHigh).toBe(500);
         expect(shortLookback.at(-1)?.nDayHigh).toBeLessThan(500);
         expect(shortLookback.at(-1)?.newHighRatio).toBeGreaterThan(longLookback.at(-1)?.newHighRatio ?? 0);
+    });
+
+    it("forgets an older trough when the N-day low lookback is shorter", () => {
+        const points = createMarketData(200);
+        const troughIndex = points.length - 50;
+        points[troughIndex] = {...points[troughIndex], low: 1, close: 5};
+        const longLookback = calculateIndicators(points, {...DEFAULT_INDICATOR_PARAMETERS, newLowPeriod: 80});
+        const shortLookback = calculateIndicators(points, {...DEFAULT_INDICATOR_PARAMETERS, newLowPeriod: 20});
+        expect(longLookback.at(-1)?.nDayLow).toBe(1);
+        expect(shortLookback.at(-1)?.nDayLow).toBeGreaterThan(1);
+        expect(shortLookback.at(-1)?.newLowRatio).toBeGreaterThan(longLookback.at(-1)?.newLowRatio ?? 0);
     });
 
     it("does not leak a future price into earlier indicators", () => {

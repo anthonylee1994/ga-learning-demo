@@ -33,6 +33,8 @@ export interface IndicatorColumns {
     volumeZScore: Float64Array;
     nDayHigh: Float64Array;
     newHighRatio: Float64Array;
+    nDayLow: Float64Array;
+    newLowRatio: Float64Array;
 }
 
 export function calculateIndicatorColumns(points: MarketDataPoint[], parameters: OptimizedIndicatorParameters = DEFAULT_INDICATOR_PARAMETERS): IndicatorColumns {
@@ -62,6 +64,8 @@ export function calculateIndicatorColumns(points: MarketDataPoint[], parameters:
         volumeZScore: new Float64Array(length),
         nDayHigh: new Float64Array(length),
         newHighRatio: new Float64Array(length),
+        nDayLow: new Float64Array(length),
+        newLowRatio: new Float64Array(length),
     };
     if (length === 0) {
         return columns;
@@ -85,6 +89,7 @@ export function calculateIndicatorColumns(points: MarketDataPoint[], parameters:
         const volumeMean = meanRange(volumes, index - parameters.volumeZScorePeriod + 1, index + 1);
         const volumeDeviation = standardDeviationRange(volumes, index - parameters.volumeZScorePeriod + 1, index + 1, volumeMean);
         const nDayHigh = highestHighRange(points, index - parameters.newHighPeriod + 1, index + 1);
+        const nDayLow = lowestLowRange(points, index - parameters.newLowPeriod + 1, index + 1);
 
         const prevClose = index > 0 ? closes[index - 1] : point.open;
         columns.open[cursor] = point.open;
@@ -108,6 +113,9 @@ export function calculateIndicatorColumns(points: MarketDataPoint[], parameters:
         columns.volumeZScore[cursor] = (point.volume - volumeMean) / Math.max(volumeDeviation, EPSILON);
         columns.nDayHigh[cursor] = nDayHigh;
         columns.newHighRatio[cursor] = point.close / Math.max(nDayHigh, EPSILON);
+        columns.nDayLow[cursor] = nDayLow;
+        // 對稱 newHighRatio：越接近 N 日低 → ratio 越近 1
+        columns.newLowRatio[cursor] = nDayLow / Math.max(point.close, EPSILON);
     }
 
     return columns;
@@ -136,6 +144,8 @@ export function columnsToSnapshots(points: MarketDataPoint[], columns: Indicator
             volumeZScore: columns.volumeZScore[cursor],
             nDayHigh: columns.nDayHigh[cursor],
             newHighRatio: columns.newHighRatio[cursor],
+            nDayLow: columns.nDayLow[cursor],
+            newLowRatio: columns.newLowRatio[cursor],
         };
     }
     return snapshots;
@@ -155,7 +165,8 @@ export function getIndicatorWarmup(parameters: OptimizedIndicatorParameters): nu
         parameters.bollingerPeriod,
         parameters.volatilityPeriod,
         parameters.volumeZScorePeriod,
-        parameters.newHighPeriod
+        parameters.newHighPeriod,
+        parameters.newLowPeriod
     );
 }
 
@@ -227,6 +238,14 @@ function highestHighRange(points: MarketDataPoint[], start: number, end: number)
         highest = Math.max(highest, points[index].high);
     }
     return highest;
+}
+
+function lowestLowRange(points: MarketDataPoint[], start: number, end: number): number {
+    let lowest = Infinity;
+    for (let index = start; index < end; index += 1) {
+        lowest = Math.min(lowest, points[index].low);
+    }
+    return lowest;
 }
 
 function meanRange(values: number[], start: number, end: number): number {
