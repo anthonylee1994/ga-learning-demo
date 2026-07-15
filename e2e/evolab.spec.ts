@@ -158,8 +158,8 @@ test("stock evolution tunes RSI and Williams thresholds", async ({page}, testInf
     expect(pineScript).toContain("rsiSellThreshold =");
     expect(pineScript).toContain("williamsBuyThreshold =");
     expect(pineScript).toContain("williamsSellThreshold =");
-    expect(pineScript).toContain("useSma =");
-    expect(pineScript).toContain("useRsi =");
+    expect(pineScript).not.toContain("useSma =");
+    expect(pineScript).not.toContain("useRsi =");
     expect(consoleErrors).toEqual([]);
 });
 

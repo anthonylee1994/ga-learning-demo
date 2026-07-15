@@ -3,9 +3,9 @@ import {createPineScript, createNetworkDecisionLines, decodeLayers, evaluatePine
 import {createStockSeedGenomes, decodeStockGenome, STOCK_GENE_COUNT, STOCK_NETWORK_GENE_COUNT, STOCK_TOPOLOGY} from "./strategyGenome";
 
 describe("Pine Script export", () => {
-    it("embeds optimized parameters, masks, multi-layer network, and long-only orders", () => {
+    it("embeds optimized parameters, multi-layer network, and long-only orders", () => {
         const genome = Array.from({length: STOCK_GENE_COUNT}, (_, index) => Math.sin(index) * 0.4);
-        const {parameters, masks} = decodeStockGenome(genome);
+        const {parameters} = decodeStockGenome(genome);
         const script = createPineScript(genome, "QQQ");
 
         expect(script).toContain("//@version=6");
@@ -21,8 +21,8 @@ describe("Pine Script export", () => {
         expect(script).toContain(`volatilityPeriod = ${parameters.volatilityPeriod}`);
         expect(script).toContain(`volumeZScorePeriod = ${parameters.volumeZScorePeriod}`);
         expect(script).toContain(`newHighPeriod = ${parameters.newHighPeriod}`);
-        expect(script).toContain(`useSma = ${masks.sma}`);
-        expect(script).toContain(`useRsi = ${masks.rsi}`);
+        expect(script).not.toContain("useSma");
+        expect(script).not.toContain("useRsi");
         expect(script).toContain("nDayHigh = ta.highest(high, newHighPeriod)");
         expect(script).toContain("tanh(value) =>");
         expect(script).toContain("outBuy");
@@ -37,7 +37,7 @@ describe("Pine Script export", () => {
         // Output must read from h2, not skip straight from h1 (regression for two-layer head).
         expect(script).toMatch(/outBuy = tanh\([^)]*h2_0/);
         expect(script).toContain(`f${STOCK_TOPOLOGY.inputSize - 1}`);
-        expect(script).toContain("useSma ? clamp");
+        expect(script).toContain("clamp((close / smaFast");
         expect(script).toContain("17 → 10 → 5 → 3");
         expect(script).toContain('strategy.entry("Long", strategy.long)');
         expect(script).toContain('strategy.close("Long")');
@@ -82,8 +82,8 @@ describe("Pine Script export", () => {
 
     it("emits every hidden layer in createNetworkDecisionLines", () => {
         const genome = createStockSeedGenomes()[0];
-        const {networkGenome, masks} = decodeStockGenome(genome);
-        const lines = createNetworkDecisionLines(networkGenome, masks).join("\n");
+        const {networkGenome} = decodeStockGenome(genome);
+        const lines = createNetworkDecisionLines(networkGenome).join("\n");
         expect(lines).toContain("h1_9 = tanh(");
         expect(lines).toContain("h2_4 = tanh(");
         expect(lines).toContain("outSell = tanh(");
@@ -95,10 +95,10 @@ describe("Pine Script export", () => {
     it("exports threshold-based rule mode without the neural network", () => {
         const genome = createStockSeedGenomes()[0];
         const script = createPineScript(genome, "QQQ", false);
-        expect(script).toContain("rsiBuyVote = useRsi and rsi <= rsiBuyThreshold");
-        expect(script).toContain("williamsBuyVote = useWilliams and williamsR <= williamsBuyThreshold");
+        expect(script).toContain("rsiBuyVote = rsi <= rsiBuyThreshold");
+        expect(script).toContain("williamsBuyVote = williamsR <= williamsBuyThreshold");
         expect(script).toContain("neededVotes");
-        expect(script).toContain("useSma = true");
+        expect(script).not.toContain("useRsi");
         expect(script).not.toContain("h1_0 = tanh(");
         expect(script).not.toContain("h2_0 = tanh(");
     });
