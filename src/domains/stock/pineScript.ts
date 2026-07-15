@@ -227,6 +227,6 @@ function createLayerLines(names: string[], inputs: string[], layer: DenseLayer, 
     });
 }
 
-function formatNumber(value: number): string {
+export function formatNumber(value: number): string {
     return Number(value.toFixed(8)).toString();
 }

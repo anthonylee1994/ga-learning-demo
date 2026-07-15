@@ -4,6 +4,7 @@ import {CandlestickChart, Dices, FileDown, TriangleAlert} from "lucide-react";
 import {Brush, CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis} from "recharts";
 import {useEvolutionDemo} from "../hooks/useEvolutionDemo";
 import type {GAConfig, Genome, MarketDataPoint, MarketDataResponse, TopicId, TradingPoint, TradingReplay} from "../lib/types";
+import {createFutuPythonScript} from "../domains/stock/futuScript";
 import {createPineScript} from "../domains/stock/pineScript";
 import {
     buildNetworkFeatures,
@@ -336,10 +337,16 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
                                     <p className="eyebrow">冠軍基因體 · 指標參數</p>
                                     <h3>最佳指標參數</h3>
                                 </div>
-                                <Button onPress={() => downloadPineScript(demo.champion!.genome, marketData?.symbol ?? "QQQ", useNetwork)} size="sm" variant="secondary">
-                                    <FileDown size={15} strokeWidth={1.5} />
-                                    匯出 Pine Script
-                                </Button>
+                                <div className="export-actions">
+                                    <Button onPress={() => downloadPineScript(demo.champion!.genome, marketData?.symbol ?? "QQQ", useNetwork)} size="sm" variant="secondary">
+                                        <FileDown size={15} strokeWidth={1.5} />
+                                        匯出 Pine Script
+                                    </Button>
+                                    <Button onPress={() => downloadFutuPython(demo.champion!.genome, marketData?.symbol ?? "QQQ", useNetwork)} size="sm" variant="secondary">
+                                        <FileDown size={15} strokeWidth={1.5} />
+                                        匯出富途 Python
+                                    </Button>
+                                </div>
                             </div>
                             <div className="parameter-grid">
                                 <ParameterValue label="移動平均線" value={`${parameters.smaFastPeriod} / ${parameters.smaSlowPeriod}`} />
@@ -669,13 +676,20 @@ function formatBrushDate(value: string): string {
     return value.slice(0, 7);
 }
 
-function downloadPineScript(genome: number[], symbol: string, useNetwork: boolean): void {
-    const script = createPineScript(genome, symbol, useNetwork);
-    const blob = new Blob([script], {type: "text/plain;charset=utf-8"});
+function downloadTextFile(filename: string, content: string, mime = "text/plain;charset=utf-8"): void {
+    const blob = new Blob([content], {type: mime});
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `${symbol.toLowerCase()}-evolab-strategy.pine`;
+    anchor.download = filename;
     anchor.click();
     URL.revokeObjectURL(url);
+}
+
+function downloadPineScript(genome: number[], symbol: string, useNetwork: boolean): void {
+    downloadTextFile(`${symbol.toLowerCase()}-evolab-strategy.pine`, createPineScript(genome, symbol, useNetwork));
+}
+
+function downloadFutuPython(genome: number[], symbol: string, useNetwork: boolean): void {
+    downloadTextFile(`${symbol.toLowerCase()}-evolab-strategy-futu.py`, createFutuPythonScript(genome, useNetwork));
 }
