@@ -348,6 +348,9 @@ def compute_signals():
         i = i + 1
 
     position = 0
+    bars_in_state = 0
+    MIN_BARS_LONG = 15
+    MIN_BARS_CASH = 15
     warm = SMA_SLOW
     if WILL_P > warm:
         warm = WILL_P
@@ -414,12 +417,15 @@ def compute_signals():
 
 ${decisionBlock}
 
-        if buy_signal and position <= 0:
+        bars_in_state = bars_in_state + 1
+        if buy_signal and position <= 0 and bars_in_state >= MIN_BARS_CASH:
             enter[i] = 1
             position = 1
-        elif sell_signal and position > 0:
+            bars_in_state = 0
+        elif sell_signal and position > 0 and bars_in_state >= MIN_BARS_LONG:
             exit_[i] = 1
             position = 0
+            bars_in_state = 0
 
         i = i + 1
 
@@ -593,8 +599,8 @@ function emitNetworkDecisionLoop(): string {
         out_hold = _dense(h2, OUT[1])
         out_sell = _dense(h2, OUT[2])
 
-        buy_signal = (out_buy >= out_hold) and (out_buy >= out_sell)
-        sell_signal = (out_sell > out_buy) and (out_sell > out_hold)`;
+        buy_signal = (out_buy >= out_hold + 0.08) and (out_buy >= out_sell)
+        sell_signal = (out_sell >= out_hold + 0.08) and (out_sell > out_buy)`;
 }
 
 function emitRuleDecisionLoop(): string {

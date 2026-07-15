@@ -42,13 +42,18 @@ const MAX_INDICATOR_CACHE = 16;
  */
 const WEIGHT_L2_PENALTY = 0.28;
 /**
- * Network mode: ignore sell/buy flips until this many bars in the current state.
- * Cuts fee-bleeding thrash that dominates GA search on noisy daily features.
+ * Minimum bars to stay long before a sell is allowed.
+ * Stops multi-day thrash (fee bleed) and "hold a few days then flip" noise.
  */
-const MIN_BARS_IN_STATE = 5;
+const MIN_BARS_IN_LONG = 5;
 /**
- * Network mode: only flip when argmax beats "hold" by this tanh-space margin.
- * Ties / near-ties stay put → stabler long stretches, closer to tradable policies.
+ * Minimum bars to stay cash after an exit before rebuy is allowed.
+ * Specifically blocks 噚日沽、今日又買返 style round-trips.
+ */
+const MIN_BARS_IN_CASH = 5;
+/**
+ * Network mode: only flip when buy/sell beats "hold" by this tanh-space margin.
+ * Ties / near-ties stay put → stabler long stretches.
  */
 const ACTION_MARGIN = 0.08;
 
@@ -114,9 +119,9 @@ export function evaluateStockGenome(genome: Genome, points: MarketDataPoint[], u
 
     const baseDecide = createPositionDecider(columns, parameters, networkGenome, useNetwork);
     const mid = Math.floor(trainLength / 2);
-    // Fresh min-hold state per walk — second half must not inherit barsInState from full pass.
-    const {full, firstHalf} = simulateFullAndFirstHalf(withMinHold(baseDecide, useNetwork), columns, trainLength, mid);
-    const secondHalf = simulateColumnMetrics(withMinHold(baseDecide, useNetwork), columns, firstHalf.endingPosition, mid, trainLength);
+    // Fresh hold/cooldown state per walk — second half must not inherit counters from full pass.
+    const {full, firstHalf} = simulateFullAndFirstHalf(withHoldCooldown(baseDecide), columns, trainLength, mid);
+    const secondHalf = simulateColumnMetrics(withHoldCooldown(baseDecide), columns, firstHalf.endingPosition, mid, trainLength);
     const fullScore = scoreSegment(full, columns, 0, trainLength);
     const halfA = scoreSegment(firstHalf, columns, 0, mid + 1);
     const halfB = scoreSegment(secondHalf, columns, mid, trainLength);
@@ -166,8 +171,8 @@ function meanSquare(genome: Genome): number {
 export function createTradingReplay(genome: Genome, points: MarketDataPoint[], useNetwork = true): TradingReplay {
     const {parameters, networkGenome} = decodeStockGenome(genome);
     const columns = getIndicatorColumns(points, parameters);
-    // One min-hold state across train→test so the split bar does not free a thrash flip.
-    const decide = withMinHold(createPositionDecider(columns, parameters, networkGenome, useNetwork), useNetwork);
+    // One hold/cooldown state across train→test so the split bar does not free a thrash flip.
+    const decide = withHoldCooldown(createPositionDecider(columns, parameters, networkGenome, useNetwork));
     const splitIndex = Math.max(2, Math.floor(columns.length * 0.8));
     const trainResult = simulateColumnReplay(decide, columns, points, 0, splitIndex, 0);
     const testResult = simulateColumnReplay(decide, columns, points, Math.max(0, splitIndex - 1), columns.length, trainResult.endingPosition);
@@ -343,13 +348,11 @@ function createPositionDecider(columns: IndicatorColumns, parameters: OptimizedI
 }
 
 /**
- * Stateful wrapper: block position flips until MIN_BARS_IN_STATE bars in cash/long.
- * Network only — rule mode already has trend gates and is less thrashy.
+ * Stateful wrapper (NN + rule):
+ * - Stay long at least MIN_BARS_IN_LONG before sell
+ * - Stay cash at least MIN_BARS_IN_CASH before rebuy (blocks next-day re-entry after exit)
  */
-function withMinHold(decide: PositionDecider, enabled: boolean): PositionDecider {
-    if (!enabled) {
-        return decide;
-    }
+function withHoldCooldown(decide: PositionDecider): PositionDecider {
     let barsInState = 0;
     let lastPosition = -1;
     return (index, position) => {
@@ -359,7 +362,15 @@ function withMinHold(decide: PositionDecider, enabled: boolean): PositionDecider
         }
         barsInState += 1;
         const raw = decide(index, position);
-        if (raw !== position && barsInState < MIN_BARS_IN_STATE) {
+        if (raw === position) {
+            return position;
+        }
+        // Long → cash: need enough bars invested
+        if (position > 0 && raw === 0 && barsInState < MIN_BARS_IN_LONG) {
+            return position;
+        }
+        // Cash → long: need enough bars flat (cooldown after sell)
+        if (position <= 0 && raw === 1 && barsInState < MIN_BARS_IN_CASH) {
             return position;
         }
         return raw;
