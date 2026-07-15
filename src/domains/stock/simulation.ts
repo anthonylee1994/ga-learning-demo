@@ -1,4 +1,4 @@
-import {argMax, createForwardRunner} from "../../lib/neuralNetwork";
+import {createForwardRunner} from "../../lib/neuralNetwork";
 import type {Genome, MarketDataPoint, OptimizedIndicatorParameters, TradeMarker, TradingPoint, TradingReplay} from "../../lib/types";
 import type {IndicatorColumns} from "./indicators";
 import {calculateIndicatorColumns, columnsToSnapshots} from "./indicators";
@@ -38,8 +38,19 @@ const TRANSACTION_COST = 0.001;
 const MAX_INDICATOR_CACHE = 16;
 /**
  * Mild weight decay — keep below return-scale so L2 never prefers cash over investing.
+ * Lowered so strong buy/hold output biases (seeds) survive longer under mutation.
  */
-const WEIGHT_L2_PENALTY = 0.55;
+const WEIGHT_L2_PENALTY = 0.28;
+/**
+ * Network mode: ignore sell/buy flips until this many bars in the current state.
+ * Cuts fee-bleeding thrash that dominates GA search on noisy daily features.
+ */
+const MIN_BARS_IN_STATE = 5;
+/**
+ * Network mode: only flip when argmax beats "hold" by this tanh-space margin.
+ * Ties / near-ties stay put → stabler long stretches, closer to tradable policies.
+ */
+const ACTION_MARGIN = 0.08;
 
 /**
  * Cache indicator columns per points-array reference (multi-ticker fitness interleaves
@@ -101,11 +112,11 @@ export function evaluateStockGenome(genome: Genome, points: MarketDataPoint[], u
         return -1_000;
     }
 
-    const decide = createPositionDecider(columns, parameters, networkGenome, useNetwork);
+    const baseDecide = createPositionDecider(columns, parameters, networkGenome, useNetwork);
     const mid = Math.floor(trainLength / 2);
-    // One pass for full + first half (was two full walks); second half still restarts equity.
-    const {full, firstHalf} = simulateFullAndFirstHalf(decide, columns, trainLength, mid);
-    const secondHalf = simulateColumnMetrics(decide, columns, firstHalf.endingPosition, mid, trainLength);
+    // Fresh min-hold state per walk — second half must not inherit barsInState from full pass.
+    const {full, firstHalf} = simulateFullAndFirstHalf(withMinHold(baseDecide, useNetwork), columns, trainLength, mid);
+    const secondHalf = simulateColumnMetrics(withMinHold(baseDecide, useNetwork), columns, firstHalf.endingPosition, mid, trainLength);
     const fullScore = scoreSegment(full, columns, 0, trainLength);
     const halfA = scoreSegment(firstHalf, columns, 0, mid + 1);
     const halfB = scoreSegment(secondHalf, columns, mid, trainLength);
@@ -118,11 +129,13 @@ export function evaluateStockGenome(genome: Genome, points: MarketDataPoint[], u
 }
 
 /**
- * Excess-return-first segment score, with a stronger absolute-return / participation bias so
- * bull-market demos do not collapse into cash thrash. Main term is still
- * log(strategy equity / benchmark equity); matching buy-and-hold ≈ 0 on excess alone.
- * Absolute return + mean exposure pull the search toward staying invested; mean turnover
- * penalizes fee-bleeding flip-flops that look lucky on a single half-segment.
+ * Excess-return-first segment score, with absolute-return / participation bias so
+ * bull-market demos do not collapse into cash thrash. Matching buy-and-hold ≈ 0 on excess alone.
+ *
+ * Tuned for demo GA (not pure quant research):
+ * - Cash-only policies get a hard penalty (otherwise GA parks in 0 trades forever).
+ * - Turnover penalty is milder than before so mild active trading can survive fees.
+ * - Absolute return + exposure still dominate so long participation wins on bulls.
  */
 function scoreSegment(metrics: SegmentMetrics, columns: IndicatorColumns, start: number, end: number): number {
     const first = columns.close[start] || 1;
@@ -131,8 +144,12 @@ function scoreSegment(metrics: SegmentMetrics, columns: IndicatorColumns, start:
     const benchmarkReturn = last / first - 1;
     const logExcess = Math.log(1 + Math.max(metrics.totalReturn, -0.99)) - Math.log(1 + Math.max(benchmarkReturn, -0.99));
     const annualizedExcess = logExcess / years;
+    // Never-invested: worse than a weak long on any bull window.
+    const cashPenalty = metrics.meanExposure < 0.08 ? 40 : metrics.meanExposure < 0.2 ? 12 : 0;
+    // Mild thrash tax — still hurts daily flip-flops, not multi-week swings.
+    const thrashPenalty = metrics.meanTurnover * 18;
 
-    return annualizedExcess * 250 + logExcess * 40 + metrics.totalReturn * 40 + metrics.meanExposure * 18 + metrics.sharpe * 2 - metrics.maxDrawdown * 8 - metrics.meanTurnover * 35;
+    return annualizedExcess * 220 + logExcess * 45 + metrics.totalReturn * 55 + metrics.meanExposure * 24 + metrics.sharpe * 5 - metrics.maxDrawdown * 10 - thrashPenalty - cashPenalty;
 }
 
 function meanSquare(genome: Genome): number {
@@ -149,7 +166,8 @@ function meanSquare(genome: Genome): number {
 export function createTradingReplay(genome: Genome, points: MarketDataPoint[], useNetwork = true): TradingReplay {
     const {parameters, networkGenome} = decodeStockGenome(genome);
     const columns = getIndicatorColumns(points, parameters);
-    const decide = createPositionDecider(columns, parameters, networkGenome, useNetwork);
+    // One min-hold state across train→test so the split bar does not free a thrash flip.
+    const decide = withMinHold(createPositionDecider(columns, parameters, networkGenome, useNetwork), useNetwork);
     const splitIndex = Math.max(2, Math.floor(columns.length * 0.8));
     const trainResult = simulateColumnReplay(decide, columns, points, 0, splitIndex, 0);
     const testResult = simulateColumnReplay(decide, columns, points, Math.max(0, splitIndex - 1), columns.length, trainResult.endingPosition);
@@ -204,13 +222,16 @@ export function createTradingReplay(genome: Genome, points: MarketDataPoint[], u
 /**
  * Map brain.js outputs to long (1) or cash (0).
  * action 0 = buy/long, 1 = hold, 2 = sell/cash.
+ * Requires a margin over "hold" so near-ties do not thrash every bar.
  */
-export function decidePositionFromNetwork(output: number[], position: number): number {
-    const action = argMax(output);
-    if (action === 0) {
+export function decidePositionFromNetwork(output: number[], position: number, margin = ACTION_MARGIN): number {
+    const buy = output[0] ?? 0;
+    const hold = output[1] ?? 0;
+    const sell = output[2] ?? 0;
+    if (buy >= hold + margin && buy >= sell) {
         return 1;
     }
-    if (action === 2) {
+    if (sell >= hold + margin && sell > buy) {
         return 0;
     }
     return position;
@@ -319,6 +340,30 @@ function createPositionDecider(columns: IndicatorColumns, parameters: OptimizedI
     const runNetwork = createForwardRunner(networkGenome, STOCK_TOPOLOGY);
     const features = new Array<number>(STOCK_TOPOLOGY.inputSize);
     return (index, position) => decidePositionFromNetwork(runNetwork(buildNetworkFeatures(columns, index, position, parameters, features)), position);
+}
+
+/**
+ * Stateful wrapper: block position flips until MIN_BARS_IN_STATE bars in cash/long.
+ * Network only — rule mode already has trend gates and is less thrashy.
+ */
+function withMinHold(decide: PositionDecider, enabled: boolean): PositionDecider {
+    if (!enabled) {
+        return decide;
+    }
+    let barsInState = 0;
+    let lastPosition = -1;
+    return (index, position) => {
+        if (position !== lastPosition) {
+            barsInState = 0;
+            lastPosition = position;
+        }
+        barsInState += 1;
+        const raw = decide(index, position);
+        if (raw !== position && barsInState < MIN_BARS_IN_STATE) {
+            return position;
+        }
+        return raw;
+    };
 }
 
 function createIndicatorCacheKey(parameters: OptimizedIndicatorParameters): string {

@@ -36,6 +36,17 @@ describe("stock simulation", () => {
         expect(decidePositionFromNetwork([0.1, 0.9, 0.2], 0)).toBe(0);
     });
 
+    it("ignores weak buy/sell edges that barely beat hold (margin)", () => {
+        // buy slightly above hold — should stay cash if already flat
+        expect(decidePositionFromNetwork([0.12, 0.1, 0.0], 0, 0.08)).toBe(0);
+        // clear buy
+        expect(decidePositionFromNetwork([0.5, 0.1, 0.0], 0, 0.08)).toBe(1);
+        // sell barely above hold — stay long
+        expect(decidePositionFromNetwork([0.0, 0.1, 0.12], 1, 0.08)).toBe(1);
+        // clear sell
+        expect(decidePositionFromNetwork([0.0, 0.1, 0.5], 1, 0.08)).toBe(0);
+    });
+
     it("tracks long/cash position from the trade log before a date", () => {
         expect(
             positionBeforeDate(

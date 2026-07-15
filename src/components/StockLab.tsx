@@ -411,7 +411,7 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
                     <FitnessChart eyebrow={isMonteCarlo ? "搜尋訊號" : "演化訊號"} history={demo.history} title={isMonteCarlo ? "批次適應度趨勢" : "適應度趨勢"} />
                     <ApplicationPanel
                         eyebrow={isMonteCarlo ? "蒙地卡羅對應" : "GA 對應"}
-                        fitness="超額回報主軸：log(策略資產 ÷ 買入持有資產)，打和大市 = 0 分；年化超額×250 + 累積超額×40 + 回報×40 + 持倉×18 + Sharpe×2 − 回撤×8 − 換手×35 − 輕 L2"
+                        fitness="超額回報主軸：log(策略÷買入持有)；年化超額×220 + 累積超額×45 + 回報×55 + 持倉×24 + Sharpe×5 − 回撤×10 − 換手×18 − 空倉懲罰 − 輕 L2；網絡最少持倉 5 日 + 動作 margin 減少抖倉"
                         genome={
                             isMonteCarlo
                                 ? `${STOCK_PARAMETER_GENE_COUNT} 週期/門檻 + ${STOCK_NETWORK_GENE_COUNT} 決策頭；每批混合全域隨機抽樣 + 冠軍附近局部遊走（局部比例 = 滑桿）；開局有接近買入持有等種子`

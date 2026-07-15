@@ -28,8 +28,10 @@ export const STOCK_MUTATION_PROFILE = {
     headGeneCount: STOCK_HEAD_GENE_COUNT,
     headRateMultiplier: 3,
     headScaleMultiplier: 1.5,
-    tailRateMultiplier: 0.35,
-    tailScaleMultiplier: 0.45,
+    // Slightly freer NN tail so decision head can leave broken thrash basins;
+    // still much quieter than period genes (head remains the main search axis).
+    tailRateMultiplier: 0.55,
+    tailScaleMultiplier: 0.55,
     immigrantHeadOnly: true,
 } as const;
 
