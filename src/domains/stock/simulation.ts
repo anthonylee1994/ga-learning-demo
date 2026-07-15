@@ -1,3 +1,17 @@
+/**
+ * Stock 交易模擬：genome = 指標參數 +（可選）NN 權重，喺歷史 K 線上做 long / cash。
+ *
+ * 流程概覽：
+ * 1. evaluateStockGenome — GA 評分：只用 train 段（前 80%），walk-forward 半段 robust
+ * 2. createTradingReplay — UI 曲線：train→test 連續模擬，出 equity / 買賣標記 / 指標
+ * 3. 每 bar：decider 決定目標倉位 0|1 → 收日回報 − 換手手續費
+ *
+ * 兩種決策模式：
+ * - useNetwork=true：NN 睇 21 維特徵 → 買／持／賣（要有 margin 先轉倉）
+ * - useNetwork=false：規則投票（SMA / MACD / RSI / Williams）
+ *
+ * 兩者外層都包 withHoldCooldown，防止日日 thrash 俾 fee 食晒。
+ */
 import {createForwardRunner} from "../../lib/neuralNetwork";
 import type {Genome, MarketDataPoint, OptimizedIndicatorParameters, TradeMarker, TradingPoint, TradingReplay} from "../../lib/types";
 import type {IndicatorColumns} from "./indicators";
@@ -6,6 +20,7 @@ import {decodeStockGenome, STOCK_TOPOLOGY} from "./strategyGenome";
 
 export {STOCK_TOPOLOGY} from "./strategyGenome";
 
+/** 對應 21 維 NN 輸入（畀 UI activation 標籤） */
 export const STOCK_INPUT_LABELS = [
     "開",
     "高",
@@ -30,48 +45,52 @@ export const STOCK_INPUT_LABELS = [
     "W%賣距",
 ] as const;
 
+/** 對應 3 維輸出 */
 export const STOCK_OUTPUT_LABELS = ["買入", "持有", "賣出"] as const;
 
+/** 模擬起始資金 */
 const STARTING_EQUITY = 10_000;
+/** 單邊換手成本（|Δposition| * 0.1%） */
 const TRANSACTION_COST = 0.001;
-/** Keep a small LRU of indicator series — Float64Array columns, ~1MB per full history entry. */
+/** 每條價格序列最多 cache 幾套指標參數（Float64Array，約 ~1MB／全歷史） */
 const MAX_INDICATOR_CACHE = 16;
 /**
- * Mild weight decay — keep below return-scale so L2 never prefers cash over investing.
- * Lowered so strong buy/hold output biases (seeds) survive longer under mutation.
+ * NN 權重 L2 衰減係數。要細過 return scale，唔係 GA 寧願 cash 都好過 invest。
+ * 夠細先可以令強 buy/hold bias seed 喺 mutation 下生存耐啲。
  */
 const WEIGHT_L2_PENALTY = 0.28;
 /**
- * Minimum bars to stay long before a sell is allowed.
- * Stops multi-day thrash (fee bleed) and "hold a few days then flip" noise.
+ * 做多至少持幾多 bar 先准賣。
+ * 擋住 multi-day thrash（fee bleed）同「持幾日就翻」嘅 noise。
  */
 const MIN_BARS_IN_LONG = 5;
 /**
- * Minimum bars to stay cash after an exit before rebuy is allowed.
- * Specifically blocks 噚日沽、今日又買返 style round-trips.
+ * 沽出後至少 cash 幾多 bar 先准再買。
+ * 專門堵「噚日沽、今日又買返」round-trip。
  */
 const MIN_BARS_IN_CASH = 5;
 /**
- * Network mode: only flip when buy/sell beats "hold" by this tanh-space margin.
- * Ties / near-ties stay put → stabler long stretches.
+ * NN 模式：buy/sell 要比 hold 大呢個 tanh 空間 margin 先轉倉。
+ * 平手／近平手維持現狀 → 長倉段穩陣啲。
  */
 const ACTION_MARGIN = 0.08;
 
 /**
- * Cache indicator columns per points-array reference (multi-ticker fitness interleaves
- * several series per genome — a single "current points" slot would thrash every call).
- * WeakMap lets a replaced series' cache be collected with the array itself.
+ * 指標欄 cache：key = points 陣列 reference（WeakMap）→ 參數字串 → columns。
+ * multi-ticker fitness 會交錯多條序列；用 series reference 做 key 先唔 thrash。
+ * WeakMap 令換走嘅 points 可以連 cache 一齊被 GC。
  */
 const columnCachesBySeries = new WeakMap<MarketDataPoint[], Map<string, IndicatorColumns>>();
 
+/** 一段 walk 嘅績效摘要（fitness / 曲線共用） */
 interface SegmentMetrics {
     totalReturn: number;
     sharpe: number;
     maxDrawdown: number;
     endingPosition: number;
-    /** Average long exposure in [0, 1] over the segment (cash-only ≈ 0). */
+    /** 平均 long 曝險 ∈ [0,1]；全程 cash ≈ 0 */
     meanExposure: number;
-    /** Mean |Δposition| per bar — thrashy policies sit high (≈ frequent full flips). */
+    /** 平均 |Δposition|／bar； thrash 策略偏高（成日 full flip） */
     meanTurnover: number;
 }
 
@@ -80,6 +99,10 @@ interface SegmentResult extends SegmentMetrics {
     trades: TradeMarker[];
 }
 
+/**
+ * 攞（或計）指標欄；LRU 最多 MAX_INDICATOR_CACHE 套參數。
+ * 同一 points + 同一參數會 hit cache，GA 評多個 genome 時慳大量重算。
+ */
 export function getIndicatorColumns(points: MarketDataPoint[], parameters: OptimizedIndicatorParameters): IndicatorColumns {
     let seriesCache = columnCachesBySeries.get(points);
     if (!seriesCache) {
@@ -89,7 +112,7 @@ export function getIndicatorColumns(points: MarketDataPoint[], parameters: Optim
     const key = createIndicatorCacheKey(parameters);
     const cached = seriesCache.get(key);
     if (cached) {
-        // Refresh LRU order.
+        // 刷新 LRU 次序：delete 再 set = 移到最新
         seriesCache.delete(key);
         seriesCache.set(key, cached);
         return cached;
@@ -105,58 +128,70 @@ export function getIndicatorColumns(points: MarketDataPoint[], parameters: Optim
     return columns;
 }
 
+/** 指標 snapshot 陣列（UI／debug）；底層 columns 一樣走 cache */
 export function getIndicatorSnapshots(points: MarketDataPoint[], parameters: OptimizedIndicatorParameters) {
     return columnsToSnapshots(points, getIndicatorColumns(points, parameters));
 }
 
+/**
+ * GA fitness：只喺 train 段（前 80%）評分，避免直接 overfit test。
+ *
+ * 計分結構：
+ *   0.9 * fullScore          — 成段 train 相對 buy-and-hold 嘅 excess 為主
+ * + 0.1 * robustScore        — 前後半段 soft floor，防「半段爆、半段死」
+ * − L2(network)              — 淨 NN 模式先罰權重（rule 模式唔用 NN tail）
+ */
 export function evaluateStockGenome(genome: Genome, points: MarketDataPoint[], useNetwork = true): number {
     const {parameters, networkGenome} = decodeStockGenome(genome);
     const columns = getIndicatorColumns(points, parameters);
     const trainLength = Math.max(2, Math.floor(columns.length * 0.8));
+    // 資料太短冇意義，直接大負分
     if (trainLength < 100) {
         return -1_000;
     }
 
     const baseDecide = createPositionDecider(columns, parameters, networkGenome, useNetwork);
     const mid = Math.floor(trainLength / 2);
-    // Fresh hold/cooldown state per walk — second half must not inherit counters from full pass.
+    // 每次 walk 新 cooldown state；後半段唔可以繼承前半嘅 hold 計數
     const {full, firstHalf} = simulateFullAndFirstHalf(withHoldCooldown(baseDecide), columns, trainLength, mid);
     const secondHalf = simulateColumnMetrics(withHoldCooldown(baseDecide), columns, firstHalf.endingPosition, mid, trainLength);
     const fullScore = scoreSegment(full, columns, 0, trainLength);
     const halfA = scoreSegment(firstHalf, columns, 0, mid + 1);
     const halfB = scoreSegment(secondHalf, columns, mid, trainLength);
-    // Soft robust: light floor so one weak half does not erase a strong train return.
+    // soft robust：輕 floor，弱半段唔會完全抹走強 train return
     const robustScore = 0.22 * Math.min(halfA, halfB) + 0.78 * ((halfA + halfB) / 2);
-    // Rule mode ignores the NN tail entirely — penalizing unused weights would just add noise.
+    // rule 模式完全唔用 NN 尾，罰權重淨係加 noise
     const regularization = useNetwork ? WEIGHT_L2_PENALTY * meanSquare(networkGenome) : 0;
-    // Full-segment excess vs buy-and-hold dominates; halves only guard against one-half flukes.
     return fullScore * 0.9 + robustScore * 0.1 - regularization;
 }
 
 /**
- * Excess-return-first segment score, with absolute-return / participation bias so
- * bull-market demos do not collapse into cash thrash. Matching buy-and-hold ≈ 0 on excess alone.
+ * 單段 score：excess return 優先，再加參與度／絕對回報，扣 thrash 同「永遠 cash」。
  *
- * Tuned for demo GA (not pure quant research):
- * - Cash-only policies get a hard penalty (otherwise GA parks in 0 trades forever).
- * - Turnover penalty is milder than before so mild active trading can survive fees.
- * - Absolute return + exposure still dominate so long participation wins on bulls.
+ * 調校目標係 demo GA（唔係純 quant research）：
+ * - 永遠 cash 有硬罰，唔係 GA 停喺 0 交易
+ * - thrash 罰溫和，輕度活躍交易可以喺 fee 下生存
+ * - 牛市要 long participation 先贏，唔係 thrash 刷分
+ *
+ * 對齊 buy-and-hold 時 excess 部分 ≈ 0。
  */
 function scoreSegment(metrics: SegmentMetrics, columns: IndicatorColumns, start: number, end: number): number {
     const first = columns.close[start] || 1;
     const last = columns.close[end - 1] || first;
     const years = Math.max((end - start) / 252, 0.5);
     const benchmarkReturn = last / first - 1;
+    // log excess：策略相對大盤；clamp -0.99 防 log 爆
     const logExcess = Math.log(1 + Math.max(metrics.totalReturn, -0.99)) - Math.log(1 + Math.max(benchmarkReturn, -0.99));
     const annualizedExcess = logExcess / years;
-    // Never-invested: worse than a weak long on any bull window.
+    // 幾乎唔入市：牛市窗口下差過弱 long
     const cashPenalty = metrics.meanExposure < 0.08 ? 40 : metrics.meanExposure < 0.2 ? 12 : 0;
-    // Mild thrash tax — still hurts daily flip-flops, not multi-week swings.
+    // 日日 flip 有稅；持幾個星期轉倉問題唔大
     const thrashPenalty = metrics.meanTurnover * 18;
 
     return annualizedExcess * 220 + logExcess * 45 + metrics.totalReturn * 55 + metrics.meanExposure * 24 + metrics.sharpe * 5 - metrics.maxDrawdown * 10 - thrashPenalty - cashPenalty;
 }
 
+/** genome 權重均方（L2 用） */
 function meanSquare(genome: Genome): number {
     if (genome.length === 0) {
         return 0;
@@ -168,13 +203,18 @@ function meanSquare(genome: Genome): number {
     return sum / genome.length;
 }
 
+/**
+ * UI 用完整 replay：train（0→80%）→ test（80%→尾），cooldown 跨 split 連續。
+ * equity 曲線喺 split 處按 train 結尾 scale 接上去，視覺上係一條線。
+ */
 export function createTradingReplay(genome: Genome, points: MarketDataPoint[], useNetwork = true): TradingReplay {
     const {parameters, networkGenome} = decodeStockGenome(genome);
     const columns = getIndicatorColumns(points, parameters);
-    // One hold/cooldown state across train→test so the split bar does not free a thrash flip.
+    // 同一個 hold/cooldown 貫穿 train→test，split bar 唔會「免費解 thrash lock」
     const decide = withHoldCooldown(createPositionDecider(columns, parameters, networkGenome, useNetwork));
     const splitIndex = Math.max(2, Math.floor(columns.length * 0.8));
     const trainResult = simulateColumnReplay(decide, columns, points, 0, splitIndex, 0);
+    // test 接 train 結束倉位；曲線從 STARTING_EQUITY 再 walk，之後 scale 接上
     const testResult = simulateColumnReplay(decide, columns, points, Math.max(0, splitIndex - 1), columns.length, trainResult.endingPosition);
     const trainCurve = trainResult.equityCurve;
     const testScale = trainCurve.at(-1) ?? STARTING_EQUITY;
@@ -182,11 +222,13 @@ export function createTradingReplay(genome: Genome, points: MarketDataPoint[], u
     for (let index = 0; index < trainCurve.length; index += 1) {
         fullCurve[index] = trainCurve[index];
     }
+    // test 曲線 index 0 同 train 尾重疊日，由 index 1 開始接；按比例縮放到 train 結尾資金
     for (let index = 1; index < testResult.equityCurve.length; index += 1) {
         fullCurve[splitIndex - 1 + index] = (testResult.equityCurve[index] / STARTING_EQUITY) * testScale;
     }
     const firstClose = columns.close[0] || 1;
     const lastClose = columns.close[columns.length - 1] || firstClose;
+    // 每個 bar 一筆 TradingPoint（策略／基準／指標），畀圖表同 scrubber
     const tradingPoints: TradingPoint[] = new Array(columns.length);
     for (let index = 0; index < columns.length; index += 1) {
         const close = columns.close[index];
@@ -225,9 +267,9 @@ export function createTradingReplay(genome: Genome, points: MarketDataPoint[], u
 }
 
 /**
- * Map brain.js outputs to long (1) or cash (0).
- * action 0 = buy/long, 1 = hold, 2 = sell/cash.
- * Requires a margin over "hold" so near-ties do not thrash every bar.
+ * 將 NN 輸出映射成 long(1) 或 cash(0)。
+ * output[0]=買、[1]=持、[2]=賣。
+ * 要買／賣勝過 hold 至少 margin，近平手維持原倉，減少每 bar thrash。
  */
 export function decidePositionFromNetwork(output: number[], position: number, margin = ACTION_MARGIN): number {
     const buy = output[0] ?? 0;
@@ -243,8 +285,8 @@ export function decidePositionFromNetwork(output: number[], position: number, ma
 }
 
 /**
- * Reconstruct long/cash position just before `date` from the trade log
- * (used when scrubbing the NN activation preview on the stock lab).
+ * 由 trade log 還原「date 之前」嘅倉位（0|1）。
+ * stock lab scrub NN activation 預覽時用。
  */
 export function positionBeforeDate(trades: TradeMarker[], date: string): number {
     let position = 0;
@@ -258,7 +300,15 @@ export function positionBeforeDate(trades: TradeMarker[], date: string): number 
 }
 
 /**
- * Clamp raw indicator ratios into roughly [-1, 1] so tanh units see consistent scale.
+ * 組 21 維 NN 特徵，大致 clamp 到 [-1, 1]，等 tanh 單元 scale 一致。
+ * 可傳入 `out` buffer 重用，避免每 bar new array。
+ *
+ * 特徵分組：
+ *   0–3   K 線結構 + 日回報
+ *   4–6   SMA 快慢／交叉
+ *   7–15  動量／波動／量／新高
+ *   16    目前持倉（±1）
+ *   17–20 離 genome 解出嘅 RSI／Williams 買賣門檻距離
  */
 export function buildNetworkFeatures(
     columns: IndicatorColumns,
@@ -273,7 +323,7 @@ export function buildNetworkFeatures(
     const low = columns.low[index];
     const smaFast = Math.max(columns.smaFast[index], 1e-9);
     const smaSlow = Math.max(columns.smaSlow[index], 1e-9);
-    // 高低開收：K 線結構（相對收盤）+ 收盤日回報，縮放到 roughly [-1, 1]。
+    // 高低開收：相對收盤嘅結構 + 收盤日回報
     out[0] = clamp((open / close - 1) * 50);
     out[1] = clamp((high / close - 1) * 50);
     out[2] = clamp((low / close - 1) * 50);
@@ -289,7 +339,7 @@ export function buildNetworkFeatures(
     out[12] = clamp((columns.bollingerPercentB[index] - 0.5) * 2);
     out[13] = clamp(columns.volatility[index] * 5);
     out[14] = clamp(columns.volumeZScore[index] / 3);
-    // close / N-day high ≈ 1 at breakout; map ~[0.9, 1.0] into roughly [-1, 1].
+    // close / N-day high ≈ 1 係突破；把 ~[0.9, 1.0] 拉開到 roughly [-1, 1]
     out[15] = clamp((columns.newHighRatio[index] - 0.95) * 20);
     out[16] = position > 0 ? 1 : -1;
     out[17] = clamp((parameters.rsiBuyThreshold - columns.rsi[index]) / 20);
@@ -300,10 +350,10 @@ export function buildNetworkFeatures(
 }
 
 /**
- * Rule mode: SMA / MACD / RSI / Williams cast buy votes.
- * Buy = majority of the 4 votes (min 2).
- * Sell: RSI / Williams overbought, but in an uptrend (fast SMA > slow) require *both*
- * exit signals — single-indicator "overbought" exits bleed train return on strong bulls.
+ * 規則模式：SMA / MACD / RSI / Williams 四票。
+ * 買：多數贊成（≥2）。
+ * 賣：RSI 或 Williams 超買；但上升趨勢（快 SMA > 慢）要兩個 exit 一齊先沽，
+ *     避免單指標「超買」喺強牛市提早離場食少 return。
  */
 export function decidePositionFromRules(columns: IndicatorColumns, index: number, position: number, parameters: OptimizedIndicatorParameters): number {
     const hasRsiExit = columns.rsi[index] >= parameters.rsiSellThreshold;
@@ -311,7 +361,7 @@ export function decidePositionFromRules(columns: IndicatorColumns, index: number
     if (position > 0 && (hasRsiExit || hasWilliamsExit)) {
         const uptrend = columns.smaFast[index] > columns.smaSlow[index];
         if (uptrend) {
-            // Strong trend: only exit when both momentum exits fire.
+            // 強趨勢：兩個動量 exit 齊先離場
             if (hasRsiExit && hasWilliamsExit) {
                 return 0;
             }
@@ -332,25 +382,32 @@ export function decidePositionFromRules(columns: IndicatorColumns, index: number
     if (yes >= needed) {
         return 1;
     }
+    // 唔夠票：維持現倉（唔會主動沽，沽淨靠上面 exit 邏輯）
     return position;
 }
 
 type PositionDecider = (index: number, position: number) => number;
 
+/**
+ * 工廠：rule 或 NN decider。
+ * NN 路徑 decode 權重一次、feature buffer 重用，每 bar 只做 forward。
+ */
 function createPositionDecider(columns: IndicatorColumns, parameters: OptimizedIndicatorParameters, networkGenome: Genome, useNetwork: boolean): PositionDecider {
     if (!useNetwork) {
         return (index, position) => decidePositionFromRules(columns, index, position, parameters);
     }
-    // Pure forward runner: decode weights once per genome; reuse feature buffer every bar.
     const runNetwork = createForwardRunner(networkGenome, STOCK_TOPOLOGY);
     const features = new Array<number>(STOCK_TOPOLOGY.inputSize);
     return (index, position) => decidePositionFromNetwork(runNetwork(buildNetworkFeatures(columns, index, position, parameters, features)), position);
 }
 
 /**
- * Stateful wrapper (NN + rule):
- * - Stay long at least MIN_BARS_IN_LONG before sell
- * - Stay cash at least MIN_BARS_IN_CASH before rebuy (blocks next-day re-entry after exit)
+ * 有狀態 cooldown 包裝（NN + rule 都用）：
+ * - long 至少 MIN_BARS_IN_LONG 先准賣
+ * - cash 至少 MIN_BARS_IN_CASH 先准再買（沽後冷靜期）
+ *
+ * 注意：每次 withHoldCooldown(base) 都係新 closure；
+ * evaluate 嘅 second half 要 fresh 一份，唔好共用 full walk 嘅計數。
  */
 function withHoldCooldown(decide: PositionDecider): PositionDecider {
     let barsInState = 0;
@@ -365,11 +422,11 @@ function withHoldCooldown(decide: PositionDecider): PositionDecider {
         if (raw === position) {
             return position;
         }
-        // Long → cash: need enough bars invested
+        // Long → cash：持倉日數未夠
         if (position > 0 && raw === 0 && barsInState < MIN_BARS_IN_LONG) {
             return position;
         }
-        // Cash → long: need enough bars flat (cooldown after sell)
+        // Cash → long：冷靜期未完
         if (position <= 0 && raw === 1 && barsInState < MIN_BARS_IN_CASH) {
             return position;
         }
@@ -377,6 +434,7 @@ function withHoldCooldown(decide: PositionDecider): PositionDecider {
     };
 }
 
+/** 參數 → cache key 字串（只含會影響 columns 嘅 period／multiplier） */
 function createIndicatorCacheKey(parameters: OptimizedIndicatorParameters): string {
     return [
         parameters.smaFastPeriod,
@@ -395,6 +453,10 @@ function createIndicatorCacheKey(parameters: OptimizedIndicatorParameters): stri
     ].join(":");
 }
 
+/**
+ * 喺 [start, end) 上 walk 一轉，只回 metrics（唔錄曲線／trades）。
+ * 每日：用 previous bar 嘅 decide → 當日 close 回報 × 原倉位 − 換手成本。
+ */
 function simulateColumnMetrics(decide: PositionDecider, columns: IndicatorColumns, startingPosition: number, start: number, end: number): SegmentMetrics {
     let equity = STARTING_EQUITY;
     let position = startingPosition;
@@ -408,11 +470,12 @@ function simulateColumnMetrics(decide: PositionDecider, columns: IndicatorColumn
 
     for (let index = start + 1; index < end; index += 1) {
         const previous = index - 1;
+        // 用「昨日」資訊決定「今日」目標倉；當日回報按「轉倉前」倉位計
         const targetPosition = decide(previous, position);
         const turnover = Math.abs(targetPosition - position);
         const priceReturn = columns.close[index] / columns.close[previous] - 1;
         const dailyReturn = position * priceReturn - turnover * TRANSACTION_COST;
-        equity *= Math.max(0.01, 1 + dailyReturn);
+        equity *= Math.max(0.01, 1 + dailyReturn); // floor 1% equity，防歸零
         returnSum += dailyReturn;
         returnSqSum += dailyReturn * dailyReturn;
         returnCount += 1;
@@ -434,8 +497,8 @@ function simulateColumnMetrics(decide: PositionDecider, columns: IndicatorColumn
 }
 
 /**
- * Walk the full train window once while also accumulating first-half metrics
- * (same semantics as separate simulateColumnMetrics calls for full + first half).
+ * 一次 walk 同時累積 full train + first half metrics。
+ * 語意等同分別 call simulateColumnMetrics(full) 同 firstHalf，慳一次 loop。
  */
 function simulateFullAndFirstHalf(decide: PositionDecider, columns: IndicatorColumns, trainLength: number, mid: number): {full: SegmentMetrics; firstHalf: SegmentMetrics} {
     let equity = STARTING_EQUITY;
@@ -448,6 +511,7 @@ function simulateFullAndFirstHalf(decide: PositionDecider, columns: IndicatorCol
     let exposureSum = 0;
     let turnoverSum = 0;
 
+    // 前半段獨立累積（同 full 共用同一條 dailyReturn 路徑）
     let halfEquity = STARTING_EQUITY;
     let halfPeak = halfEquity;
     let halfMaxDrawdown = 0;
@@ -509,6 +573,10 @@ function simulateFullAndFirstHalf(decide: PositionDecider, columns: IndicatorCol
     };
 }
 
+/**
+ * 同 simulateColumnMetrics，但額外錄 equityCurve 同 trades（UI replay 用）。
+ * trade 標記喺「轉倉決策日」嘅 previous bar date／price。
+ */
 function simulateColumnReplay(decide: PositionDecider, columns: IndicatorColumns, points: MarketDataPoint[], start: number, end: number, startingPosition: number): SegmentResult {
     const length = Math.max(0, end - start);
     let equity = STARTING_EQUITY;
@@ -564,6 +632,10 @@ function simulateColumnReplay(decide: PositionDecider, columns: IndicatorColumns
     };
 }
 
+/**
+ * 年化 Sharpe：用 running moments（mean / variance），× √252。
+ * 唔存每日 return 陣列，慳記憶。
+ */
 function calculateSharpeFromMoments(returnSum: number, returnSqSum: number, returnCount: number): number {
     if (returnCount < 2) {
         return 0;
@@ -574,6 +646,7 @@ function calculateSharpeFromMoments(returnSum: number, returnSqSum: number, retu
     return deviation > 1e-9 ? (average / deviation) * Math.sqrt(252) : 0;
 }
 
+/** 特徵 clamp 到 [-1, 1]；非有限數 → 0 */
 function clamp(value: number): number {
     if (!Number.isFinite(value)) {
         return 0;
