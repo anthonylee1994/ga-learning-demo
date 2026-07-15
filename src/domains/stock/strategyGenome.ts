@@ -7,7 +7,8 @@ import type {Genome, NetworkTopology, OptimizedIndicatorParameters} from "../../
  * budget on indicator periods / thresholds (see STOCK_MUTATION_PROFILE), not a fat hidden net.
  */
 export const STOCK_TOPOLOGY: NetworkTopology = {
-    inputSize: 17,
+    /** 高低開收 4 維 + 指標/門檻距離/持倉 17 維。 */
+    inputSize: 21,
     hiddenLayers: [10, 5],
     outputSize: 3,
 };

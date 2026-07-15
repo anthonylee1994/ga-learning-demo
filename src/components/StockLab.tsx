@@ -29,7 +29,7 @@ type StockOptimizer = "ga" | "montecarlo";
 type StockTopic = Extract<TopicId, "stock" | "stock-mc">;
 
 const GA_DEFAULT_CONFIG: GAConfig = {
-    // ~270 genes (indicator head + NN tail) need a real population to search;
+    // ~310 genes (indicator head + NN tail) need a real population to search;
     // 36 was mostly elite-neighborhood random walk. Stock sim is cheap enough per genome.
     populationSize: 150,
     // Base rates; stock worker multiplies indicator genes ~3× and NN genes ~0.35×.
@@ -411,7 +411,7 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
                                 : `${STOCK_PARAMETER_GENE_COUNT} 週期/門檻（突變 ×3）+ ${STOCK_NETWORK_GENE_COUNT} 決策頭權重（×0.35；${describeStockNetwork()}）；開局有接近買入持有等種子`
                         }
                         genomeLabel={isMonteCarlo ? "參數向量" : "基因體"}
-                        inputs="17 維特徵（全部指標常開）+ 持倉狀態。"
+                        inputs="21 維特徵：高低開收 + 全部指標常開 + 持倉狀態。"
                         outputs={useNetwork ? "薄隱藏層取最大 → 買 / 持 / 賣；搜尋主力喺週期 / 門檻" : "SMA / MACD / RSI / 威廉 多數票買入；升勢要 RSI+威廉齊過熱先賣，否則單一過熱賣"}
                         termination={isMonteCarlo ? "頭 80% 做選擇；尾 20% 唔入訓練；每批保留全域最佳，暫停時重播冠軍" : "頭 80% 做選擇；尾 20% 唔入訓練；移民只重抽 head（參數）"}
                         title={isMonteCarlo ? "點樣套用蒙地卡羅優化" : "點樣套用遺傳演算法"}

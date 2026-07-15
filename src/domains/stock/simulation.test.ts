@@ -67,7 +67,22 @@ describe("stock simulation", () => {
             expect(value).toBeGreaterThanOrEqual(-1);
             expect(value).toBeLessThanOrEqual(1);
         });
-        expect(features[12]).toBe(1);
+        expect(features[16]).toBe(1);
+    });
+
+    it("includes OHLC candle structure in the feature vector", () => {
+        const columns = getIndicatorColumns(points, DEFAULT_INDICATOR_PARAMETERS);
+        const index = Math.min(50, columns.length - 1);
+        columns.open[index] = 100;
+        columns.high[index] = 105;
+        columns.low[index] = 98;
+        columns.close[index] = 100;
+        columns.closeReturn[index] = 0.02;
+        const features = buildNetworkFeatures(columns, index, 0, DEFAULT_INDICATOR_PARAMETERS);
+        expect(features[0]).toBeCloseTo(0, 5);
+        expect(features[1]).toBeGreaterThan(0);
+        expect(features[2]).toBeLessThan(0);
+        expect(features[3]).toBeCloseTo(0.4, 5);
     });
 
     it("feeds tuned RSI and Williams threshold distances into the network", () => {
@@ -76,18 +91,18 @@ describe("stock simulation", () => {
         columns.rsi[index] = 20;
         columns.williamsR[index] = -90;
         const oversold = buildNetworkFeatures(columns, index, 0, DEFAULT_INDICATOR_PARAMETERS);
-        expect(oversold[13]).toBeGreaterThan(0);
-        expect(oversold[14]).toBeLessThan(0);
-        expect(oversold[15]).toBeGreaterThan(0);
-        expect(oversold[16]).toBeLessThan(0);
+        expect(oversold[17]).toBeGreaterThan(0);
+        expect(oversold[18]).toBeLessThan(0);
+        expect(oversold[19]).toBeGreaterThan(0);
+        expect(oversold[20]).toBeLessThan(0);
 
         columns.rsi[index] = 80;
         columns.williamsR[index] = -10;
         const overbought = buildNetworkFeatures(columns, index, 1, DEFAULT_INDICATOR_PARAMETERS);
-        expect(overbought[13]).toBeLessThan(0);
-        expect(overbought[14]).toBeGreaterThan(0);
-        expect(overbought[15]).toBeLessThan(0);
-        expect(overbought[16]).toBeGreaterThan(0);
+        expect(overbought[17]).toBeLessThan(0);
+        expect(overbought[18]).toBeGreaterThan(0);
+        expect(overbought[19]).toBeLessThan(0);
+        expect(overbought[20]).toBeGreaterThan(0);
     });
 
     it("uses tuned RSI and Williams thresholds in rule mode", () => {

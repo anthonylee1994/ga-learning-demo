@@ -11,7 +11,12 @@ const EPSILON = 1e-9;
 export interface IndicatorColumns {
     warmup: number;
     length: number;
+    open: Float64Array;
+    high: Float64Array;
+    low: Float64Array;
     close: Float64Array;
+    /** close / previous close − 1（收盤日回報，畀 NN 用）。 */
+    closeReturn: Float64Array;
     smaFast: Float64Array;
     smaSlow: Float64Array;
     williamsR: Float64Array;
@@ -36,7 +41,11 @@ export function calculateIndicatorColumns(points: MarketDataPoint[], parameters:
     const columns: IndicatorColumns = {
         warmup,
         length,
+        open: new Float64Array(length),
+        high: new Float64Array(length),
+        low: new Float64Array(length),
         close: new Float64Array(length),
+        closeReturn: new Float64Array(length),
         smaFast: new Float64Array(length),
         smaSlow: new Float64Array(length),
         williamsR: new Float64Array(length),
@@ -77,7 +86,12 @@ export function calculateIndicatorColumns(points: MarketDataPoint[], parameters:
         const volumeDeviation = standardDeviationRange(volumes, index - parameters.volumeZScorePeriod + 1, index + 1, volumeMean);
         const nDayHigh = highestHighRange(points, index - parameters.newHighPeriod + 1, index + 1);
 
+        const prevClose = index > 0 ? closes[index - 1] : point.open;
+        columns.open[cursor] = point.open;
+        columns.high[cursor] = point.high;
+        columns.low[cursor] = point.low;
         columns.close[cursor] = point.close;
+        columns.closeReturn[cursor] = point.close / Math.max(prevClose, EPSILON) - 1;
         columns.smaFast[cursor] = meanRange(closes, index - parameters.smaFastPeriod + 1, index + 1);
         columns.smaSlow[cursor] = meanRange(closes, index - parameters.smaSlowPeriod + 1, index + 1);
         columns.williamsR[cursor] = calculateWilliamsR(points, index, parameters.williamsPeriod);

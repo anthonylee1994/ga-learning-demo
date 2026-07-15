@@ -109,23 +109,27 @@ export function createNetworkDecisionLines(networkGenome: Genome): string[] {
     layerNames.push(["outBuy", "outHold", "outSell"]);
 
     const lines: string[] = [
-        `f0 = clamp((close / smaFast - 1.0) * 10.0)`,
-        `f1 = clamp((close / smaSlow - 1.0) * 10.0)`,
-        `f2 = clamp((smaFast / smaSlow - 1.0) * 10.0)`,
-        `f3 = clamp((williamsR + 50.0) / 50.0)`,
-        `f4 = clamp(roc * 5.0)`,
-        `f5 = clamp((rsi - 50.0) / 50.0)`,
-        `f6 = clamp(macdLine / close * 25.0)`,
-        `f7 = clamp(macdSignal / close * 25.0)`,
-        `f8 = clamp((bollingerPercentB - 0.5) * 2.0)`,
-        `f9 = clamp(volatility * 5.0)`,
-        `f10 = clamp(volumeZScore / 3.0)`,
-        `f11 = clamp((newHighRatio - 0.95) * 20.0)`,
-        "f12 = strategy.position_size > 0 ? 1.0 : -1.0",
-        `f13 = clamp((rsiBuyThreshold - rsi) / 20.0)`,
-        `f14 = clamp((rsi - rsiSellThreshold) / 20.0)`,
-        `f15 = clamp((williamsBuyThreshold - williamsR) / 25.0)`,
-        `f16 = clamp((williamsR - williamsSellThreshold) / 25.0)`,
+        `f0 = clamp((open / close - 1.0) * 50.0)`,
+        `f1 = clamp((high / close - 1.0) * 50.0)`,
+        `f2 = clamp((low / close - 1.0) * 50.0)`,
+        `f3 = clamp((close / close[1] - 1.0) * 20.0)`,
+        `f4 = clamp((close / smaFast - 1.0) * 10.0)`,
+        `f5 = clamp((close / smaSlow - 1.0) * 10.0)`,
+        `f6 = clamp((smaFast / smaSlow - 1.0) * 10.0)`,
+        `f7 = clamp((williamsR + 50.0) / 50.0)`,
+        `f8 = clamp(roc * 5.0)`,
+        `f9 = clamp((rsi - 50.0) / 50.0)`,
+        `f10 = clamp(macdLine / close * 25.0)`,
+        `f11 = clamp(macdSignal / close * 25.0)`,
+        `f12 = clamp((bollingerPercentB - 0.5) * 2.0)`,
+        `f13 = clamp(volatility * 5.0)`,
+        `f14 = clamp(volumeZScore / 3.0)`,
+        `f15 = clamp((newHighRatio - 0.95) * 20.0)`,
+        "f16 = strategy.position_size > 0 ? 1.0 : -1.0",
+        `f17 = clamp((rsiBuyThreshold - rsi) / 20.0)`,
+        `f18 = clamp((rsi - rsiSellThreshold) / 20.0)`,
+        `f19 = clamp((williamsBuyThreshold - williamsR) / 25.0)`,
+        `f20 = clamp((williamsR - williamsSellThreshold) / 25.0)`,
         "",
     ];
 
@@ -196,7 +200,7 @@ export function decodeLayers(networkGenome: Genome): DenseLayer[] {
 
 /**
  * Evaluate the same affine+tanh stack the Pine export emits (for parity tests).
- * Input is the 17-d feature vector already built.
+ * Input is the feature vector already built (matches STOCK_TOPOLOGY.inputSize).
  */
 export function evaluatePineNetwork(networkGenome: Genome, input: number[]): number[] {
     const layers = decodeLayers(networkGenome);

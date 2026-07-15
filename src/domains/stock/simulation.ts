@@ -7,6 +7,10 @@ import {decodeStockGenome, STOCK_TOPOLOGY} from "./strategyGenome";
 export {STOCK_TOPOLOGY} from "./strategyGenome";
 
 export const STOCK_INPUT_LABELS = [
+    "開",
+    "高",
+    "低",
+    "收",
     "快線",
     "慢線",
     "快慢線差",
@@ -238,26 +242,34 @@ export function buildNetworkFeatures(
     out: number[] = new Array(STOCK_TOPOLOGY.inputSize)
 ): number[] {
     const close = Math.max(columns.close[index], 1e-9);
+    const open = columns.open[index];
+    const high = columns.high[index];
+    const low = columns.low[index];
     const smaFast = Math.max(columns.smaFast[index], 1e-9);
     const smaSlow = Math.max(columns.smaSlow[index], 1e-9);
-    out[0] = clamp((close / smaFast - 1) * 10);
-    out[1] = clamp((close / smaSlow - 1) * 10);
-    out[2] = clamp((smaFast / smaSlow - 1) * 10);
-    out[3] = clamp((columns.williamsR[index] + 50) / 50);
-    out[4] = clamp(columns.roc[index] * 5);
-    out[5] = clamp((columns.rsi[index] - 50) / 50);
-    out[6] = clamp((columns.macd[index] / close) * 25);
-    out[7] = clamp((columns.macdSignal[index] / close) * 25);
-    out[8] = clamp((columns.bollingerPercentB[index] - 0.5) * 2);
-    out[9] = clamp(columns.volatility[index] * 5);
-    out[10] = clamp(columns.volumeZScore[index] / 3);
+    // 高低開收：K 線結構（相對收盤）+ 收盤日回報，縮放到 roughly [-1, 1]。
+    out[0] = clamp((open / close - 1) * 50);
+    out[1] = clamp((high / close - 1) * 50);
+    out[2] = clamp((low / close - 1) * 50);
+    out[3] = clamp(columns.closeReturn[index] * 20);
+    out[4] = clamp((close / smaFast - 1) * 10);
+    out[5] = clamp((close / smaSlow - 1) * 10);
+    out[6] = clamp((smaFast / smaSlow - 1) * 10);
+    out[7] = clamp((columns.williamsR[index] + 50) / 50);
+    out[8] = clamp(columns.roc[index] * 5);
+    out[9] = clamp((columns.rsi[index] - 50) / 50);
+    out[10] = clamp((columns.macd[index] / close) * 25);
+    out[11] = clamp((columns.macdSignal[index] / close) * 25);
+    out[12] = clamp((columns.bollingerPercentB[index] - 0.5) * 2);
+    out[13] = clamp(columns.volatility[index] * 5);
+    out[14] = clamp(columns.volumeZScore[index] / 3);
     // close / N-day high ≈ 1 at breakout; map ~[0.9, 1.0] into roughly [-1, 1].
-    out[11] = clamp((columns.newHighRatio[index] - 0.95) * 20);
-    out[12] = position > 0 ? 1 : -1;
-    out[13] = clamp((parameters.rsiBuyThreshold - columns.rsi[index]) / 20);
-    out[14] = clamp((columns.rsi[index] - parameters.rsiSellThreshold) / 20);
-    out[15] = clamp((parameters.williamsBuyThreshold - columns.williamsR[index]) / 25);
-    out[16] = clamp((columns.williamsR[index] - parameters.williamsSellThreshold) / 25);
+    out[15] = clamp((columns.newHighRatio[index] - 0.95) * 20);
+    out[16] = position > 0 ? 1 : -1;
+    out[17] = clamp((parameters.rsiBuyThreshold - columns.rsi[index]) / 20);
+    out[18] = clamp((columns.rsi[index] - parameters.rsiSellThreshold) / 20);
+    out[19] = clamp((parameters.williamsBuyThreshold - columns.williamsR[index]) / 25);
+    out[20] = clamp((columns.williamsR[index] - parameters.williamsSellThreshold) / 25);
     return out;
 }
 
