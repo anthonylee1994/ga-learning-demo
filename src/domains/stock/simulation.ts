@@ -10,7 +10,7 @@
  * - useNetwork=true：NN 睇 22 維特徵 → 買／持／賣（持倉 sticky + margin 先轉倉）
  * - useNetwork=false：規則投票（SMA / MACD / RSI / Williams）
  *
- * 兩者外層都包 withHoldCooldown（最少持倉／空倉 5 根 K），防止日日 thrash 俾 fee 食晒。
+ * 唔再硬 lock 最少持倉日數；thrash 靠 0.15% 成本 + fitness 換手罰（meanTurnover）打壓。
  */
 import {createForwardRunner} from "../../lib/neuralNetwork";
 import type {Genome, MarketDataPoint, OptimizedIndicatorParameters, TradeMarker, TradingPoint, TradingReplay} from "../../lib/types";
@@ -68,27 +68,19 @@ const MAX_INDICATOR_CACHE = 16;
  */
 const WEIGHT_L2_PENALTY = 0.28;
 /**
- * 做多至少持幾多 bar 先准賣。
- * 擋住 multi-day thrash（fee bleed）同「持幾日就翻」嘅 noise。
- * 匯出 Pine／Futu 必須同值。
- */
-export const STOCK_MIN_BARS_IN_LONG = 5;
-/**
- * 沽出後至少 cash 幾多 bar 先准再買。
- * 專門堵「噚日沽、今日又買返」round-trip。
- * 匯出 Pine／Futu 必須同值。
- */
-export const STOCK_MIN_BARS_IN_CASH = 5;
-/**
  * NN 模式：轉倉要比「留守」大呢個 tanh 空間 margin。
  * 平手／近平手維持現狀 → 長倉段穩陣啲。
  * 匯出 Pine／Futu 必須同值。
  */
 export const STOCK_ACTION_MARGIN = 0.08;
 
-const MIN_BARS_IN_LONG = STOCK_MIN_BARS_IN_LONG;
-const MIN_BARS_IN_CASH = STOCK_MIN_BARS_IN_CASH;
 const ACTION_MARGIN = STOCK_ACTION_MARGIN;
+/**
+ * fitness 換手罰：線性 + 二次。
+ * 偶而轉倉（meanTurnover 細）扣少；日日 full flip 二次項爆罰（取代舊 min-hold hard lock）。
+ */
+const THRASH_LINEAR = 48;
+const THRASH_QUADRATIC = 140;
 
 /** 三段切法：train / validate（fitness）/ test（只展示） */
 export function getStockSplitIndices(length: number): {trainEnd: number; validateEnd: number} {
@@ -175,8 +167,8 @@ export function getIndicatorSnapshots(points: MarketDataPoint[], parameters: Opt
  * − 0.20 * max(0, train−val) — train 靚、validate 仆 → 罰過擬合
  * − L2(network)              — 淨 NN 模式先罰權重
  *
- * 執行：train→validate **一條連續 walk、同一個 withHoldCooldown**（同 UI replay），
- * 段界唔重置 min-hold／cash 冷靜期，避免 fitness OOS 同畫面不一致。
+ * 執行：train→validate **一條連續 walk**（同 UI replay 嘅決策路徑），
+ * thrash 淨靠成本 + scoreSegment 換手罰，唔硬鎖持倉日數。
  */
 export function evaluateStockGenome(genome: Genome, points: MarketDataPoint[], useNetwork = true): number {
     const {parameters, networkGenome} = decodeStockGenome(genome);
@@ -187,7 +179,7 @@ export function evaluateStockGenome(genome: Genome, points: MarketDataPoint[], u
         return -1_000;
     }
 
-    const decide = withHoldCooldown(createPositionDecider(columns, parameters, networkGenome, useNetwork));
+    const decide = createPositionDecider(columns, parameters, networkGenome, useNetwork);
     const mid = Math.floor(trainEnd / 2);
     const {full, firstHalf, secondHalf, validate: validateMetrics} = simulateFitnessWalk(decide, columns, trainEnd, mid, validateEnd);
 
@@ -209,7 +201,7 @@ export function evaluateStockGenome(genome: Genome, points: MarketDataPoint[], u
  *
  * 調校目標：可轉移 > 紙上 thrash；
  * - 永遠 cash 有硬罰
- * - thrash 罰比舊版重（配合 0.15% 成本）
+ * - thrash 用線性+二次罰（取代 min-hold hard lock；配合 0.15% 成本）
  * - 牛市要 long participation 先贏
  *
  * 對齊 buy-and-hold 時 excess 部分 ≈ 0。
@@ -224,8 +216,9 @@ function scoreSegment(metrics: SegmentMetrics, columns: IndicatorColumns, start:
     const annualizedExcess = logExcess / years;
     // 幾乎唔入市：牛市窗口下差過弱 long
     const cashPenalty = metrics.meanExposure < 0.08 ? 40 : metrics.meanExposure < 0.2 ? 12 : 0;
-    // 日日 flip 有稅；持幾個星期轉倉問題唔大
-    const thrashPenalty = metrics.meanTurnover * 28;
+    // 換手：輕轉倉扣少；日日 full flip 二次項重罰
+    const t = metrics.meanTurnover;
+    const thrashPenalty = t * THRASH_LINEAR + t * t * THRASH_QUADRATIC;
 
     return annualizedExcess * 220 + logExcess * 45 + metrics.totalReturn * 55 + metrics.meanExposure * 24 + metrics.sharpe * 5 - metrics.maxDrawdown * 12 - thrashPenalty - cashPenalty;
 }
@@ -243,15 +236,14 @@ function meanSquare(genome: Genome): number {
 }
 
 /**
- * UI 用完整 replay：train→validate→test 一條連續 walk（cooldown 跨段唔重置）。
+ * UI 用完整 replay：train→validate→test 一條連續 walk。
  * 段回報用 equity 邊界計；純 test 永不入 fitness。
  */
 export function createTradingReplay(genome: Genome, points: MarketDataPoint[], useNetwork = true): TradingReplay {
     const {parameters, networkGenome} = decodeStockGenome(genome);
     const columns = getIndicatorColumns(points, parameters);
     const {trainEnd, validateEnd} = getStockSplitIndices(columns.length);
-    const decide = withHoldCooldown(createPositionDecider(columns, parameters, networkGenome, useNetwork));
-    // 全程一轉：避免 split 處「免費解 thrash lock」
+    const decide = createPositionDecider(columns, parameters, networkGenome, useNetwork);
     const full = simulateColumnReplay(decide, columns, points, 0, columns.length, 0);
     const equityAt = (index: number) => full.equityCurve[Math.min(Math.max(0, index), full.equityCurve.length - 1)] ?? STARTING_EQUITY;
     const trainEquity = equityAt(trainEnd - 1);
@@ -446,39 +438,6 @@ function createPositionDecider(columns: IndicatorColumns, parameters: OptimizedI
     return (index, position) => decidePositionFromNetwork(runNetwork(buildNetworkFeatures(columns, index, position, parameters, features)), position);
 }
 
-/**
- * 有狀態 cooldown 包裝（NN + rule 都用）：
- * - long 至少 MIN_BARS_IN_LONG 先准賣
- * - cash 至少 MIN_BARS_IN_CASH 先准再買（沽後冷靜期）
- *
- * 注意：每次 withHoldCooldown(base) 都係新 closure；
- * evaluate 嘅 second half 要 fresh 一份，唔好共用 full walk 嘅計數。
- */
-function withHoldCooldown(decide: PositionDecider): PositionDecider {
-    let barsInState = 0;
-    let lastPosition = -1;
-    return (index, position) => {
-        if (position !== lastPosition) {
-            barsInState = 0;
-            lastPosition = position;
-        }
-        barsInState += 1;
-        const raw = decide(index, position);
-        if (raw === position) {
-            return position;
-        }
-        // Long → cash：持倉日數未夠
-        if (position > 0 && raw === 0 && barsInState < MIN_BARS_IN_LONG) {
-            return position;
-        }
-        // Cash → long：冷靜期未完
-        if (position <= 0 && raw === 1 && barsInState < MIN_BARS_IN_CASH) {
-            return position;
-        }
-        return raw;
-    };
-}
-
 /** 參數 → cache key 字串（只含會影響 columns 嘅 period／multiplier） */
 function createIndicatorCacheKey(parameters: OptimizedIndicatorParameters): string {
     return [
@@ -500,8 +459,8 @@ function createIndicatorCacheKey(parameters: OptimizedIndicatorParameters): stri
 }
 
 /**
- * 一次連續 walk：train 全段 + validate（同一 decide／cooldown）。
- * 段回報各自用 STARTING_EQUITY 起計（分數只睇段內 return）；倉位同 min-hold 計數一路傳落去。
+ * 一次連續 walk：train 全段 + validate（同一 decide）。
+ * 段回報各自用 STARTING_EQUITY 起計（分數只睇段內 return）；倉位一路傳落去。
  */
 function simulateFitnessWalk(
     decide: PositionDecider,

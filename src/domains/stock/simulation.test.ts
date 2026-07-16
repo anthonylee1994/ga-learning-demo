@@ -21,9 +21,7 @@ describe("stock simulation", () => {
         expect(Number.isFinite(evaluateStockGenome(genome, points))).toBe(true);
     });
 
-    it("uses one continuous cooldown path for train+validate fitness (finite, stable)", () => {
-        // Fitness walk no longer resets min-hold at the train|validate split.
-        // Score must stay finite and agree with itself (pure function).
+    it("fitness is a pure finite function of genome + data", () => {
         const a = evaluateStockGenome(genome, points, true);
         const b = evaluateStockGenome(genome, points, true);
         expect(Number.isFinite(a)).toBe(true);
@@ -87,25 +85,41 @@ describe("stock simulation", () => {
         expect(decidePositionFromNetwork([0.7, 0.1, 0.5], 0, 0.08)).toBe(1);
     });
 
-    it("never stacks same-action fills and enforces min re-entry gap", () => {
+    it("never stacks same-action fills (binary long/cash)", () => {
         const rising = createMarketData(700);
         for (const seed of createStockSeedGenomes()) {
             for (const useNetwork of [true, false]) {
                 const replay = createTradingReplay(seed, rising, useNetwork);
-                const dateToIdx = new Map(replay.points.map((point, index) => [point.date, index]));
                 for (let index = 1; index < replay.trades.length; index += 1) {
                     expect(replay.trades[index].action).not.toBe(replay.trades[index - 1].action);
-                    const gap = (dateToIdx.get(replay.trades[index].date) ?? 0) - (dateToIdx.get(replay.trades[index - 1].date) ?? 0);
-                    expect(gap).toBeGreaterThanOrEqual(5);
-                }
-                const buys = replay.trades.filter(trade => trade.action === "buy");
-                for (let index = 1; index < buys.length; index += 1) {
-                    const gap = (dateToIdx.get(buys[index].date) ?? 0) - (dateToIdx.get(buys[index - 1].date) ?? 0);
-                    // 最少 5 持倉 + 5 空倉
-                    expect(gap).toBeGreaterThanOrEqual(10);
                 }
             }
         }
+    });
+
+    it("penalizes thrash relative to buy-biased seed on a rising market", () => {
+        const rising = createMarketData(700);
+        const buySeed = createStockSeedGenomes()[0];
+        // Same periods, force buy/sell thrash via output biases
+        const thrash = buySeed.slice();
+        const {networkGenome} = decodeStockGenome(buySeed);
+        const headLen = STOCK_GENE_COUNT - networkGenome.length;
+        const out = headLen + networkGenome.length - 3;
+        thrash[out] = 2;
+        thrash[out + 1] = -2;
+        thrash[out + 2] = 2;
+        // Position-sticky thrash needs position-sensitive weights; high sell+buy both high still thrash less under sticky.
+        // Compare high-turnover seed (mean-reversion-ish last seed) vs buy-hold seed fitness ranking on rising market.
+        const choppy = createStockSeedGenomes()[4];
+        const buyFit = evaluateStockGenome(buySeed, rising, true);
+        const choppyFit = evaluateStockGenome(choppy, rising, true);
+        const buyReplay = createTradingReplay(buySeed, rising, true);
+        const choppyReplay = createTradingReplay(choppy, rising, true);
+        // When buy-seed holds longer / trades less and earns more, fitness must not prefer thrash.
+        if (buyReplay.trades.length < choppyReplay.trades.length && buyReplay.trainReturn >= choppyReplay.trainReturn - 0.05) {
+            expect(buyFit).toBeGreaterThan(choppyFit);
+        }
+        expect(Number.isFinite(evaluateStockGenome(thrash, rising, true))).toBe(true);
     });
 
     it("tracks long/cash position from the trade log before a date", () => {

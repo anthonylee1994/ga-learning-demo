@@ -343,24 +343,6 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
                                     <p className="eyebrow">冠軍基因體 · 指標參數</p>
                                     <h3>最佳指標參數</h3>
                                 </div>
-                                <div className="export-actions">
-                                    <Button
-                                        onPress={() => copyScriptToClipboard(createPineScript(demo.champion!.genome, marketData?.symbol ?? "QQQ", useNetwork), "Pine Script 已複製到剪貼簿")}
-                                        size="sm"
-                                        variant="secondary"
-                                    >
-                                        <ClipboardCopy size={15} strokeWidth={1.5} />
-                                        複製 Pine Script
-                                    </Button>
-                                    <Button
-                                        onPress={() => copyScriptToClipboard(createFutuPythonScript(demo.champion!.genome, useNetwork), "富途 Python 已複製到剪貼簿")}
-                                        size="sm"
-                                        variant="secondary"
-                                    >
-                                        <ClipboardCopy size={15} strokeWidth={1.5} />
-                                        複製富途 Python
-                                    </Button>
-                                </div>
                             </div>
                             <div className="parameter-grid">
                                 <ParameterValue label="移動平均線" value={`${parameters.smaFastPeriod} / ${parameters.smaSlowPeriod}`} />
@@ -430,7 +412,7 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
                     <FitnessChart eyebrow={isMonteCarlo ? "搜尋訊號" : "演化訊號"} history={demo.history} title={isMonteCarlo ? "批次適應度趨勢" : "適應度趨勢"} />
                     <ApplicationPanel
                         eyebrow={isMonteCarlo ? "蒙地卡羅對應" : "GA 對應"}
-                        fitness="train 50% + validate 30% + robust 12% − 過擬合罰 − L2；超額回報主軸；次日開盤成交；0.15% 成本；最少持／空各 5 日；train 靚 validate 仆會扣分；尾 15% test 永不入分"
+                        fitness="train 50% + validate 30% + robust 12% − 過擬合罰 − L2；超額回報主軸；次日開盤成交；0.15% 成本；換手 thrash 分數罰（無 min-hold 硬鎖）；train 靚 validate 仆會扣分；尾 15% test 永不入分"
                         genome={
                             isMonteCarlo
                                 ? `${STOCK_PARAMETER_GENE_COUNT} 週期/門檻 + ${STOCK_NETWORK_GENE_COUNT} 決策頭；每批混合全域隨機抽樣 + 冠軍附近局部遊走（局部比例 = 滑桿）；開局有接近買入持有等種子`
@@ -467,6 +449,26 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
                                 使用神經網絡
                             </Switch.Content>
                         </Switch>
+                        <div className="export-actions">
+                            <Button
+                                isDisabled={!demo.champion?.genome}
+                                onPress={() => copyScriptToClipboard(createPineScript(demo.champion!.genome, marketData?.symbol ?? "QQQ", useNetwork), "Pine Script 已複製到剪貼簿")}
+                                size="sm"
+                                variant="secondary"
+                            >
+                                <ClipboardCopy size={15} strokeWidth={1.5} />
+                                複製 Pine Script
+                            </Button>
+                            <Button
+                                isDisabled={!demo.champion?.genome}
+                                onPress={() => copyScriptToClipboard(createFutuPythonScript(demo.champion!.genome, useNetwork), "富途 Python 已複製到剪貼簿")}
+                                size="sm"
+                                variant="secondary"
+                            >
+                                <ClipboardCopy size={15} strokeWidth={1.5} />
+                                複製富途 Python
+                            </Button>
+                        </div>
                         <GenomeTransfer
                             disabled={!trainingData || loading}
                             fitness={demo.champion?.fitness}

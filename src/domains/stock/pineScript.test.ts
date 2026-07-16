@@ -50,14 +50,12 @@ describe("Pine Script export", () => {
         expect(script).toContain('strategy.entry("Long", strategy.long)');
         expect(script).toContain('strategy.close("Long")');
         expect(script).not.toContain("strategy.short");
-        // Parity with browser sim: margin, sticky stay, min hold / cash cooldown
+        // Parity with browser sim: margin + sticky stay (no min-hold hard lock)
         expect(script).toContain("actionMargin = 0.08");
         expect(script).toContain("stayIfFlat = math.max(outHold, outSell)");
         expect(script).toContain("stayIfLong = math.max(outHold, outBuy)");
-        expect(script).toContain("minBarsLong = 5");
-        expect(script).toContain("minBarsCash = 5");
-        expect(script).toContain("canBuy = flatPos <= 0 and barsInState >= minBarsCash");
-        expect(script).toContain("canSell = flatPos > 0 and barsInState >= minBarsLong");
+        expect(script).not.toContain("minBarsLong");
+        expect(script).not.toContain("barsInState");
     });
 
     it("decodes the full network genome into hidden×2 + output layers", () => {

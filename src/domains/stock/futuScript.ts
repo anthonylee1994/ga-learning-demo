@@ -1,5 +1,5 @@
 import type {Genome} from "../../lib/types";
-import {STOCK_ACTION_MARGIN, STOCK_MIN_BARS_IN_CASH, STOCK_MIN_BARS_IN_LONG} from "./simulation";
+import {STOCK_ACTION_MARGIN} from "./simulation";
 import {decodeLayers, formatNumber as formatNum} from "./pineScript";
 import {decodeStockGenome} from "./strategyGenome";
 
@@ -351,9 +351,6 @@ def compute_signals():
         i = i + 1
 
     position = 0
-    bars_in_state = 0
-    MIN_BARS_LONG = ${STOCK_MIN_BARS_IN_LONG}
-    MIN_BARS_CASH = ${STOCK_MIN_BARS_IN_CASH}
     ACTION_MARGIN = ${STOCK_ACTION_MARGIN}
     warm = SMA_SLOW
     if WILL_P > warm:
@@ -425,15 +422,12 @@ def compute_signals():
 
 ${decisionBlock}
 
-        bars_in_state = bars_in_state + 1
-        if buy_signal and position <= 0 and bars_in_state >= MIN_BARS_CASH:
+        if buy_signal and position <= 0:
             enter[i] = 1
             position = 1
-            bars_in_state = 0
-        elif sell_signal and position > 0 and bars_in_state >= MIN_BARS_LONG:
+        elif sell_signal and position > 0:
             exit_[i] = 1
             position = 0
-            bars_in_state = 0
 
         i = i + 1
 

@@ -25,10 +25,10 @@ describe("Futu Python export", () => {
         expect(script).toContain("ACTION_MARGIN = 0.08");
         expect(script).toContain("buy_signal = out_buy >= stay + ACTION_MARGIN");
         expect(script).toContain("sell_signal = out_sell >= stay + ACTION_MARGIN");
-        expect(script).toContain("MIN_BARS_LONG = 5");
-        expect(script).toContain("MIN_BARS_CASH = 5");
-        expect(script).toContain("if buy_signal and position <= 0 and bars_in_state >= MIN_BARS_CASH:");
-        expect(script).toContain("elif sell_signal and position > 0 and bars_in_state >= MIN_BARS_LONG:");
+        expect(script).not.toContain("MIN_BARS_LONG");
+        expect(script).not.toContain("bars_in_state");
+        expect(script).toContain("if buy_signal and position <= 0:");
+        expect(script).toContain("elif sell_signal and position > 0:");
         expect(script).toContain('plot("SMA Fast", sma_f_seq, Color.yellow)');
         expect(script).toContain('plot("SMA Slow", sma_s_seq, Color.blue)');
         expect(script).toContain('plot("BB Upper", bb_up_seq, Color.gray)');

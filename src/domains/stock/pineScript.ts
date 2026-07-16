@@ -1,5 +1,5 @@
 import type {Genome} from "../../lib/types";
-import {STOCK_ACTION_MARGIN, STOCK_MIN_BARS_IN_CASH, STOCK_MIN_BARS_IN_LONG} from "./simulation";
+import {STOCK_ACTION_MARGIN} from "./simulation";
 import {decodeStockGenome, STOCK_TOPOLOGY} from "./strategyGenome";
 
 interface DenseLayer {
@@ -76,30 +76,22 @@ newLowRatio = nDayLow / math.max(close, 0.000000001)
 ready = not na(smaSlow) and not na(williamsR) and not na(roc) and not na(rsi) and not na(macdSignal) and not na(bollingerUpper) and not na(volatility) and not na(volumeZScore) and not na(nDayHigh) and not na(nDayLow)
 ${decisionLines.join("\n")}
 
-// Match browser sim: position-sticky signals + min hold / cash cooldown (block next-day thrash).
-minBarsLong = ${STOCK_MIN_BARS_IN_LONG}
-minBarsCash = ${STOCK_MIN_BARS_IN_CASH}
+// Match browser sim: position-sticky signals (no min-hold hard lock; thrash taxed in fitness via costs).
 var int flatPos = 0
-var int barsInState = 0
-barsInState += 1
 rawBuy = buySignal
 rawSell = sellSignal
 // Sticky: when long, buy is "stay"; when flat, sell is noise.
 buySignal := ready and (flatPos <= 0) and rawBuy
 sellSignal := ready and (flatPos > 0) and rawSell
-canBuy = flatPos <= 0 and barsInState >= minBarsCash
-canSell = flatPos > 0 and barsInState >= minBarsLong
 entered = false
 exited = false
-if buySignal and canBuy
+if buySignal
     strategy.entry("Long", strategy.long)
     flatPos := 1
-    barsInState := 0
     entered := true
-if sellSignal and canSell
+if sellSignal
     strategy.close("Long")
     flatPos := 0
-    barsInState := 0
     exited := true
 
 plot(smaFast, "Optimized SMA Fast", color=color.yellow)
