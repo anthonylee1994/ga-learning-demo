@@ -115,10 +115,10 @@ export const StockPlaybackCanvas = React.memo<Props>(({replay, speed, playing = 
             <div className="stock-playback-hud" aria-live="polite">
                 <HudStat label="日期" value={point?.date ?? "—"} mono />
                 <HudStat label="收市" value={point ? formatPrice(point.close) : "—"} mono />
-                <HudStat label="持倉" value={position > 0 ? "做多" : "現金"} accent={position > 0 ? "long" : "cash"} />
+                <HudStat label="持倉" value={position > 0 ? "做多" : position < 0 ? "做空" : "空倉"} accent={position > 0 ? "long" : position < 0 ? "short" : "cash"} />
                 <HudStat label="策略權益" value={point ? formatPrice(point.strategy) : "—"} mono />
                 <HudStat label="買入持有" value={point ? formatPrice(point.benchmark) : "—"} mono />
-                <HudStat label="動作" value={trade ? (trade.action === "buy" ? "買入" : "賣出") : "持有"} accent={trade?.action === "buy" ? "buy" : trade?.action === "sell" ? "sell" : undefined} />
+                <HudStat label="動作" value={trade ? (trade.action === "buy" ? "買入" : "沽空") : "持有"} accent={trade?.action === "buy" ? "buy" : trade?.action === "sell" ? "sell" : undefined} />
                 <HudStat label="區段" value={segmentLabel(point?.segment)} />
                 <HudStat label="進度" value={`${index + 1}/${replay?.points.length ?? 0}`} mono />
             </div>
@@ -129,7 +129,7 @@ export const StockPlaybackCanvas = React.memo<Props>(({replay, speed, playing = 
     );
 });
 
-const HudStat = React.memo(({label, value, mono, accent}: {label: string; value: string; mono?: boolean; accent?: "long" | "cash" | "buy" | "sell"}) => (
+const HudStat = React.memo(({label, value, mono, accent}: {label: string; value: string; mono?: boolean; accent?: "long" | "short" | "cash" | "buy" | "sell"}) => (
     <div className={accent ? `stock-hud-stat stock-hud-stat--${accent}` : "stock-hud-stat"}>
         <span>{label}</span>
         <strong className={mono ? "font-mono" : undefined}>{value}</strong>
@@ -144,7 +144,7 @@ function buildPositionSeries(replay: TradingReplay): number[] {
     for (let index = 0; index < replay.points.length; index += 1) {
         const date = replay.points[index].date;
         while (tradeIndex < trades.length && trades[tradeIndex].date <= date) {
-            position = trades[tradeIndex].action === "buy" ? 1 : 0;
+            position = trades[tradeIndex].action === "buy" ? 1 : -1;
             tradeIndex += 1;
         }
         positions[index] = position;
@@ -194,16 +194,17 @@ function drawPlayback(context: CanvasRenderingContext2D, width: number, height: 
     const xAt = (i: number) => padL + (i / (slice.length - 1)) * plotW;
     const yAt = (price: number) => padT + (1 - (price - minY) / spanY) * plotH;
 
-    // Long/cash background strips
+    // Long (green) / short (red) background strips
     context.save();
     for (let i = 0; i < slice.length; i += 1) {
         const globalIndex = start + i;
-        if ((positions[globalIndex] ?? 0) <= 0) {
+        const pos = positions[globalIndex] ?? 0;
+        if (pos === 0) {
             continue;
         }
         const x0 = i === 0 ? xAt(0) : (xAt(i - 1) + xAt(i)) / 2;
         const x1 = i === slice.length - 1 ? xAt(i) : (xAt(i) + xAt(i + 1)) / 2;
-        context.fillStyle = "rgba(88, 214, 141, 0.07)";
+        context.fillStyle = pos > 0 ? "rgba(88, 214, 141, 0.07)" : "rgba(227, 111, 91, 0.08)";
         context.fillRect(x0, padT, Math.max(1, x1 - x0), plotH);
     }
     context.restore();

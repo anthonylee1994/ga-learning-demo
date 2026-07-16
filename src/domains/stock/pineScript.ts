@@ -12,6 +12,15 @@ export function createPineScript(genome: Genome, symbol: string, useNetwork = tr
     const safeSymbol = symbol.replace(/[^A-Z0-9._-]/gi, "").toUpperCase() || "QQQ";
     const decisionLines = useNetwork ? createNetworkDecisionLines(networkGenome) : createRuleDecisionLines();
     const topologyLabel = [STOCK_TOPOLOGY.inputSize, ...STOCK_TOPOLOGY.hiddenLayers, STOCK_TOPOLOGY.outputSize].join(" → ");
+    // Network mode：flat 兩邊齊過用 outBuy/outSell 取強；rule 模式沽空優先（同 decidePositionFromRules）。
+    const flatTieBreak = useNetwork
+        ? `if buySignal and sellSignal and flatPos == 0
+    if outBuy >= outSell
+        sellSignal := false
+    else
+        buySignal := false`
+        : `if buySignal and sellSignal and flatPos == 0
+    buySignal := false`;
 
     return `//@version=6
 strategy("EvoLab ${safeSymbol} Evolved Strategy", overlay=true, initial_capital=1000000, default_qty_type=strategy.percent_of_equity, default_qty_value=100, pyramiding=0, commission_type=strategy.commission.percent, commission_value=0.15, process_orders_on_close=false)
@@ -77,12 +86,14 @@ ready = not na(smaSlow) and not na(williamsR) and not na(roc) and not na(rsi) an
 ${decisionLines.join("\n")}
 
 // Match browser sim: position-sticky signals (no min-hold hard lock; thrash taxed in fitness via costs).
+// long / short — 沽空取代平倉落現金。
 var int flatPos = 0
 rawBuy = buySignal
 rawSell = sellSignal
-// Sticky: when long, buy is "stay"; when flat, sell is noise.
-buySignal := ready and (flatPos <= 0) and rawBuy
-sellSignal := ready and (flatPos > 0) and rawSell
+// Sticky: when long, buy is "stay"; when short, sell is "stay"; flat can open either way.
+buySignal := ready and (flatPos < 1) and rawBuy
+sellSignal := ready and (flatPos > -1) and rawSell
+${flatTieBreak}
 entered = false
 exited = false
 if buySignal
@@ -90,8 +101,8 @@ if buySignal
     flatPos := 1
     entered := true
 if sellSignal
-    strategy.close("Long")
-    flatPos := 0
+    strategy.entry("Short", strategy.short)
+    flatPos := -1
     exited := true
 
 plot(smaFast, "Optimized SMA Fast", color=color.yellow)
@@ -102,7 +113,7 @@ upperPlot = plot(bollingerUpper, "Optimized BB Upper", color=color.new(color.gra
 lowerPlot = plot(bollingerLower, "Optimized BB Lower", color=color.new(color.gray, 35))
 fill(upperPlot, lowerPlot, color=color.new(color.gray, 92))
 plotshape(entered, title="Buy", style=shape.triangleup, location=location.belowbar, color=color.lime, size=size.tiny)
-plotshape(exited, title="Sell", style=shape.triangledown, location=location.abovebar, color=color.red, size=size.tiny)
+plotshape(exited, title="Short", style=shape.triangledown, location=location.abovebar, color=color.red, size=size.tiny)
 `;
 }
 
@@ -141,7 +152,7 @@ export function createNetworkDecisionLines(networkGenome: Genome): string[] {
         `f10 = clamp(volumeZScore / 3.0)`,
         `f11 = clamp((newHighRatio - 0.95) * 20.0)`,
         `f12 = clamp((newLowRatio - 0.95) * 20.0)`,
-        "f13 = strategy.position_size > 0 ? 1.0 : -1.0",
+        "f13 = strategy.position_size > 0 ? 1.0 : strategy.position_size < 0 ? -1.0 : 0.0",
         `f14 = clamp((rsiBuyThreshold - rsi) / 20.0)`,
         `f15 = clamp((rsi - rsiSellThreshold) / 20.0)`,
         `f16 = clamp((williamsBuyThreshold - williamsR) / 25.0)`,
@@ -164,8 +175,8 @@ export function createNetworkDecisionLines(networkGenome: Genome): string[] {
         lines.push("");
     }
 
-    // Sticky + margin (matches decidePositionFromNetwork): flat uses max(hold,sell) as stay; long uses max(hold,buy).
-    // flatPos is applied in the strategy body so rawBuy/rawSell here are the NN edge checks only.
+    // Sticky + margin (matches decidePositionFromNetwork):
+    // buy edge uses max(hold,sell); short edge uses max(hold,buy). flatPos applied in strategy body.
     lines.push(`actionMargin = ${STOCK_ACTION_MARGIN}`);
     lines.push("stayIfFlat = math.max(outHold, outSell)");
     lines.push("stayIfLong = math.max(outHold, outBuy)");

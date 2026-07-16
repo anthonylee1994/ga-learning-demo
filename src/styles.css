@@ -1571,6 +1571,9 @@ button.flow-stage {
 .stock-hud-stat--long strong {
     color: #58d68d;
 }
+.stock-hud-stat--short strong {
+    color: #e36f5b;
+}
 .stock-hud-stat--cash strong {
     color: #8b939e;
 }

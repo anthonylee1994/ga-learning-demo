@@ -1,5 +1,5 @@
 /**
- * Stock 交易模擬：genome = 指標參數 +（可選）NN 權重，喺歷史 K 線上做 long / cash。
+ * Stock 交易模擬：genome = 指標參數 +（可選）NN 權重，喺歷史 K 線上做 long / short。
  *
  * 流程概覽：
  * 1. evaluateStockGenome — GA 評分：train（60%）為主 + test（尾 40%）轉移性
@@ -7,9 +7,10 @@
  * 3. 成交：T 日收市決策 → T+1 開盤成交（overnight 用舊倉、intraday 用新倉）− 換手成本
  *
  * 兩種決策模式：
- * - useNetwork=true：NN 睇 18 維特徵 → 買／持／賣（持倉 sticky + margin 先轉倉）
+ * - useNetwork=true：NN 睇 18 維特徵 → 買／持／沽空（持倉 sticky + margin 先轉倉）
  * - useNetwork=false：規則投票（SMA / MACD / RSI / Williams）
  *
+ * 倉位 ∈ {-1, 0, 1}：開局可空倉；買入 → 做多，沽空 → 做空（唔再平倉落現金）。
  * 唔再硬 lock 最少持倉日數；thrash 靠 0.15% 成本 + fitness 換手罰（meanTurnover）打壓。
  */
 import {createForwardRunner} from "../../lib/neuralNetwork";
@@ -43,7 +44,7 @@ export const STOCK_INPUT_LABELS = [
 ] as const;
 
 /** 對應 3 維輸出 */
-export const STOCK_OUTPUT_LABELS = ["買入", "持有", "賣出"] as const;
+export const STOCK_OUTPUT_LABELS = ["買入", "持有", "沽空"] as const;
 
 /** 模擬起始資金 */
 const STARTING_EQUITY = 10_000;
@@ -99,7 +100,7 @@ interface SegmentMetrics {
     sharpe: number;
     maxDrawdown: number;
     endingPosition: number;
-    /** 平均 long 曝險 ∈ [0,1]；全程 cash ≈ 0 */
+    /** 平均 |position| 曝險 ∈ [0,1]；全程空倉 ≈ 0（做多／做空都算入市） */
     meanExposure: number;
     /** 平均 |Δposition|／bar； thrash 策略偏高（成日 full flip） */
     meanTurnover: number;
@@ -180,12 +181,12 @@ export function evaluateStockGenome(genome: Genome, points: MarketDataPoint[], u
 }
 
 /**
- * 單段 score：excess return 優先，再加參與度／絕對回報，扣 thrash 同「永遠 cash」。
+ * 單段 score：excess return 優先，再加參與度／絕對回報，扣 thrash 同「永遠空倉」。
  *
  * 調校目標：可轉移 > 紙上 thrash；
- * - 永遠 cash 有硬罰
+ * - 永遠空倉有硬罰
  * - thrash 用線性+二次罰（取代 min-hold hard lock；配合 0.15% 成本）
- * - 牛市要 long participation 先贏
+ * - 牛市要有曝險（做多）先贏；熊市沽空可貢獻 absolute return
  *
  * 對齊 buy-and-hold 時 excess 部分 ≈ 0。
  */
@@ -274,12 +275,13 @@ export function createTradingReplay(genome: Genome, points: MarketDataPoint[], u
 }
 
 /**
- * 將 NN 輸出映射成 long(1) 或 cash(0)。
- * output[0]=買、[1]=持、[2]=賣。
+ * 將 NN 輸出映射成 long(1)、flat(0) 或 short(-1)。
+ * output[0]=買、[1]=持、[2]=沽空。
  *
- * 持倉 sticky（堵「噚日買完今日又買返」類 thrash）：
- * - 已做多：buy 當「留守」唔係加倉；淨得 sell 明確贏 max(hold,buy)+margin 先沽
- * - 已空倉：sell 當雜訊；淨得 buy 明確贏 max(hold,sell)+margin 先開
+ * 持倉 sticky（堵 thrash）：
+ * - 已做多：buy 當「留守」；淨得沽空明確贏 max(hold,buy)+margin 先翻空
+ * - 已做空：sell 當「留守」；淨得買入明確贏 max(hold,sell)+margin 先翻多
+ * - 空倉：買／沽都要明確贏對方通道 + margin；兩邊齊過取較強
  * 近平手維持原倉，減少 buy≈sell 時日日翻。
  */
 export function decidePositionFromNetwork(output: number[], position: number, margin = ACTION_MARGIN): number {
@@ -289,19 +291,33 @@ export function decidePositionFromNetwork(output: number[], position: number, ma
     if (position > 0) {
         const stay = Math.max(hold, buy);
         if (sell >= stay + margin) {
-            return 0;
+            return -1;
         }
         return 1;
     }
-    const stay = Math.max(hold, sell);
-    if (buy >= stay + margin) {
+    if (position < 0) {
+        const stay = Math.max(hold, sell);
+        if (buy >= stay + margin) {
+            return 1;
+        }
+        return -1;
+    }
+    const buyEdge = buy >= Math.max(hold, sell) + margin;
+    const sellEdge = sell >= Math.max(hold, buy) + margin;
+    if (buyEdge && sellEdge) {
+        return buy >= sell ? 1 : -1;
+    }
+    if (buyEdge) {
         return 1;
+    }
+    if (sellEdge) {
+        return -1;
     }
     return 0;
 }
 
 /**
- * 由 trade log 還原「date 之前」嘅倉位（0|1）。
+ * 由 trade log 還原「date 之前」嘅倉位（-1|0|1）。
  * stock lab scrub NN activation 預覽時用。
  */
 export function positionBeforeDate(trades: TradeMarker[], date: string): number {
@@ -310,7 +326,7 @@ export function positionBeforeDate(trades: TradeMarker[], date: string): number 
         if (trade.date > date) {
             break;
         }
-        position = trade.action === "buy" ? 1 : 0;
+        position = trade.action === "buy" ? 1 : -1;
     }
     return position;
 }
@@ -323,7 +339,7 @@ export function positionBeforeDate(trades: TradeMarker[], date: string): number 
  * 特徵分組：
  *   0–2   SMA 快慢／交叉
  *   3–12  動量／波動／量／新高／新低
- *   13    目前持倉（±1）
+ *   13    目前持倉（-1 沽空 / 0 空倉 / 1 做多）
  *   14–17 離 genome 解出嘅 RSI／Williams 買賣門檻距離
  */
 export function buildNetworkFeatures(
@@ -351,7 +367,7 @@ export function buildNetworkFeatures(
     out[11] = clamp((columns.newHighRatio[index] - 0.95) * 20);
     // nDayLow / close ≈ 1 係貼近 N 日低（同新高 ratio 對稱）
     out[12] = clamp((columns.newLowRatio[index] - 0.95) * 20);
-    out[13] = position > 0 ? 1 : -1;
+    out[13] = clamp(position);
     out[14] = clamp((parameters.rsiBuyThreshold - columns.rsi[index]) / 20);
     out[15] = clamp((columns.rsi[index] - parameters.rsiSellThreshold) / 20);
     out[16] = clamp((parameters.williamsBuyThreshold - columns.williamsR[index]) / 25);
@@ -361,22 +377,23 @@ export function buildNetworkFeatures(
 
 /**
  * 規則模式：SMA / MACD / RSI / Williams 四票。
- * 買：多數贊成（≥2）。
- * 賣：RSI 或 Williams 超買；但上升趨勢（快 SMA > 慢）要兩個 exit 一齊先沽，
- *     避免單指標「超買」喺強牛市提早離場食少 return。
+ * 買：多數贊成（≥2）→ 做多。
+ * 沽空：RSI 或 Williams 超買；但上升趨勢（快 SMA > 慢）要兩個 exit 一齊先翻空，
+ *     避免單指標「超買」喺強牛市提早翻空。
+ * 超買訊號將長倉翻做空（唔再平倉落現金）；空倉亦可直接開空。
  */
 export function decidePositionFromRules(columns: IndicatorColumns, index: number, position: number, parameters: OptimizedIndicatorParameters): number {
     const hasRsiExit = columns.rsi[index] >= parameters.rsiSellThreshold;
     const hasWilliamsExit = columns.williamsR[index] >= parameters.williamsSellThreshold;
-    if (position > 0 && (hasRsiExit || hasWilliamsExit)) {
+    if (position >= 0 && (hasRsiExit || hasWilliamsExit)) {
         const uptrend = columns.smaFast[index] > columns.smaSlow[index];
         if (uptrend) {
-            // 強趨勢：兩個動量 exit 齊先離場
+            // 強趨勢：兩個動量 exit 齊先翻空
             if (hasRsiExit && hasWilliamsExit) {
-                return 0;
+                return -1;
             }
         } else if (hasRsiExit || hasWilliamsExit) {
-            return 0;
+            return -1;
         }
     }
 
@@ -392,7 +409,7 @@ export function decidePositionFromRules(columns: IndicatorColumns, index: number
     if (yes >= needed) {
         return 1;
     }
-    // 唔夠票：維持現倉（唔會主動沽，沽淨靠上面 exit 邏輯）
+    // 唔夠票：維持現倉（做空會一直持有到買票夠數先翻多）
     return position;
 }
 
@@ -498,7 +515,7 @@ function simulateFitnessWalk(
             returnSum += dailyReturn;
             returnSqSum += dailyReturn * dailyReturn;
             returnCount += 1;
-            exposureSum += targetPosition;
+            exposureSum += Math.abs(targetPosition);
             turnoverSum += turnover;
             peak = Math.max(peak, equity);
             maxDrawdown = Math.max(maxDrawdown, peak > 0 ? (peak - equity) / peak : 0);
@@ -509,7 +526,7 @@ function simulateFitnessWalk(
                 halfAReturnSum += dailyReturn;
                 halfAReturnSqSum += dailyReturn * dailyReturn;
                 halfAReturnCount += 1;
-                halfAExposureSum += targetPosition;
+                halfAExposureSum += Math.abs(targetPosition);
                 halfATurnoverSum += turnover;
                 halfAPeak = Math.max(halfAPeak, halfAEquity);
                 halfAMaxDrawdown = Math.max(halfAMaxDrawdown, halfAPeak > 0 ? (halfAPeak - halfAEquity) / halfAPeak : 0);
@@ -519,7 +536,7 @@ function simulateFitnessWalk(
                 halfBReturnSum += dailyReturn;
                 halfBReturnSqSum += dailyReturn * dailyReturn;
                 halfBReturnCount += 1;
-                halfBExposureSum += targetPosition;
+                halfBExposureSum += Math.abs(targetPosition);
                 halfBTurnoverSum += turnover;
                 halfBPeak = Math.max(halfBPeak, halfBEquity);
                 halfBMaxDrawdown = Math.max(halfBMaxDrawdown, halfBPeak > 0 ? (halfBPeak - halfBEquity) / halfBPeak : 0);
@@ -530,7 +547,7 @@ function simulateFitnessWalk(
             testReturnSum += dailyReturn;
             testReturnSqSum += dailyReturn * dailyReturn;
             testReturnCount += 1;
-            testExposureSum += targetPosition;
+            testExposureSum += Math.abs(targetPosition);
             testTurnoverSum += turnover;
             testPeak = Math.max(testPeak, testEquity);
             testMaxDrawdown = Math.max(testMaxDrawdown, testPeak > 0 ? (testPeak - testEquity) / testPeak : 0);
@@ -605,7 +622,7 @@ function simulateColumnReplay(decide: PositionDecider, columns: IndicatorColumns
         returnSum += dailyReturn;
         returnSqSum += dailyReturn * dailyReturn;
         returnCount += 1;
-        exposureSum += targetPosition;
+        exposureSum += Math.abs(targetPosition);
         turnoverSum += turnover;
         equityCurve[index - start] = equity;
         peak = Math.max(peak, equity);

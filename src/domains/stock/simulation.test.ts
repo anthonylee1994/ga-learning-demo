@@ -56,35 +56,42 @@ describe("stock simulation", () => {
         expect(trainEnd).toBe(600);
     });
 
-    it("maps network outputs to long/cash without shorting", () => {
+    it("maps network outputs to long/short (no flat close)", () => {
         expect(decidePositionFromNetwork([0.9, 0.1, 0.0], 0)).toBe(1);
         expect(decidePositionFromNetwork([0.1, 0.9, 0.2], 1)).toBe(1);
-        expect(decidePositionFromNetwork([0.1, 0.2, 0.9], 1)).toBe(0);
+        expect(decidePositionFromNetwork([0.1, 0.2, 0.9], 1)).toBe(-1);
         expect(decidePositionFromNetwork([0.1, 0.9, 0.2], 0)).toBe(0);
+        expect(decidePositionFromNetwork([0.0, 0.1, 0.9], 0)).toBe(-1);
+        // Short: clear buy flips to long; weak buy stays short
+        expect(decidePositionFromNetwork([0.9, 0.1, 0.0], -1)).toBe(1);
+        expect(decidePositionFromNetwork([0.1, 0.9, 0.2], -1)).toBe(-1);
     });
 
     it("ignores weak buy/sell edges that barely beat hold (margin)", () => {
-        // buy slightly above hold — should stay cash if already flat
+        // buy slightly above hold — should stay flat if already flat
         expect(decidePositionFromNetwork([0.12, 0.1, 0.0], 0, 0.08)).toBe(0);
         // clear buy
         expect(decidePositionFromNetwork([0.5, 0.1, 0.0], 0, 0.08)).toBe(1);
         // sell barely above hold — stay long
         expect(decidePositionFromNetwork([0.0, 0.1, 0.12], 1, 0.08)).toBe(1);
-        // clear sell
-        expect(decidePositionFromNetwork([0.0, 0.1, 0.5], 1, 0.08)).toBe(0);
+        // clear sell → short
+        expect(decidePositionFromNetwork([0.0, 0.1, 0.5], 1, 0.08)).toBe(-1);
     });
 
     it("uses position-sticky decisions when buy≈sell (anti thrash)", () => {
         // Long: sell must beat max(hold, buy)+margin — noisy sell above buy alone is not enough
         expect(decidePositionFromNetwork([0.55, 0.1, 0.6], 1, 0.08)).toBe(1);
-        // Long: clear sell over the buy channel
-        expect(decidePositionFromNetwork([0.5, 0.1, 0.7], 1, 0.08)).toBe(0);
+        // Long: clear sell over the buy channel → flip short
+        expect(decidePositionFromNetwork([0.5, 0.1, 0.7], 1, 0.08)).toBe(-1);
         // Flat: buy must beat max(hold, sell)+margin
         expect(decidePositionFromNetwork([0.6, 0.1, 0.55], 0, 0.08)).toBe(0);
         expect(decidePositionFromNetwork([0.7, 0.1, 0.5], 0, 0.08)).toBe(1);
+        // Short: buy must beat max(hold, sell)+margin
+        expect(decidePositionFromNetwork([0.6, 0.1, 0.55], -1, 0.08)).toBe(-1);
+        expect(decidePositionFromNetwork([0.7, 0.1, 0.5], -1, 0.08)).toBe(1);
     });
 
-    it("never stacks same-action fills (binary long/cash)", () => {
+    it("never stacks same-action fills (binary long/short flips)", () => {
         const rising = createMarketData(700);
         for (const seed of createStockSeedGenomes()) {
             for (const useNetwork of [true, false]) {
@@ -121,7 +128,7 @@ describe("stock simulation", () => {
         expect(Number.isFinite(evaluateStockGenome(thrash, rising, true))).toBe(true);
     });
 
-    it("tracks long/cash position from the trade log before a date", () => {
+    it("tracks long/short position from the trade log before a date", () => {
         expect(
             positionBeforeDate(
                 [
@@ -139,7 +146,7 @@ describe("stock simulation", () => {
                 ],
                 "2020-01-10"
             )
-        ).toBe(0);
+        ).toBe(-1);
         expect(positionBeforeDate([], "2020-01-01")).toBe(0);
     });
 
@@ -152,8 +159,10 @@ describe("stock simulation", () => {
             expect(value).toBeGreaterThanOrEqual(-1);
             expect(value).toBeLessThanOrEqual(1);
         });
-        // 持倉特徵喺 index 13（N 日新低喺 12）
+        // 持倉特徵喺 index 13（N 日新低喺 12）：做多=1、空倉=0、做空=-1
         expect(features[13]).toBe(1);
+        expect(buildNetworkFeatures(columns, Math.min(50, columns.length - 1), 0, DEFAULT_INDICATOR_PARAMETERS)[13]).toBe(0);
+        expect(buildNetworkFeatures(columns, Math.min(50, columns.length - 1), -1, DEFAULT_INDICATOR_PARAMETERS)[13]).toBe(-1);
     });
 
     it("does not include raw OHLC candle structure in the feature vector", () => {
@@ -206,13 +215,13 @@ describe("stock simulation", () => {
         columns.williamsR[index] = DEFAULT_INDICATOR_PARAMETERS.williamsBuyThreshold;
         expect(decidePositionFromRules(columns, index, 0, DEFAULT_INDICATOR_PARAMETERS)).toBe(1);
 
-        // Downtrend: a single overbought exit is enough to sell.
+        // Downtrend: a single overbought exit is enough to short.
         columns.rsi[index] = DEFAULT_INDICATOR_PARAMETERS.rsiSellThreshold;
         columns.williamsR[index] = -50;
-        expect(decidePositionFromRules(columns, index, 1, DEFAULT_INDICATOR_PARAMETERS)).toBe(0);
+        expect(decidePositionFromRules(columns, index, 1, DEFAULT_INDICATOR_PARAMETERS)).toBe(-1);
     });
 
-    it("requires both exits to sell while the SMA trend is up (rule mode)", () => {
+    it("requires both exits to short while the SMA trend is up (rule mode)", () => {
         const columns = getIndicatorColumns(points, DEFAULT_INDICATOR_PARAMETERS);
         const index = Math.min(50, columns.length - 1);
         columns.smaFast[index] = 110;
@@ -225,8 +234,8 @@ describe("stock simulation", () => {
         expect(decidePositionFromRules(columns, index, 1, DEFAULT_INDICATOR_PARAMETERS)).toBe(1);
 
         columns.williamsR[index] = DEFAULT_INDICATOR_PARAMETERS.williamsSellThreshold;
-        // Both exits fire → allow sell even in uptrend.
-        expect(decidePositionFromRules(columns, index, 1, DEFAULT_INDICATOR_PARAMETERS)).toBe(0);
+        // Both exits fire → flip short even in uptrend.
+        expect(decidePositionFromRules(columns, index, 1, DEFAULT_INDICATOR_PARAMETERS)).toBe(-1);
     });
 
     it("scores seed genomes finitely on a rising market", () => {

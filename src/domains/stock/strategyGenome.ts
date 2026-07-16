@@ -2,7 +2,7 @@ import {calculateGeneCount} from "../../lib/neuralNetwork";
 import type {Genome, NetworkTopology, OptimizedIndicatorParameters} from "../../lib/types";
 
 /**
- * Normalized indicator features, tuned threshold distances, and current position → buy / hold / sell.
+ * Normalized indicator features, tuned threshold distances, and current position → buy / hold / short.
  * Thin decision head on purpose: the GA is steered to spend most of its search
  * budget on indicator periods / thresholds (see STOCK_MUTATION_PROFILE), not a fat hidden net.
  */

@@ -413,8 +413,10 @@ def compute_signals():
 
         if position > 0:
             f13 = 1.0
-        else:
+        elif position < 0:
             f13 = -1.0
+        else:
+            f13 = 0.0
 
         if not ready:
             i = i + 1
@@ -422,12 +424,15 @@ def compute_signals():
 
 ${decisionBlock}
 
-        if buy_signal and position <= 0:
+        # Flat 兩邊齊過：network 已喺 decision 內取強；rule 模式沽空優先。
+        if buy_signal and sell_signal and position == 0:
+            buy_signal = False
+        if buy_signal and position < 1:
             enter[i] = 1
             position = 1
-        elif sell_signal and position > 0:
+        elif sell_signal and position > -1:
             exit_[i] = 1
-            position = 0
+            position = -1
 
         i = i + 1
 
@@ -598,19 +603,33 @@ function emitNetworkDecisionLoop(): string {
         out_hold = _dense(h2, OUT[1])
         out_sell = _dense(h2, OUT[2])
 
-        # Sticky + margin (matches decidePositionFromNetwork)
+        # Sticky + margin (matches decidePositionFromNetwork): long / short, no flat close.
         if position > 0:
             stay = out_hold
             if out_buy > stay:
                 stay = out_buy
             buy_signal = False
             sell_signal = out_sell >= stay + ACTION_MARGIN
-        else:
+        elif position < 0:
             stay = out_hold
             if out_sell > stay:
                 stay = out_sell
             sell_signal = False
-            buy_signal = out_buy >= stay + ACTION_MARGIN`;
+            buy_signal = out_buy >= stay + ACTION_MARGIN
+        else:
+            stay_buy = out_hold
+            if out_sell > stay_buy:
+                stay_buy = out_sell
+            stay_sell = out_hold
+            if out_buy > stay_sell:
+                stay_sell = out_buy
+            buy_signal = out_buy >= stay_buy + ACTION_MARGIN
+            sell_signal = out_sell >= stay_sell + ACTION_MARGIN
+            if buy_signal and sell_signal:
+                if out_buy >= out_sell:
+                    sell_signal = False
+                else:
+                    buy_signal = False`;
 }
 
 function emitRuleDecisionLoop(): string {

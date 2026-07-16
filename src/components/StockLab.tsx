@@ -307,7 +307,7 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
                                         <span>網絡預覽日</span>
                                         <strong className="font-mono text-xs">
                                             {networkPreview.date || "—"} · {networkPreview.segment}
-                                            {liveDay?.trade ? ` · ${liveDay.trade.action === "buy" ? "買" : "賣"}` : ""}
+                                            {liveDay?.trade ? ` · ${liveDay.trade.action === "buy" ? "買" : "沽"}` : ""}
                                         </strong>
                                     </span>
                                     <input
@@ -415,7 +415,7 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
                         }
                         genomeLabel={isMonteCarlo ? "參數向量" : "基因體"}
                         inputs="18 維特徵：全部指標常開（含 N 日新高／新低）+ 持倉狀態；唔餵開高低收。"
-                        outputs={useNetwork ? "薄隱藏層取最大 → 買 / 持 / 賣；搜尋主力喺週期 / 門檻" : "SMA / MACD / RSI / 威廉 多數票買入；升勢要 RSI+威廉齊過熱先賣，否則單一過熱賣"}
+                        outputs={useNetwork ? "薄隱藏層取最大 → 買 / 持 / 沽空；搜尋主力喺週期 / 門檻" : "SMA / MACD / RSI / 威廉 多數票買入；升勢要 RSI+威廉齊過熱先沽空，否則單一過熱沽空"}
                         termination={isMonteCarlo ? "60% 訓練主分 + 尾 40% 測試轉移性；每批保留全域最佳" : "60% 訓練主分 + 尾 40% 測試轉移性；移民只重抽 head（參數）"}
                         title={isMonteCarlo ? "點樣套用蒙地卡羅優化" : "點樣套用遺傳演算法"}
                     />
@@ -541,7 +541,7 @@ const MarketChart = React.memo<MarketChartProps>(
                     {hasReplay ? (
                         <React.Fragment>
                             <Line connectNulls={false} dataKey="buy" dot={BUY_DOT} isAnimationActive={false} name="買入" stroke="none" yAxisId="price" />
-                            <Line connectNulls={false} dataKey="sell" dot={SELL_DOT} isAnimationActive={false} name="賣出" stroke="none" yAxisId="price" />
+                            <Line connectNulls={false} dataKey="sell" dot={SELL_DOT} isAnimationActive={false} name="沽空" stroke="none" yAxisId="price" />
                         </React.Fragment>
                     ) : null}
                     {indicatorView === "price" && hasReplay && parameters ? (
