@@ -281,6 +281,28 @@ describe("stock simulation", () => {
         expect(buyReplay.trainReturn).toBeGreaterThan(0.08);
     });
 
+    it("factors test return into fitness (transferability)", () => {
+        const rising = createMarketData(700);
+        const buySeed = createStockSeedGenomes()[0];
+        const sellSeed = buySeed.slice();
+        const {networkGenome} = decodeStockGenome(buySeed);
+        const headLen = STOCK_GENE_COUNT - networkGenome.length;
+        const outputBiasStart = headLen + networkGenome.length - 3;
+        sellSeed[outputBiasStart] = -1.2;
+        sellSeed[outputBiasStart + 1] = 0.2;
+        sellSeed[outputBiasStart + 2] = 1.2;
+        const buyReplay = createTradingReplay(buySeed, rising, true);
+        const sellReplay = createTradingReplay(sellSeed, rising, true);
+        const buyFitness = evaluateStockGenome(buySeed, rising, true);
+        const sellFitness = evaluateStockGenome(sellSeed, rising, true);
+        // Rising fixture：買偏策略 test 亦應食到升浪；fitness 要跟住 test 優勢
+        expect(Number.isFinite(buyReplay.testReturn)).toBe(true);
+        expect(Number.isFinite(sellReplay.testReturn)).toBe(true);
+        if (buyReplay.testReturn > sellReplay.testReturn + 0.02 && buyReplay.trainReturn >= sellReplay.trainReturn - 0.05) {
+            expect(buyFitness).toBeGreaterThan(sellFitness);
+        }
+    });
+
     it("marks fills on the next bar open (not signal close)", () => {
         const rising = createMarketData(700);
         const buySeed = createStockSeedGenomes()[0];

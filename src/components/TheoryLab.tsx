@@ -192,8 +192,8 @@ const DEMOS = [
         topology: "18 → 10 → 5 → 3",
         genes: "18 參數 + 263 權重",
         genome: "指標週期/門檻（突變 ×3）+ 薄決策頭",
-        fitness: "訓練段超額回報 − 回撤 − 換手",
-        note: "80/20 train·test；移民只重抽指標 head",
+        fitness: "train 超額 + test 轉移 − 回撤 − 換手",
+        note: "60/40 train·test；test 入 15% 分；移民只重抽 head",
         defaults: "教學 demo · 非投資建議",
     },
 ] as const;
