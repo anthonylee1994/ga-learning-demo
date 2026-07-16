@@ -37,9 +37,11 @@ export const FitnessChart = React.memo<Props>(({history, showDiversity = true, e
                         <LineChart data={history} margin={{left: -18, right: showDiversity ? 4 : 8, top: 8, bottom: 0}}>
                             <CartesianGrid stroke="#252a31" strokeDasharray="3 3" vertical={false} />
                             <XAxis dataKey="generation" stroke="#747b86" tick={{fontSize: 12}} tickLine={false} />
-                            <YAxis stroke="#747b86" tick={{fontSize: 12}} tickLine={false} width={54} yAxisId="fitness" />
-                            {showDiversity ? <YAxis orientation="right" stroke="#6b7a8d" tick={{fontSize: 11}} tickLine={false} width={40} yAxisId="diversity" /> : null}
-                            <Tooltip contentStyle={{background: "#15191f", border: "1px solid #303640", borderRadius: 8}} />
+                            <YAxis stroke="#747b86" tick={{fontSize: 12}} tickFormatter={formatChartValue} tickLine={false} width={54} yAxisId="fitness" />
+                            {showDiversity ? (
+                                <YAxis orientation="right" stroke="#6b7a8d" tick={{fontSize: 11}} tickFormatter={formatChartValue} tickLine={false} width={40} yAxisId="diversity" />
+                            ) : null}
+                            <Tooltip contentStyle={{background: "#15191f", border: "1px solid #303640", borderRadius: 8}} formatter={formatTooltipValue} />
                             <Line dataKey="bestFitness" dot={false} isAnimationActive={false} stroke="#58d68d" strokeWidth={2} type="monotone" yAxisId="fitness" />
                             <Line dataKey="averageFitness" dot={false} isAnimationActive={false} stroke="#e7b955" strokeWidth={1.5} type="monotone" yAxisId="fitness" />
                             {showDiversity ? (
@@ -54,3 +56,17 @@ export const FitnessChart = React.memo<Props>(({history, showDiversity = true, e
         </div>
     );
 });
+
+function formatChartValue(value: number): string {
+    return Number.isFinite(value) ? value.toFixed(2) : "";
+}
+
+function formatTooltipValue(value: unknown): string {
+    if (typeof value === "number" && Number.isFinite(value)) {
+        return value.toFixed(2);
+    }
+    if (value == null) {
+        return "—";
+    }
+    return String(value);
+}

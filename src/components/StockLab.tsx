@@ -517,11 +517,11 @@ const MarketChart = React.memo<MarketChartProps>(
                 <LineChart data={data} margin={{left: 0, right: 14, top: 8, bottom: 0}}>
                     <CartesianGrid stroke="#252a31" strokeDasharray="3 3" vertical={false} />
                     <XAxis dataKey="date" minTickGap={70} stroke="#747b86" tick={{fontSize: 12}} tickLine={false} />
-                    <YAxis domain={["auto", "auto"]} stroke="#747b86" tick={{fontSize: 12}} tickLine={false} width={58} yAxisId="price" />
+                    <YAxis domain={["auto", "auto"]} stroke="#747b86" tick={{fontSize: 12}} tickFormatter={formatChartValue} tickLine={false} width={58} yAxisId="price" />
                     {(indicatorView === "momentum" || indicatorView === "macd" || indicatorView === "risk" || indicatorView === "newHigh" || indicatorView === "newLow") && hasReplay ? (
-                        <YAxis domain={["auto", "auto"]} orientation="right" stroke="#747b86" tick={{fontSize: 12}} tickLine={false} width={48} yAxisId="indicator" />
+                        <YAxis domain={["auto", "auto"]} orientation="right" stroke="#747b86" tick={{fontSize: 12}} tickFormatter={formatChartValue} tickLine={false} width={48} yAxisId="indicator" />
                     ) : null}
-                    <Tooltip contentStyle={{background: "#15191f", border: "1px solid #303640", borderRadius: 8}} />
+                    <Tooltip contentStyle={{background: "#15191f", border: "1px solid #303640", borderRadius: 8}} formatter={formatTooltipValue} />
                     <Legend wrapperStyle={{fontSize: 12}} />
                     <Line dataKey="close" dot={false} isAnimationActive={false} name="收市價" stroke="#dfe3e8" strokeWidth={1.5} type="monotone" yAxisId="price" />
                     {hasReplay ? (
@@ -650,8 +650,8 @@ const EquityChart = React.memo<EquityChartProps>(
             <LineChart data={points} margin={{left: 0, right: 14, top: 8, bottom: 0}}>
                 <CartesianGrid stroke="#252a31" strokeDasharray="3 3" vertical={false} />
                 <XAxis dataKey="date" minTickGap={70} stroke="#747b86" tick={{fontSize: 12}} tickLine={false} />
-                <YAxis stroke="#747b86" tick={{fontSize: 12}} tickLine={false} width={64} />
-                <Tooltip contentStyle={{background: "#15191f", border: "1px solid #303640", borderRadius: 8}} />
+                <YAxis stroke="#747b86" tick={{fontSize: 12}} tickFormatter={formatMoneyAxis} tickLine={false} width={84} />
+                <Tooltip contentStyle={{background: "#15191f", border: "1px solid #303640", borderRadius: 8}} formatter={formatMoneyTooltip} />
                 <Line dataKey="strategy" dot={false} isAnimationActive={false} name="策略" stroke="#58d68d" strokeWidth={2} type="monotone" />
                 <Line dataKey="benchmark" dot={false} isAnimationActive={false} name="買入持有" stroke="#e7b955" strokeWidth={1.5} type="monotone" />
                 {splitDate ? <ReferenceLine stroke="#e7b955" strokeDasharray="4 4" x={splitDate} /> : null}
@@ -684,6 +684,45 @@ function formatPercent(value: number): string {
 
 function formatBrushDate(value: string): string {
     return value.slice(0, 7);
+}
+
+function formatChartValue(value: number): string {
+    return Number.isFinite(value) ? value.toFixed(2) : "";
+}
+
+function formatTooltipValue(value: unknown): string {
+    if (typeof value === "number" && Number.isFinite(value)) {
+        return value.toFixed(2);
+    }
+    if (value == null) {
+        return "—";
+    }
+    return String(value);
+}
+
+const MONEY_FORMAT = new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+});
+
+function formatMoney(value: number): string {
+    return Number.isFinite(value) ? MONEY_FORMAT.format(value) : "";
+}
+
+function formatMoneyAxis(value: number): string {
+    return formatMoney(value);
+}
+
+function formatMoneyTooltip(value: unknown): string {
+    if (typeof value === "number" && Number.isFinite(value)) {
+        return formatMoney(value);
+    }
+    if (value == null) {
+        return "—";
+    }
+    return String(value);
 }
 
 function downloadTextFile(filename: string, content: string, mime = "text/plain;charset=utf-8"): void {
