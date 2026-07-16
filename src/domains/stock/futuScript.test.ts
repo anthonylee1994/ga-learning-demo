@@ -21,7 +21,7 @@ describe("Futu Python export", () => {
         expect(script).toContain("H2 = [");
         expect(script).toContain("OUT = [");
         expect(script).toContain("def _dense(inputs, row):");
-        expect(script).toContain("feats.append(f17)");
+        expect(script).toContain("feats.append(f13)");
         expect(script).toContain("ACTION_MARGIN = 0.08");
         expect(script).toContain("buy_signal = out_buy >= stay + ACTION_MARGIN");
         expect(script).toContain("sell_signal = out_sell >= stay + ACTION_MARGIN");
@@ -51,7 +51,7 @@ describe("Futu Python export", () => {
         expect(script).toContain("H1 = []");
         expect(script).toContain("buy_votes = trend_vote + macd_vote");
         expect(script).toContain("buy_signal = buy_votes >= 2");
-        expect(script).not.toContain("feats.append(f17)");
+        expect(script).not.toContain("feats.append(f13)");
         expect(script).not.toContain("out_buy = _dense");
     });
 });

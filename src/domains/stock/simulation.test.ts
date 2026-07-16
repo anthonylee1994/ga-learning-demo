@@ -31,13 +31,13 @@ describe("stock simulation", () => {
         expect(Number.isFinite(evaluateStockGenome(seed, points, false))).toBe(true);
     });
 
-    it("creates train / validate / test equity data with network-backed decisions", () => {
+    it("creates train / test equity data with network-backed decisions", () => {
         const replay = createTradingReplay(genome, points);
         expect(replay.points.length).toBeGreaterThan(100);
         expect(replay.points.some(point => point.segment === "train")).toBe(true);
-        expect(replay.points.some(point => point.segment === "validate")).toBe(true);
+        expect(replay.points.every(point => point.segment === "train" || point.segment === "test")).toBe(true);
         expect(replay.points.some(point => point.segment === "test")).toBe(true);
-        expect(Number.isFinite(replay.validateReturn)).toBe(true);
+        expect(Number.isFinite(replay.testReturn)).toBe(true);
         expect(replay.benchmarkReturn).toBeGreaterThan(0);
         expect(replay.optimizedParameters).toEqual(
             expect.objectContaining({
@@ -51,10 +51,9 @@ describe("stock simulation", () => {
         );
     });
 
-    it("splits series into 65% train / 20% validate / 15% test", () => {
-        const {trainEnd, validateEnd} = getStockSplitIndices(1000);
-        expect(trainEnd).toBe(650);
-        expect(validateEnd).toBe(850);
+    it("splits series into 80% train / 20% test", () => {
+        const {trainEnd} = getStockSplitIndices(1000);
+        expect(trainEnd).toBe(800);
     });
 
     it("maps network outputs to long/cash without shorting", () => {
@@ -153,23 +152,26 @@ describe("stock simulation", () => {
             expect(value).toBeGreaterThanOrEqual(-1);
             expect(value).toBeLessThanOrEqual(1);
         });
-        // 持倉特徵喺 index 17（N 日新低喺 16）
-        expect(features[17]).toBe(1);
+        // 持倉特徵喺 index 13（N 日新低喺 12）
+        expect(features[13]).toBe(1);
     });
 
-    it("includes OHLC candle structure in the feature vector", () => {
+    it("does not include raw OHLC candle structure in the feature vector", () => {
         const columns = getIndicatorColumns(points, DEFAULT_INDICATOR_PARAMETERS);
         const index = Math.min(50, columns.length - 1);
         columns.open[index] = 100;
-        columns.high[index] = 105;
-        columns.low[index] = 98;
+        columns.high[index] = 120;
+        columns.low[index] = 80;
         columns.close[index] = 100;
-        columns.closeReturn[index] = 0.02;
+        columns.closeReturn[index] = 0.5;
+        columns.smaFast[index] = 100;
+        columns.smaSlow[index] = 100;
         const features = buildNetworkFeatures(columns, index, 0, DEFAULT_INDICATOR_PARAMETERS);
+        // 0–2 係均線距離，close=sma 時應接近 0；唔會直接反映 open/high/low 結構
         expect(features[0]).toBeCloseTo(0, 5);
-        expect(features[1]).toBeGreaterThan(0);
-        expect(features[2]).toBeLessThan(0);
-        expect(features[3]).toBeCloseTo(0.4, 5);
+        expect(features[1]).toBeCloseTo(0, 5);
+        expect(features[2]).toBeCloseTo(0, 5);
+        expect(features).toHaveLength(18);
     });
 
     it("feeds tuned RSI and Williams threshold distances into the network", () => {
@@ -178,19 +180,19 @@ describe("stock simulation", () => {
         columns.rsi[index] = 20;
         columns.williamsR[index] = -90;
         const oversold = buildNetworkFeatures(columns, index, 0, DEFAULT_INDICATOR_PARAMETERS);
-        // 18–21：RSI 買距 / 賣距 / W% 買距 / 賣距
-        expect(oversold[18]).toBeGreaterThan(0);
-        expect(oversold[19]).toBeLessThan(0);
-        expect(oversold[20]).toBeGreaterThan(0);
-        expect(oversold[21]).toBeLessThan(0);
+        // 14–17：RSI 買距 / 賣距 / W% 買距 / 賣距
+        expect(oversold[14]).toBeGreaterThan(0);
+        expect(oversold[15]).toBeLessThan(0);
+        expect(oversold[16]).toBeGreaterThan(0);
+        expect(oversold[17]).toBeLessThan(0);
 
         columns.rsi[index] = 80;
         columns.williamsR[index] = -10;
         const overbought = buildNetworkFeatures(columns, index, 1, DEFAULT_INDICATOR_PARAMETERS);
-        expect(overbought[18]).toBeLessThan(0);
-        expect(overbought[19]).toBeGreaterThan(0);
-        expect(overbought[20]).toBeLessThan(0);
-        expect(overbought[21]).toBeGreaterThan(0);
+        expect(overbought[14]).toBeLessThan(0);
+        expect(overbought[15]).toBeGreaterThan(0);
+        expect(overbought[16]).toBeLessThan(0);
+        expect(overbought[17]).toBeGreaterThan(0);
     });
 
     it("uses tuned RSI and Williams thresholds in rule mode", () => {

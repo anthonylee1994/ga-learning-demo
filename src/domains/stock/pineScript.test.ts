@@ -41,12 +41,14 @@ describe("Pine Script export", () => {
         // Output must read from h2, not skip straight from h1 (regression for two-layer head).
         expect(script).toMatch(/outBuy = tanh\([^)]*h2_0/);
         expect(script).toContain(`f${STOCK_TOPOLOGY.inputSize - 1}`);
-        expect(script).toContain("clamp((open / close");
-        expect(script).toContain("clamp((high / close");
-        expect(script).toContain("clamp((low / close");
-        expect(script).toContain("clamp((close / close[1]");
         expect(script).toContain("clamp((close / smaFast");
-        expect(script).toContain("22 → 10 → 5 → 3");
+        expect(script).toContain("clamp((close / smaSlow");
+        // NN 特徵唔再餵 K 線結構（開高低收）；volatility 仍可用 dailyReturn = close/close[1]
+        expect(script).not.toContain("f0 = clamp((open / close");
+        expect(script).not.toContain("f1 = clamp((high / close");
+        expect(script).not.toContain("f2 = clamp((low / close");
+        expect(script).not.toContain("f3 = clamp((close / close[1]");
+        expect(script).toContain("18 → 10 → 5 → 3");
         expect(script).toContain('strategy.entry("Long", strategy.long)');
         expect(script).toContain('strategy.close("Long")');
         expect(script).not.toContain("strategy.short");
@@ -65,7 +67,7 @@ describe("Pine Script export", () => {
         const layers = decodeLayers(networkGenome);
         expect(layers).toHaveLength(3);
         expect(layers[0].biases).toHaveLength(10);
-        expect(layers[0].weights[0]).toHaveLength(22);
+        expect(layers[0].weights[0]).toHaveLength(18);
         expect(layers[1].biases).toHaveLength(5);
         expect(layers[1].weights[0]).toHaveLength(10);
         expect(layers[2].biases).toHaveLength(3);

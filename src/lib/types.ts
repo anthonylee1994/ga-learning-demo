@@ -183,8 +183,8 @@ export interface TradingPoint {
     close: number;
     strategy: number;
     benchmark: number;
-    /** train=收生；validate=fitness 內 OOS；test=純展示、永不入 fitness */
-    segment: "train" | "validate" | "test";
+    /** train=收生；test=純展示、永不入 fitness */
+    segment: "train" | "test";
     smaFast: number;
     smaSlow: number;
     rsi: number;
@@ -206,8 +206,7 @@ export interface TradingReplay {
     points: TradingPoint[];
     trades: TradeMarker[];
     trainReturn: number;
-    /** Fitness 會睇嘅驗證段回報（仍唔係最終 test） */
-    validateReturn: number;
+    /** 純展示 OOS 回報；永不入 fitness */
     testReturn: number;
     benchmarkReturn: number;
     sharpe: number;

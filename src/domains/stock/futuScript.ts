@@ -6,7 +6,7 @@ import {decodeStockGenome} from "./strategyGenome";
 /**
  * Futu Python indicator export (IndicatorParser-compatible).
  * - No generator expressions / list comprehensions with `for` inside calls
- * - True state machine + f17 position feedback (matches Pine next-bar open fills)
+ * - True state machine + f13 position feedback (matches Pine next-bar open fills)
  * - Plots SMA / BB / nDayHigh / nDayLow + buy/sell icons
  */
 export function createFutuPythonScript(genome: Genome, useNetwork = true): string {
@@ -412,9 +412,9 @@ def compute_signals():
                 ready = False
 
         if position > 0:
-            f17 = 1.0
+            f13 = 1.0
         else:
-            f17 = -1.0
+            f13 = -1.0
 
         if not ready:
             i = i + 1
@@ -560,16 +560,8 @@ function emitNetworkDecisionLoop(): string {
         bbpb = (c[i] - bb_lo[i]) / bb_rng
         volz = (v[i] - vol_ma[i]) / _max2(vol_sd[i], 1e-9)
         nhr = c[i] / _max2(ndh[i], 1e-9)
-        if i > 0:
-            prev_c = c[i - 1]
-        else:
-            prev_c = c[i]
 
         feats = []
-        feats.append(_clamp((o[i] / c[i] - 1.0) * 50.0))
-        feats.append(_clamp((h[i] / c[i] - 1.0) * 50.0))
-        feats.append(_clamp((l[i] / c[i] - 1.0) * 50.0))
-        feats.append(_clamp((c[i] / prev_c - 1.0) * 20.0))
         feats.append(_clamp((c[i] / sma_f[i] - 1.0) * 10.0))
         feats.append(_clamp((c[i] / sma_s[i] - 1.0) * 10.0))
         feats.append(_clamp((sma_f[i] / sma_s[i] - 1.0) * 10.0))
@@ -584,7 +576,7 @@ function emitNetworkDecisionLoop(): string {
         feats.append(_clamp((nhr - 0.95) * 20.0))
         nlr = ndl[i] / _max2(c[i], 1e-9)
         feats.append(_clamp((nlr - 0.95) * 20.0))
-        feats.append(f17)
+        feats.append(f13)
         feats.append(_clamp((RSI_BUY - rsi[i]) / 20.0))
         feats.append(_clamp((rsi[i] - RSI_SELL) / 20.0))
         feats.append(_clamp((WILL_BUY - wr) / 25.0))

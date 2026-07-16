@@ -2,12 +2,12 @@
  * Stock 交易模擬：genome = 指標參數 +（可選）NN 權重，喺歷史 K 線上做 long / cash。
  *
  * 流程概覽：
- * 1. evaluateStockGenome — GA 評分：train（65%）+ validate（20%）；純 test（15%）永不入分
- * 2. createTradingReplay — UI 曲線：train→validate→test 連續模擬
+ * 1. evaluateStockGenome — GA 評分：淨 train（80%）；純 test（尾 20%）永不入分
+ * 2. createTradingReplay — UI 曲線：train→test 連續模擬
  * 3. 成交：T 日收市決策 → T+1 開盤成交（overnight 用舊倉、intraday 用新倉）− 換手成本
  *
  * 兩種決策模式：
- * - useNetwork=true：NN 睇 22 維特徵 → 買／持／賣（持倉 sticky + margin 先轉倉）
+ * - useNetwork=true：NN 睇 18 維特徵 → 買／持／賣（持倉 sticky + margin 先轉倉）
  * - useNetwork=false：規則投票（SMA / MACD / RSI / Williams）
  *
  * 唔再硬 lock 最少持倉日數；thrash 靠 0.15% 成本 + fitness 換手罰（meanTurnover）打壓。
@@ -20,12 +20,8 @@ import {decodeStockGenome, STOCK_TOPOLOGY} from "./strategyGenome";
 
 export {STOCK_TOPOLOGY} from "./strategyGenome";
 
-/** 對應 22 維 NN 輸入（畀 UI activation 標籤） */
+/** 對應 18 維 NN 輸入（畀 UI activation 標籤；唔含開高低收） */
 export const STOCK_INPUT_LABELS = [
-    "開",
-    "高",
-    "低",
-    "收",
     "快線",
     "慢線",
     "快慢線差",
@@ -56,10 +52,8 @@ const STARTING_EQUITY = 10_000;
  * 略高過理想 0.1%，逼策略計埋滑價／佣金，少啲「紙上 thrash」。
  */
 const TRANSACTION_COST = 0.0015;
-/** 訓練段比例（入 fitness 主力） */
-const TRAIN_RATIO = 0.65;
-/** 驗證段結尾 = TRAIN+VAL；驗證入 fitness，純 test 係之後 */
-const VALIDATE_END_RATIO = 0.85;
+/** 訓練段比例（入 fitness）；其餘為純 test（永不入收生） */
+const TRAIN_RATIO = 0.8;
 /** 每條價格序列最多 cache 幾套指標參數（Float64Array，約 ~1MB／全歷史） */
 const MAX_INDICATOR_CACHE = 16;
 /**
@@ -82,21 +76,14 @@ const ACTION_MARGIN = STOCK_ACTION_MARGIN;
 const THRASH_LINEAR = 48;
 const THRASH_QUADRATIC = 140;
 
-/** 三段切法：train / validate（fitness）/ test（只展示） */
-export function getStockSplitIndices(length: number): {trainEnd: number; validateEnd: number} {
-    const trainEnd = Math.max(2, Math.floor(length * TRAIN_RATIO));
-    const validateEnd = Math.min(length, Math.max(trainEnd + 2, Math.floor(length * VALIDATE_END_RATIO)));
-    return {trainEnd, validateEnd};
+/** 兩段切法：train（fitness）/ test（只展示） */
+export function getStockSplitIndices(length: number): {trainEnd: number} {
+    const trainEnd = Math.max(2, Math.min(length - 2, Math.floor(length * TRAIN_RATIO)));
+    return {trainEnd};
 }
 
-function segmentAt(index: number, trainEnd: number, validateEnd: number): "train" | "validate" | "test" {
-    if (index < trainEnd) {
-        return "train";
-    }
-    if (index < validateEnd) {
-        return "validate";
-    }
-    return "test";
+function segmentAt(index: number, trainEnd: number): "train" | "test" {
+    return index < trainEnd ? "train" : "test";
 }
 
 /**
@@ -158,42 +145,36 @@ export function getIndicatorSnapshots(points: MarketDataPoint[], parameters: Opt
 }
 
 /**
- * GA fitness：train（65%）+ validate（20%）入分；純 test（尾 15%）永不入收生。
+ * GA fitness：淨 train（80%）入分；純 test（尾 20%）永不入收生。
  *
  * 計分結構：
- *   0.50 * trainScore        — 訓練段超額為主
- * + 0.30 * validateScore     — 驗證段 OOS 壓力（逼可轉移）
- * + 0.12 * robustScore       — train 前後半 soft floor
- * − 0.20 * max(0, train−val) — train 靚、validate 仆 → 罰過擬合
- * − L2(network)              — 淨 NN 模式先罰權重
+ *   0.85 * trainScore   — 訓練段超額為主
+ * + 0.15 * robustScore  — train 前後半 soft floor（半段穩健）
+ * − L2(network)         — 淨 NN 模式先罰權重
  *
- * 執行：train→validate **一條連續 walk**（同 UI replay 嘅決策路徑），
  * thrash 淨靠成本 + scoreSegment 換手罰，唔硬鎖持倉日數。
  */
 export function evaluateStockGenome(genome: Genome, points: MarketDataPoint[], useNetwork = true): number {
     const {parameters, networkGenome} = decodeStockGenome(genome);
     const columns = getIndicatorColumns(points, parameters);
-    const {trainEnd, validateEnd} = getStockSplitIndices(columns.length);
-    // 資料太短（三段都要有料）直接大負分
-    if (trainEnd < 80 || validateEnd - trainEnd < 30) {
+    const {trainEnd} = getStockSplitIndices(columns.length);
+    // 訓練太短直接大負分（test 至少留少少）
+    if (trainEnd < 80 || columns.length - trainEnd < 20) {
         return -1_000;
     }
 
     const decide = createPositionDecider(columns, parameters, networkGenome, useNetwork);
     const mid = Math.floor(trainEnd / 2);
-    const {full, firstHalf, secondHalf, validate: validateMetrics} = simulateFitnessWalk(decide, columns, trainEnd, mid, validateEnd);
+    const {full, firstHalf, secondHalf} = simulateFitnessWalk(decide, columns, trainEnd, mid);
 
     const trainScore = scoreSegment(full, columns, 0, trainEnd);
     const halfA = scoreSegment(firstHalf, columns, 0, mid + 1);
     const halfB = scoreSegment(secondHalf, columns, mid, trainEnd);
-    const validateScore = scoreSegment(validateMetrics, columns, Math.max(0, trainEnd - 1), validateEnd);
     // soft robust：輕 floor，弱半段唔會完全抹走強 train return
     const robustScore = 0.35 * Math.min(halfA, halfB) + 0.65 * ((halfA + halfB) / 2);
-    // train 勁過 validate 太多 = 溫習卷過擬合
-    const overfitPenalty = Math.max(0, trainScore - validateScore) * 0.2;
     // rule 模式完全唔用 NN 尾，罰權重淨係加 noise
     const regularization = useNetwork ? WEIGHT_L2_PENALTY * meanSquare(networkGenome) : 0;
-    return trainScore * 0.5 + validateScore * 0.3 + robustScore * 0.12 - overfitPenalty - regularization;
+    return trainScore * 0.85 + robustScore * 0.15 - regularization;
 }
 
 /**
@@ -236,18 +217,17 @@ function meanSquare(genome: Genome): number {
 }
 
 /**
- * UI 用完整 replay：train→validate→test 一條連續 walk。
+ * UI 用完整 replay：train→test 一條連續 walk。
  * 段回報用 equity 邊界計；純 test 永不入 fitness。
  */
 export function createTradingReplay(genome: Genome, points: MarketDataPoint[], useNetwork = true): TradingReplay {
     const {parameters, networkGenome} = decodeStockGenome(genome);
     const columns = getIndicatorColumns(points, parameters);
-    const {trainEnd, validateEnd} = getStockSplitIndices(columns.length);
+    const {trainEnd} = getStockSplitIndices(columns.length);
     const decide = createPositionDecider(columns, parameters, networkGenome, useNetwork);
     const full = simulateColumnReplay(decide, columns, points, 0, columns.length, 0);
     const equityAt = (index: number) => full.equityCurve[Math.min(Math.max(0, index), full.equityCurve.length - 1)] ?? STARTING_EQUITY;
     const trainEquity = equityAt(trainEnd - 1);
-    const validateEquity = equityAt(validateEnd - 1);
     const endEquity = equityAt(columns.length - 1);
     const firstClose = columns.close[0] || 1;
     const lastClose = columns.close[columns.length - 1] || firstClose;
@@ -260,7 +240,7 @@ export function createTradingReplay(genome: Genome, points: MarketDataPoint[], u
             close,
             strategy: full.equityCurve[index] ?? endEquity,
             benchmark: STARTING_EQUITY * (close / firstClose),
-            segment: segmentAt(index, trainEnd, validateEnd),
+            segment: segmentAt(index, trainEnd),
             smaFast: columns.smaFast[index],
             smaSlow: columns.smaSlow[index],
             rsi: columns.rsi[index],
@@ -283,8 +263,7 @@ export function createTradingReplay(genome: Genome, points: MarketDataPoint[], u
         points: tradingPoints,
         trades: full.trades,
         trainReturn: trainEquity / STARTING_EQUITY - 1,
-        validateReturn: trainEquity > 0 ? validateEquity / trainEquity - 1 : 0,
-        testReturn: validateEquity > 0 ? endEquity / validateEquity - 1 : 0,
+        testReturn: trainEquity > 0 ? endEquity / trainEquity - 1 : 0,
         benchmarkReturn: columns.length > 1 ? lastClose / firstClose - 1 : 0,
         sharpe: full.sharpe,
         maxDrawdown: full.maxDrawdown,
@@ -335,15 +314,15 @@ export function positionBeforeDate(trades: TradeMarker[], date: string): number 
 }
 
 /**
- * 組 22 維 NN 特徵，大致 clamp 到 [-1, 1]，等 tanh 單元 scale 一致。
+ * 組 18 維 NN 特徵，大致 clamp 到 [-1, 1]，等 tanh 單元 scale 一致。
  * 可傳入 `out` buffer 重用，避免每 bar new array。
+ * 唔再餵開高低收（K 線結構／日回報）；淨指標 + 持倉 + 門檻距離。
  *
  * 特徵分組：
- *   0–3   K 線結構 + 日回報
- *   4–6   SMA 快慢／交叉
- *   7–16  動量／波動／量／新高／新低
- *   17    目前持倉（±1）
- *   18–21 離 genome 解出嘅 RSI／Williams 買賣門檻距離
+ *   0–2   SMA 快慢／交叉
+ *   3–12  動量／波動／量／新高／新低
+ *   13    目前持倉（±1）
+ *   14–17 離 genome 解出嘅 RSI／Williams 買賣門檻距離
  */
 export function buildNetworkFeatures(
     columns: IndicatorColumns,
@@ -353,36 +332,28 @@ export function buildNetworkFeatures(
     out: number[] = new Array(STOCK_TOPOLOGY.inputSize)
 ): number[] {
     const close = Math.max(columns.close[index], 1e-9);
-    const open = columns.open[index];
-    const high = columns.high[index];
-    const low = columns.low[index];
     const smaFast = Math.max(columns.smaFast[index], 1e-9);
     const smaSlow = Math.max(columns.smaSlow[index], 1e-9);
-    // 高低開收：相對收盤嘅結構 + 收盤日回報
-    out[0] = clamp((open / close - 1) * 50);
-    out[1] = clamp((high / close - 1) * 50);
-    out[2] = clamp((low / close - 1) * 50);
-    out[3] = clamp(columns.closeReturn[index] * 20);
-    out[4] = clamp((close / smaFast - 1) * 10);
-    out[5] = clamp((close / smaSlow - 1) * 10);
-    out[6] = clamp((smaFast / smaSlow - 1) * 10);
-    out[7] = clamp((columns.williamsR[index] + 50) / 50);
-    out[8] = clamp(columns.roc[index] * 5);
-    out[9] = clamp((columns.rsi[index] - 50) / 50);
-    out[10] = clamp((columns.macd[index] / close) * 25);
-    out[11] = clamp((columns.macdSignal[index] / close) * 25);
-    out[12] = clamp((columns.bollingerPercentB[index] - 0.5) * 2);
-    out[13] = clamp(columns.volatility[index] * 5);
-    out[14] = clamp(columns.volumeZScore[index] / 3);
+    out[0] = clamp((close / smaFast - 1) * 10);
+    out[1] = clamp((close / smaSlow - 1) * 10);
+    out[2] = clamp((smaFast / smaSlow - 1) * 10);
+    out[3] = clamp((columns.williamsR[index] + 50) / 50);
+    out[4] = clamp(columns.roc[index] * 5);
+    out[5] = clamp((columns.rsi[index] - 50) / 50);
+    out[6] = clamp((columns.macd[index] / close) * 25);
+    out[7] = clamp((columns.macdSignal[index] / close) * 25);
+    out[8] = clamp((columns.bollingerPercentB[index] - 0.5) * 2);
+    out[9] = clamp(columns.volatility[index] * 5);
+    out[10] = clamp(columns.volumeZScore[index] / 3);
     // close / N-day high ≈ 1 係突破；把 ~[0.9, 1.0] 拉開到 roughly [-1, 1]
-    out[15] = clamp((columns.newHighRatio[index] - 0.95) * 20);
+    out[11] = clamp((columns.newHighRatio[index] - 0.95) * 20);
     // nDayLow / close ≈ 1 係貼近 N 日低（同新高 ratio 對稱）
-    out[16] = clamp((columns.newLowRatio[index] - 0.95) * 20);
-    out[17] = position > 0 ? 1 : -1;
-    out[18] = clamp((parameters.rsiBuyThreshold - columns.rsi[index]) / 20);
-    out[19] = clamp((columns.rsi[index] - parameters.rsiSellThreshold) / 20);
-    out[20] = clamp((parameters.williamsBuyThreshold - columns.williamsR[index]) / 25);
-    out[21] = clamp((columns.williamsR[index] - parameters.williamsSellThreshold) / 25);
+    out[12] = clamp((columns.newLowRatio[index] - 0.95) * 20);
+    out[13] = position > 0 ? 1 : -1;
+    out[14] = clamp((parameters.rsiBuyThreshold - columns.rsi[index]) / 20);
+    out[15] = clamp((columns.rsi[index] - parameters.rsiSellThreshold) / 20);
+    out[16] = clamp((parameters.williamsBuyThreshold - columns.williamsR[index]) / 25);
+    out[17] = clamp((columns.williamsR[index] - parameters.williamsSellThreshold) / 25);
     return out;
 }
 
@@ -459,16 +430,10 @@ function createIndicatorCacheKey(parameters: OptimizedIndicatorParameters): stri
 }
 
 /**
- * 一次連續 walk：train 全段 + validate（同一 decide）。
+ * 一次 walk：淨 train 全段（前後半同時累積）。
  * 段回報各自用 STARTING_EQUITY 起計（分數只睇段內 return）；倉位一路傳落去。
  */
-function simulateFitnessWalk(
-    decide: PositionDecider,
-    columns: IndicatorColumns,
-    trainEnd: number,
-    mid: number,
-    validateEnd: number
-): {full: SegmentMetrics; firstHalf: SegmentMetrics; secondHalf: SegmentMetrics; validate: SegmentMetrics} {
+function simulateFitnessWalk(decide: PositionDecider, columns: IndicatorColumns, trainEnd: number, mid: number): {full: SegmentMetrics; firstHalf: SegmentMetrics; secondHalf: SegmentMetrics} {
     let position = 0;
     let trainEndingPosition = 0;
 
@@ -505,64 +470,41 @@ function simulateFitnessWalk(
     let halfBTurnoverSum = 0;
     let halfBEndingPosition = 0;
 
-    // validate（連續 cooldown／倉位；equity 獨立起計）
-    let valEquity = STARTING_EQUITY;
-    let valPeak = valEquity;
-    let valMaxDrawdown = 0;
-    let valReturnSum = 0;
-    let valReturnSqSum = 0;
-    let valReturnCount = 0;
-    let valExposureSum = 0;
-    let valTurnoverSum = 0;
-    let valEndingPosition = 0;
-
-    for (let index = 1; index < validateEnd; index += 1) {
+    for (let index = 1; index < trainEnd; index += 1) {
         const previous = index - 1;
         const targetPosition = decide(previous, position);
         const {dailyReturn, turnover} = applyNextOpenDay(columns, previous, index, position, targetPosition);
 
-        if (index < trainEnd) {
-            equity *= Math.max(0.01, 1 + dailyReturn);
-            returnSum += dailyReturn;
-            returnSqSum += dailyReturn * dailyReturn;
-            returnCount += 1;
-            exposureSum += targetPosition;
-            turnoverSum += turnover;
-            peak = Math.max(peak, equity);
-            maxDrawdown = Math.max(maxDrawdown, peak > 0 ? (peak - equity) / peak : 0);
-            trainEndingPosition = targetPosition;
+        equity *= Math.max(0.01, 1 + dailyReturn);
+        returnSum += dailyReturn;
+        returnSqSum += dailyReturn * dailyReturn;
+        returnCount += 1;
+        exposureSum += targetPosition;
+        turnoverSum += turnover;
+        peak = Math.max(peak, equity);
+        maxDrawdown = Math.max(maxDrawdown, peak > 0 ? (peak - equity) / peak : 0);
+        trainEndingPosition = targetPosition;
 
-            if (index < halfEnd) {
-                halfAEquity *= Math.max(0.01, 1 + dailyReturn);
-                halfAReturnSum += dailyReturn;
-                halfAReturnSqSum += dailyReturn * dailyReturn;
-                halfAReturnCount += 1;
-                halfAExposureSum += targetPosition;
-                halfATurnoverSum += turnover;
-                halfAPeak = Math.max(halfAPeak, halfAEquity);
-                halfAMaxDrawdown = Math.max(halfAMaxDrawdown, halfAPeak > 0 ? (halfAPeak - halfAEquity) / halfAPeak : 0);
-                halfAEndingPosition = targetPosition;
-            } else {
-                halfBEquity *= Math.max(0.01, 1 + dailyReturn);
-                halfBReturnSum += dailyReturn;
-                halfBReturnSqSum += dailyReturn * dailyReturn;
-                halfBReturnCount += 1;
-                halfBExposureSum += targetPosition;
-                halfBTurnoverSum += turnover;
-                halfBPeak = Math.max(halfBPeak, halfBEquity);
-                halfBMaxDrawdown = Math.max(halfBMaxDrawdown, halfBPeak > 0 ? (halfBPeak - halfBEquity) / halfBPeak : 0);
-                halfBEndingPosition = targetPosition;
-            }
+        if (index < halfEnd) {
+            halfAEquity *= Math.max(0.01, 1 + dailyReturn);
+            halfAReturnSum += dailyReturn;
+            halfAReturnSqSum += dailyReturn * dailyReturn;
+            halfAReturnCount += 1;
+            halfAExposureSum += targetPosition;
+            halfATurnoverSum += turnover;
+            halfAPeak = Math.max(halfAPeak, halfAEquity);
+            halfAMaxDrawdown = Math.max(halfAMaxDrawdown, halfAPeak > 0 ? (halfAPeak - halfAEquity) / halfAPeak : 0);
+            halfAEndingPosition = targetPosition;
         } else {
-            valEquity *= Math.max(0.01, 1 + dailyReturn);
-            valReturnSum += dailyReturn;
-            valReturnSqSum += dailyReturn * dailyReturn;
-            valReturnCount += 1;
-            valExposureSum += targetPosition;
-            valTurnoverSum += turnover;
-            valPeak = Math.max(valPeak, valEquity);
-            valMaxDrawdown = Math.max(valMaxDrawdown, valPeak > 0 ? (valPeak - valEquity) / valPeak : 0);
-            valEndingPosition = targetPosition;
+            halfBEquity *= Math.max(0.01, 1 + dailyReturn);
+            halfBReturnSum += dailyReturn;
+            halfBReturnSqSum += dailyReturn * dailyReturn;
+            halfBReturnCount += 1;
+            halfBExposureSum += targetPosition;
+            halfBTurnoverSum += turnover;
+            halfBPeak = Math.max(halfBPeak, halfBEquity);
+            halfBMaxDrawdown = Math.max(halfBMaxDrawdown, halfBPeak > 0 ? (halfBPeak - halfBEquity) / halfBPeak : 0);
+            halfBEndingPosition = targetPosition;
         }
 
         position = targetPosition;
@@ -592,14 +534,6 @@ function simulateFitnessWalk(
             endingPosition: halfBEndingPosition,
             meanExposure: halfBReturnCount > 0 ? halfBExposureSum / halfBReturnCount : 0,
             meanTurnover: halfBReturnCount > 0 ? halfBTurnoverSum / halfBReturnCount : 0,
-        },
-        validate: {
-            totalReturn: valEquity / STARTING_EQUITY - 1,
-            sharpe: calculateSharpeFromMoments(valReturnSum, valReturnSqSum, valReturnCount),
-            maxDrawdown: valMaxDrawdown,
-            endingPosition: valEndingPosition,
-            meanExposure: valReturnCount > 0 ? valExposureSum / valReturnCount : 0,
-            meanTurnover: valReturnCount > 0 ? valTurnoverSum / valReturnCount : 0,
         },
     };
 }
