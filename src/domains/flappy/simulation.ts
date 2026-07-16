@@ -34,8 +34,8 @@ const FLAP_VELOCITY = -6.4;
 const MAX_FALL = 9.5;
 const PIPE_SPAWN_GAP = 168;
 /** 一場最長步數，防止無限飛 */
-const MAX_STEPS = 8_000;
-const MAX_REPLAY_FRAMES = 2_400;
+const MAX_STEPS = 99_999;
+const MAX_REPLAY_FRAMES = MAX_STEPS / 4;
 
 const networkAdapter = new NeuralNetworkAdapter(FLAPPY_TOPOLOGY);
 
