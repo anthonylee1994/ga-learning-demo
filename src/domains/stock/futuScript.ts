@@ -513,8 +513,8 @@ if __name__ == "__main__":
     plot("N-day High", ndh_seq, Color.limagenta)
     plot("N-day Low", ndl_seq, Color.cyan)
 
-    plot_icon("buy", enter_seq > 0, low(), Shape.labelup, Color.white, 1, 0, 10)
-    plot_icon("sell", exit_seq > 0, high(), Shape.labeldown, Color.white, 1, 0, 10)
+    plot_icon("buy", enter_seq > 0, low(), Shape.arrowup, Color.white, 1, 0, 10)
+    plot_icon("sell", exit_seq > 0, high(), Shape.arrowdown, Color.white, 1, 0, 10)
 
     output_parameter(
         Signal=signal_seq,
