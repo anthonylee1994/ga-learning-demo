@@ -290,7 +290,7 @@ describe("stock simulation", () => {
         expect(buyReplay.trainReturn).toBeGreaterThan(0.08);
     });
 
-    it("factors test return into fitness (transferability)", () => {
+    it("weights test return above train return in fitness", () => {
         const rising = createMarketData(700);
         const buySeed = createStockSeedGenomes()[0];
         const sellSeed = buySeed.slice();
@@ -304,10 +304,10 @@ describe("stock simulation", () => {
         const sellReplay = createTradingReplay(sellSeed, rising, true);
         const buyFitness = evaluateStockGenome(buySeed, rising, true);
         const sellFitness = evaluateStockGenome(sellSeed, rising, true);
-        // Rising fixture：買偏策略 test 亦應食到升浪；fitness 要跟住 test 優勢
+        // Rising fixture：買偏策略 test 亦應食到升浪；fitness 以 test 為主軸
         expect(Number.isFinite(buyReplay.testReturn)).toBe(true);
         expect(Number.isFinite(sellReplay.testReturn)).toBe(true);
-        if (buyReplay.testReturn > sellReplay.testReturn + 0.02 && buyReplay.trainReturn >= sellReplay.trainReturn - 0.05) {
+        if (buyReplay.testReturn > sellReplay.testReturn + 0.02) {
             expect(buyFitness).toBeGreaterThan(sellFitness);
         }
     });

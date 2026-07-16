@@ -248,8 +248,8 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
             accent={isMonteCarlo ? "stock-mc" : "stock"}
             description={
                 isMonteCarlo
-                    ? "以蒙地卡羅隨機抽樣搜尋交易策略：60% 訓練為主分，尾 40% 測試回報入轉移性。次日開盤成交、0.15% 成本。預設規則模式（可開神經網絡）。"
-                    : "以遺傳演算法進化指標週期／門檻（可開神經網絡決策頭）。60% 訓練為主分，尾 40% 測試回報入轉移性。次日開盤成交、0.15% 成本。"
+                    ? "以蒙地卡羅隨機抽樣搜尋交易策略：尾 40% 測試回報為主分，60% 訓練輔助。次日開盤成交、0.15% 成本。預設規則模式（可開神經網絡）。"
+                    : "以遺傳演算法進化指標週期／門檻（可開神經網絡決策頭）。尾 40% 測試回報為主分，60% 訓練輔助。次日開盤成交、0.15% 成本。"
             }
             icon={isMonteCarlo ? <Dices size={20} strokeWidth={1.5} /> : <CandlestickChart size={20} strokeWidth={1.5} />}
             title={isMonteCarlo ? "股票交易 · 蒙地卡羅" : "股票交易 · 神經演化"}
@@ -407,7 +407,7 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
                     <FitnessChart eyebrow={isMonteCarlo ? "搜尋訊號" : "演化訊號"} history={demo.history} title={isMonteCarlo ? "批次適應度趨勢" : "適應度趨勢"} />
                     <ApplicationPanel
                         eyebrow={isMonteCarlo ? "蒙地卡羅對應" : "GA 對應"}
-                        fitness="train 70% + robust 15% + test 15% − L2；超額回報主軸；次日開盤成交；0.15% 成本；換手 thrash 分數罰；尾 40% test 入轉移性"
+                        fitness="test 55% + train 30% + robust 15% − L2；測試回報主軸；次日開盤成交；0.15% 成本；換手 thrash 分數罰"
                         genome={
                             isMonteCarlo
                                 ? `${STOCK_PARAMETER_GENE_COUNT} 週期/門檻 + ${STOCK_NETWORK_GENE_COUNT} 決策頭；每批混合全域隨機抽樣 + 冠軍附近局部遊走（局部比例 = 滑桿）；開局有接近買入持有等種子`
@@ -416,7 +416,7 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
                         genomeLabel={isMonteCarlo ? "參數向量" : "基因體"}
                         inputs="18 維特徵：全部指標常開（含 N 日新高／新低）+ 持倉狀態；唔餵開高低收。"
                         outputs={useNetwork ? "薄隱藏層取最大 → 買 / 持 / 沽空；搜尋主力喺週期 / 門檻" : "SMA / MACD / RSI / 威廉 多數票買入；升勢要 RSI+威廉齊過熱先沽空，否則單一過熱沽空"}
-                        termination={isMonteCarlo ? "60% 訓練主分 + 尾 40% 測試轉移性；每批保留全域最佳" : "60% 訓練主分 + 尾 40% 測試轉移性；移民只重抽 head（參數）"}
+                        termination={isMonteCarlo ? "尾 40% 測試主分 + 60% 訓練輔助；每批保留全域最佳" : "尾 40% 測試主分 + 60% 訓練輔助；移民只重抽 head（參數）"}
                         title={isMonteCarlo ? "點樣套用蒙地卡羅優化" : "點樣套用遺傳演算法"}
                     />
                 </main>

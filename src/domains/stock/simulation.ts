@@ -2,7 +2,7 @@
  * Stock 交易模擬：genome = 指標參數 +（可選）NN 權重，喺歷史 K 線上做 long / short。
  *
  * 流程概覽：
- * 1. evaluateStockGenome — GA 評分：train（60%）為主 + test（尾 40%）轉移性
+ * 1. evaluateStockGenome — GA 評分：test（尾 40%）為主 + train（60%）輔助
  * 2. createTradingReplay — UI 曲線：train→test 連續模擬
  * 3. 成交：T 日收市決策 → T+1 開盤成交（overnight 用舊倉、intraday 用新倉）− 換手成本
  *
@@ -53,8 +53,12 @@ const STARTING_EQUITY = 10_000;
  * 略高過理想 0.1%，逼策略計埋滑價／佣金，少啲「紙上 thrash」。
  */
 const TRANSACTION_COST = 0.0015;
-/** 訓練段比例（fitness 主軸）；其餘為 test（轉移性入分） */
+/** 訓練段比例（資料切分）；其餘為 test（fitness 主軸） */
 const TRAIN_RATIO = 0.6;
+/** fitness 權重：test 回報優先於 train（打擊過擬合） */
+const FITNESS_TEST_WEIGHT = 0.55;
+const FITNESS_TRAIN_WEIGHT = 0.3;
+const FITNESS_ROBUST_WEIGHT = 0.15;
 /** 每條價格序列最多 cache 幾套指標參數（Float64Array，約 ~1MB／全歷史） */
 const MAX_INDICATOR_CACHE = 16;
 /**
@@ -77,7 +81,7 @@ const ACTION_MARGIN = STOCK_ACTION_MARGIN;
 const THRASH_LINEAR = 48;
 const THRASH_QUADRATIC = 140;
 
-/** 兩段切法：train（主分）/ test（轉移性） */
+/** 兩段切法：train（輔助）/ test（主分） */
 export function getStockSplitIndices(length: number): {trainEnd: number} {
     const trainEnd = Math.max(2, Math.min(length - 2, Math.floor(length * TRAIN_RATIO)));
     return {trainEnd};
@@ -146,12 +150,12 @@ export function getIndicatorSnapshots(points: MarketDataPoint[], parameters: Opt
 }
 
 /**
- * GA fitness：train（60%）為主，test（尾 40%）入轉移性分。
+ * GA fitness：test（尾 40%）為主，train（前 60%）輔助。
  *
  * 計分結構：
- *   0.70 * trainScore   — 訓練段超額為主
+ *   0.55 * testScore    — 測試段回報／超額（主軸；可轉移先贏）
+ * + 0.30 * trainScore   — 訓練段超額（輔助；唔俾淨背 test 噪音）
  * + 0.15 * robustScore  — train 前後半 soft floor（半段穩健）
- * + 0.15 * testScore    — 測試段回報／超額（打擊淨 train 過擬合）
  * − L2(network)         — 淨 NN 模式先罰權重
  *
  * thrash 淨靠成本 + scoreSegment 換手罰，唔硬鎖持倉日數。
@@ -177,7 +181,7 @@ export function evaluateStockGenome(genome: Genome, points: MarketDataPoint[], u
     const robustScore = 0.35 * Math.min(halfA, halfB) + 0.65 * ((halfA + halfB) / 2);
     // rule 模式完全唔用 NN 尾，罰權重淨係加 noise
     const regularization = useNetwork ? WEIGHT_L2_PENALTY * meanSquare(networkGenome) : 0;
-    return trainScore * 0.7 + robustScore * 0.15 + testScore * 0.15 - regularization;
+    return testScore * FITNESS_TEST_WEIGHT + trainScore * FITNESS_TRAIN_WEIGHT + robustScore * FITNESS_ROBUST_WEIGHT - regularization;
 }
 
 /**

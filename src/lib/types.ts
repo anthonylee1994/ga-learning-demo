@@ -183,7 +183,7 @@ export interface TradingPoint {
     close: number;
     strategy: number;
     benchmark: number;
-    /** train=主分；test=轉移性入分 */
+    /** train=輔助；test=fitness 主軸 */
     segment: "train" | "test";
     smaFast: number;
     smaSlow: number;
@@ -206,7 +206,7 @@ export interface TradingReplay {
     points: TradingPoint[];
     trades: TradeMarker[];
     trainReturn: number;
-    /** 測試段回報（轉移性；亦入 fitness） */
+    /** 測試段回報（fitness 主軸） */
     testReturn: number;
     benchmarkReturn: number;
     sharpe: number;
