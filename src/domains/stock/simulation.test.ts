@@ -51,9 +51,9 @@ describe("stock simulation", () => {
         );
     });
 
-    it("splits series into 80% train / 20% test", () => {
+    it("splits series into 60% train / 40% test", () => {
         const {trainEnd} = getStockSplitIndices(1000);
-        expect(trainEnd).toBe(800);
+        expect(trainEnd).toBe(600);
     });
 
     it("maps network outputs to long/cash without shorting", () => {

@@ -115,7 +115,7 @@ const CONCEPTS = [
     {
         icon: Braces,
         title: "過擬合",
-        text: "高訓練分 ≠ 識新環境。股票保留 20% 未見過數據做 test。",
+        text: "高訓練分 ≠ 識新環境。股票保留 40% 未見過數據做 test。",
         visual: "overfit" as const,
     },
     {

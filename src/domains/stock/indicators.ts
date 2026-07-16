@@ -170,7 +170,7 @@ export function getIndicatorWarmup(parameters: OptimizedIndicatorParameters): nu
     );
 }
 
-export function splitIndicators(snapshots: IndicatorSnapshot[], trainRatio = 0.8): {train: IndicatorSnapshot[]; test: IndicatorSnapshot[]; splitIndex: number} {
+export function splitIndicators(snapshots: IndicatorSnapshot[], trainRatio = 0.6): {train: IndicatorSnapshot[]; test: IndicatorSnapshot[]; splitIndex: number} {
     const splitIndex = Math.max(2, Math.floor(snapshots.length * trainRatio));
     return {
         train: snapshots.slice(0, splitIndex),

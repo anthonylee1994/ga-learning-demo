@@ -106,7 +106,7 @@ describe("stock indicators", () => {
     it("uses a chronological 80/20 split with one bridge row", () => {
         const rows = calculateIndicators(createMarketData(150));
         const result = splitIndicators(rows);
-        expect(result.splitIndex).toBe(Math.floor(rows.length * 0.8));
+        expect(result.splitIndex).toBe(Math.floor(rows.length * 0.6));
         expect(result.test[0]).toEqual(rows[result.splitIndex - 1]);
     });
 });

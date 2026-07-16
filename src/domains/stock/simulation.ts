@@ -2,7 +2,7 @@
  * Stock 交易模擬：genome = 指標參數 +（可選）NN 權重，喺歷史 K 線上做 long / cash。
  *
  * 流程概覽：
- * 1. evaluateStockGenome — GA 評分：淨 train（80%）；純 test（尾 20%）永不入分
+ * 1. evaluateStockGenome — GA 評分：淨 train（60%）；純 test（尾 40%）永不入分
  * 2. createTradingReplay — UI 曲線：train→test 連續模擬
  * 3. 成交：T 日收市決策 → T+1 開盤成交（overnight 用舊倉、intraday 用新倉）− 換手成本
  *
@@ -53,7 +53,7 @@ const STARTING_EQUITY = 10_000;
  */
 const TRANSACTION_COST = 0.0015;
 /** 訓練段比例（入 fitness）；其餘為純 test（永不入收生） */
-const TRAIN_RATIO = 0.8;
+const TRAIN_RATIO = 0.6;
 /** 每條價格序列最多 cache 幾套指標參數（Float64Array，約 ~1MB／全歷史） */
 const MAX_INDICATOR_CACHE = 16;
 /**
@@ -145,7 +145,7 @@ export function getIndicatorSnapshots(points: MarketDataPoint[], parameters: Opt
 }
 
 /**
- * GA fitness：淨 train（80%）入分；純 test（尾 20%）永不入收生。
+ * GA fitness：淨 train（60%）入分；純 test（尾 40%）永不入收生。
  *
  * 計分結構：
  *   0.85 * trainScore   — 訓練段超額為主
