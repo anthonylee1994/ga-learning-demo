@@ -422,7 +422,7 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
                     <FitnessChart eyebrow={isMonteCarlo ? "搜尋訊號" : "演化訊號"} history={demo.history} title={isMonteCarlo ? "批次適應度趨勢" : "適應度趨勢"} />
                     <ApplicationPanel
                         eyebrow={isMonteCarlo ? "蒙地卡羅對應" : "GA 對應"}
-                        fitness="train 50% + validate 30% + robust 12% − 過擬合罰 − L2；超額回報主軸；次日開盤成交；0.15% 成本；最少持／空各 8 日；train 靚 validate 仆會扣分；尾 15% test 永不入分"
+                        fitness="train 50% + validate 30% + robust 12% − 過擬合罰 − L2；超額回報主軸；次日開盤成交；0.15% 成本；最少持／空各 5 日；train 靚 validate 仆會扣分；尾 15% test 永不入分"
                         genome={
                             isMonteCarlo
                                 ? `${STOCK_PARAMETER_GENE_COUNT} 週期/門檻 + ${STOCK_NETWORK_GENE_COUNT} 決策頭；每批混合全域隨機抽樣 + 冠軍附近局部遊走（局部比例 = 滑桿）；開局有接近買入持有等種子`

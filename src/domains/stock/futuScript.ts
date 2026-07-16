@@ -1,4 +1,5 @@
 import type {Genome} from "../../lib/types";
+import {STOCK_ACTION_MARGIN, STOCK_MIN_BARS_IN_CASH, STOCK_MIN_BARS_IN_LONG} from "./simulation";
 import {decodeLayers, formatNumber as formatNum} from "./pineScript";
 import {decodeStockGenome} from "./strategyGenome";
 
@@ -351,8 +352,9 @@ def compute_signals():
 
     position = 0
     bars_in_state = 0
-    MIN_BARS_LONG = 8
-    MIN_BARS_CASH = 8
+    MIN_BARS_LONG = ${STOCK_MIN_BARS_IN_LONG}
+    MIN_BARS_CASH = ${STOCK_MIN_BARS_IN_CASH}
+    ACTION_MARGIN = ${STOCK_ACTION_MARGIN}
     warm = SMA_SLOW
     if WILL_P > warm:
         warm = WILL_P
@@ -610,8 +612,19 @@ function emitNetworkDecisionLoop(): string {
         out_hold = _dense(h2, OUT[1])
         out_sell = _dense(h2, OUT[2])
 
-        buy_signal = (out_buy >= out_hold + 0.08) and (out_buy >= out_sell)
-        sell_signal = (out_sell >= out_hold + 0.08) and (out_sell > out_buy)`;
+        # Sticky + margin (matches decidePositionFromNetwork)
+        if position > 0:
+            stay = out_hold
+            if out_buy > stay:
+                stay = out_buy
+            buy_signal = False
+            sell_signal = out_sell >= stay + ACTION_MARGIN
+        else:
+            stay = out_hold
+            if out_sell > stay:
+                stay = out_sell
+            sell_signal = False
+            buy_signal = out_buy >= stay + ACTION_MARGIN`;
 }
 
 function emitRuleDecisionLoop(): string {

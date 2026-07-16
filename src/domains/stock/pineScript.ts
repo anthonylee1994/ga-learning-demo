@@ -1,4 +1,5 @@
 import type {Genome} from "../../lib/types";
+import {STOCK_ACTION_MARGIN, STOCK_MIN_BARS_IN_CASH, STOCK_MIN_BARS_IN_LONG} from "./simulation";
 import {decodeStockGenome, STOCK_TOPOLOGY} from "./strategyGenome";
 
 interface DenseLayer {
@@ -75,10 +76,31 @@ newLowRatio = nDayLow / math.max(close, 0.000000001)
 ready = not na(smaSlow) and not na(williamsR) and not na(roc) and not na(rsi) and not na(macdSignal) and not na(bollingerUpper) and not na(volatility) and not na(volumeZScore) and not na(nDayHigh) and not na(nDayLow)
 ${decisionLines.join("\n")}
 
-if buySignal and strategy.position_size <= 0
+// Match browser sim: position-sticky signals + min hold / cash cooldown (block next-day thrash).
+minBarsLong = ${STOCK_MIN_BARS_IN_LONG}
+minBarsCash = ${STOCK_MIN_BARS_IN_CASH}
+var int flatPos = 0
+var int barsInState = 0
+barsInState += 1
+rawBuy = buySignal
+rawSell = sellSignal
+// Sticky: when long, buy is "stay"; when flat, sell is noise.
+buySignal := ready and (flatPos <= 0) and rawBuy
+sellSignal := ready and (flatPos > 0) and rawSell
+canBuy = flatPos <= 0 and barsInState >= minBarsCash
+canSell = flatPos > 0 and barsInState >= minBarsLong
+entered = false
+exited = false
+if buySignal and canBuy
     strategy.entry("Long", strategy.long)
-if sellSignal and strategy.position_size > 0
+    flatPos := 1
+    barsInState := 0
+    entered := true
+if sellSignal and canSell
     strategy.close("Long")
+    flatPos := 0
+    barsInState := 0
+    exited := true
 
 plot(smaFast, "Optimized SMA Fast", color=color.yellow)
 plot(smaSlow, "Optimized SMA Slow", color=color.blue)
@@ -87,8 +109,8 @@ plot(nDayLow, "N-day Low", color=color.aqua)
 upperPlot = plot(bollingerUpper, "Optimized BB Upper", color=color.new(color.gray, 35))
 lowerPlot = plot(bollingerLower, "Optimized BB Lower", color=color.new(color.gray, 35))
 fill(upperPlot, lowerPlot, color=color.new(color.gray, 92))
-plotshape(buySignal and strategy.position_size <= 0, title="Buy", style=shape.triangleup, location=location.belowbar, color=color.lime, size=size.tiny)
-plotshape(sellSignal and strategy.position_size > 0, title="Sell", style=shape.triangledown, location=location.abovebar, color=color.red, size=size.tiny)
+plotshape(entered, title="Buy", style=shape.triangleup, location=location.belowbar, color=color.lime, size=size.tiny)
+plotshape(exited, title="Sell", style=shape.triangledown, location=location.abovebar, color=color.red, size=size.tiny)
 `;
 }
 
@@ -154,8 +176,13 @@ export function createNetworkDecisionLines(networkGenome: Genome): string[] {
         lines.push("");
     }
 
-    lines.push("buySignal = ready and outBuy >= outHold and outBuy >= outSell");
-    lines.push("sellSignal = ready and outSell > outBuy and outSell > outHold");
+    // Sticky + margin (matches decidePositionFromNetwork): flat uses max(hold,sell) as stay; long uses max(hold,buy).
+    // flatPos is applied in the strategy body so rawBuy/rawSell here are the NN edge checks only.
+    lines.push(`actionMargin = ${STOCK_ACTION_MARGIN}`);
+    lines.push("stayIfFlat = math.max(outHold, outSell)");
+    lines.push("stayIfLong = math.max(outHold, outBuy)");
+    lines.push("buySignal = ready and outBuy >= stayIfFlat + actionMargin");
+    lines.push("sellSignal = ready and outSell >= stayIfLong + actionMargin");
     lines.push(`// topology ${[STOCK_TOPOLOGY.inputSize, ...STOCK_TOPOLOGY.hiddenLayers, STOCK_TOPOLOGY.outputSize].join("→")}`);
     return lines;
 }

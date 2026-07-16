@@ -7,10 +7,10 @@
  * 3. 成交：T 日收市決策 → T+1 開盤成交（overnight 用舊倉、intraday 用新倉）− 換手成本
  *
  * 兩種決策模式：
- * - useNetwork=true：NN 睇 22 維特徵 → 買／持／賣（要有 margin 先轉倉）
+ * - useNetwork=true：NN 睇 22 維特徵 → 買／持／賣（持倉 sticky + margin 先轉倉）
  * - useNetwork=false：規則投票（SMA / MACD / RSI / Williams）
  *
- * 兩者外層都包 withHoldCooldown，防止日日 thrash 俾 fee 食晒。
+ * 兩者外層都包 withHoldCooldown（最少持倉／空倉 5 根 K），防止日日 thrash 俾 fee 食晒。
  */
 import {createForwardRunner} from "../../lib/neuralNetwork";
 import type {Genome, MarketDataPoint, OptimizedIndicatorParameters, TradeMarker, TradingPoint, TradingReplay} from "../../lib/types";
@@ -70,18 +70,25 @@ const WEIGHT_L2_PENALTY = 0.28;
 /**
  * 做多至少持幾多 bar 先准賣。
  * 擋住 multi-day thrash（fee bleed）同「持幾日就翻」嘅 noise。
+ * 匯出 Pine／Futu 必須同值。
  */
-const MIN_BARS_IN_LONG = 8;
+export const STOCK_MIN_BARS_IN_LONG = 5;
 /**
  * 沽出後至少 cash 幾多 bar 先准再買。
  * 專門堵「噚日沽、今日又買返」round-trip。
+ * 匯出 Pine／Futu 必須同值。
  */
-const MIN_BARS_IN_CASH = 8;
+export const STOCK_MIN_BARS_IN_CASH = 5;
 /**
- * NN 模式：buy/sell 要比 hold 大呢個 tanh 空間 margin 先轉倉。
+ * NN 模式：轉倉要比「留守」大呢個 tanh 空間 margin。
  * 平手／近平手維持現狀 → 長倉段穩陣啲。
+ * 匯出 Pine／Futu 必須同值。
  */
-const ACTION_MARGIN = 0.08;
+export const STOCK_ACTION_MARGIN = 0.08;
+
+const MIN_BARS_IN_LONG = STOCK_MIN_BARS_IN_LONG;
+const MIN_BARS_IN_CASH = STOCK_MIN_BARS_IN_CASH;
+const ACTION_MARGIN = STOCK_ACTION_MARGIN;
 
 /** 三段切法：train / validate（fitness）/ test（只展示） */
 export function getStockSplitIndices(length: number): {trainEnd: number; validateEnd: number} {
@@ -296,19 +303,28 @@ export function createTradingReplay(genome: Genome, points: MarketDataPoint[], u
 /**
  * 將 NN 輸出映射成 long(1) 或 cash(0)。
  * output[0]=買、[1]=持、[2]=賣。
- * 要買／賣勝過 hold 至少 margin，近平手維持原倉，減少每 bar thrash。
+ *
+ * 持倉 sticky（堵「噚日買完今日又買返」類 thrash）：
+ * - 已做多：buy 當「留守」唔係加倉；淨得 sell 明確贏 max(hold,buy)+margin 先沽
+ * - 已空倉：sell 當雜訊；淨得 buy 明確贏 max(hold,sell)+margin 先開
+ * 近平手維持原倉，減少 buy≈sell 時日日翻。
  */
 export function decidePositionFromNetwork(output: number[], position: number, margin = ACTION_MARGIN): number {
     const buy = output[0] ?? 0;
     const hold = output[1] ?? 0;
     const sell = output[2] ?? 0;
-    if (buy >= hold + margin && buy >= sell) {
+    if (position > 0) {
+        const stay = Math.max(hold, buy);
+        if (sell >= stay + margin) {
+            return 0;
+        }
         return 1;
     }
-    if (sell >= hold + margin && sell > buy) {
-        return 0;
+    const stay = Math.max(hold, sell);
+    if (buy >= stay + margin) {
+        return 1;
     }
-    return position;
+    return 0;
 }
 
 /**

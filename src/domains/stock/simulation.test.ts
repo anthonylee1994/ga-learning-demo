@@ -65,6 +65,37 @@ describe("stock simulation", () => {
         expect(decidePositionFromNetwork([0.0, 0.1, 0.5], 1, 0.08)).toBe(0);
     });
 
+    it("uses position-sticky decisions when buy≈sell (anti thrash)", () => {
+        // Long: sell must beat max(hold, buy)+margin — noisy sell above buy alone is not enough
+        expect(decidePositionFromNetwork([0.55, 0.1, 0.6], 1, 0.08)).toBe(1);
+        // Long: clear sell over the buy channel
+        expect(decidePositionFromNetwork([0.5, 0.1, 0.7], 1, 0.08)).toBe(0);
+        // Flat: buy must beat max(hold, sell)+margin
+        expect(decidePositionFromNetwork([0.6, 0.1, 0.55], 0, 0.08)).toBe(0);
+        expect(decidePositionFromNetwork([0.7, 0.1, 0.5], 0, 0.08)).toBe(1);
+    });
+
+    it("never stacks same-action fills and enforces min re-entry gap", () => {
+        const rising = createMarketData(700);
+        for (const seed of createStockSeedGenomes()) {
+            for (const useNetwork of [true, false]) {
+                const replay = createTradingReplay(seed, rising, useNetwork);
+                const dateToIdx = new Map(replay.points.map((point, index) => [point.date, index]));
+                for (let index = 1; index < replay.trades.length; index += 1) {
+                    expect(replay.trades[index].action).not.toBe(replay.trades[index - 1].action);
+                    const gap = (dateToIdx.get(replay.trades[index].date) ?? 0) - (dateToIdx.get(replay.trades[index - 1].date) ?? 0);
+                    expect(gap).toBeGreaterThanOrEqual(5);
+                }
+                const buys = replay.trades.filter(trade => trade.action === "buy");
+                for (let index = 1; index < buys.length; index += 1) {
+                    const gap = (dateToIdx.get(buys[index].date) ?? 0) - (dateToIdx.get(buys[index - 1].date) ?? 0);
+                    // 最少 5 持倉 + 5 空倉
+                    expect(gap).toBeGreaterThanOrEqual(10);
+                }
+            }
+        }
+    });
+
     it("tracks long/cash position from the trade log before a date", () => {
         expect(
             positionBeforeDate(
