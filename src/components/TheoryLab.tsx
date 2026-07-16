@@ -603,15 +603,16 @@ const GenerationLoopDiagram = React.memo<{activeStep: number}>(({activeStep}) =>
         <div className="gen-loop" aria-hidden="true">
             <div className="gen-loop-panels">
                 {STEP_PANELS.map((panel, index) => {
-                    const isActive = index === activeStep || (activeStep === 6 && index === 0);
+                    const isActive = index === activeStep;
+                    const isLoopTarget = activeStep === 6 && index === 0;
                     return (
-                        <div className={`gen-panel ${isActive ? "is-active" : ""}`} key={panel.kind}>
+                        <div className={`gen-panel ${isActive ? "is-active" : ""} ${isLoopTarget ? "is-loop-target" : ""}`} key={panel.kind}>
                             <div className="gen-panel-head">
                                 <span>{String(index + 1).padStart(2, "0")}</span>
                                 <strong>{panel.title}</strong>
                             </div>
                             <StepMiniVisual kind={panel.kind} />
-                            <small>{panel.caption}</small>
+                            <small>{isLoopTarget ? "循環回到呢度" : panel.caption}</small>
                         </div>
                     );
                 })}

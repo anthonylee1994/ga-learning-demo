@@ -42,6 +42,17 @@ describe("TheoryLab", () => {
         expect(screen.getByText(/tournamentSelect/)).toBeInTheDocument();
     });
 
+    it("only fully selects 下一代 panel, not 族群, when step 7 is active", () => {
+        const {container} = renderTheory();
+        fireEvent.click(screen.getByRole("tab", {name: /下一代/}));
+        const panels = container.querySelectorAll(".gen-panel");
+        expect(panels[0]).not.toHaveClass("is-active");
+        expect(panels[0]).toHaveClass("is-loop-target");
+        expect(panels[6]).toHaveClass("is-active");
+        expect(panels[6]).not.toHaveClass("is-loop-target");
+        expect(screen.getByText("循環回到呢度")).toBeInTheDocument();
+    });
+
     it("syncs mutation count with the slider", () => {
         const {container} = renderTheory();
         fireEvent.change(screen.getByLabelText("突變率"), {target: {value: "0.6"}});

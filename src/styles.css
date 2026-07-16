@@ -532,6 +532,12 @@ button.flow-stage {
     border-color: rgba(88, 214, 141, 0.4);
     background: rgba(88, 214, 141, 0.05);
 }
+/* 下一代步驟：提示循環會返 01 族群，唔好同 is-active 一樣搶眼 */
+.gen-panel.is-loop-target {
+    opacity: 0.72;
+    border-style: dashed;
+    border-color: rgba(88, 214, 141, 0.22);
+}
 .gen-panel-head {
     display: flex;
     align-items: center;
@@ -544,6 +550,9 @@ button.flow-stage {
 }
 .gen-panel.is-active .gen-panel-head span {
     color: #89e4a9;
+}
+.gen-panel.is-loop-target .gen-panel-head span {
+    color: #6a8f78;
 }
 .gen-panel-head strong {
     color: #d5dbe1;
