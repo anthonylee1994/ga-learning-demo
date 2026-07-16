@@ -1,5 +1,4 @@
 import {expect, test} from "@playwright/test";
-import {readFile} from "node:fs/promises";
 
 test.describe.configure({mode: "serial"});
 test.setTimeout(120_000);
@@ -86,13 +85,10 @@ test("desktop workspace runs all three evolution demos", async ({page}, testInfo
     await expect(marketPanel.getByText("波動率", {exact: true})).toBeVisible();
     await expect(marketPanel.getByText("成交量", {exact: true})).toBeVisible();
     await expect(page.getByText("策略 vs 買入持有")).toBeVisible();
-    const downloadPromise = page.waitForEvent("download");
-    await page.getByRole("button", {name: "匯出 Pine Script"}).click();
-    const download = await downloadPromise;
-    expect(download.suggestedFilename()).toBe("aapl-evolab-strategy.pine");
-    const downloadPath = await download.path();
-    expect(downloadPath).not.toBeNull();
-    const pineScript = await readFile(downloadPath!, "utf8");
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    await page.getByRole("button", {name: "複製 Pine Script"}).click();
+    await expect(page.getByText("Pine Script 已複製到剪貼簿")).toBeVisible();
+    const pineScript = await page.evaluate(() => navigator.clipboard.readText());
     expect(pineScript).toContain("//@version=6");
     expect(pineScript).toContain("rsiPeriod =");
     expect(pineScript).toContain("rsiBuyThreshold =");
@@ -148,12 +144,10 @@ test("stock evolution tunes RSI and Williams thresholds", async ({page}, testInf
     await page.getByRole("button", {name: "暫停"}).click();
     await page.screenshot({fullPage: true, path: testInfo.outputPath("stock-thresholds-desktop.png")});
 
-    const downloadPromise = page.waitForEvent("download");
-    await page.getByRole("button", {name: "匯出 Pine Script"}).click();
-    const download = await downloadPromise;
-    const downloadPath = await download.path();
-    expect(downloadPath).not.toBeNull();
-    const pineScript = await readFile(downloadPath!, "utf8");
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    await page.getByRole("button", {name: "複製 Pine Script"}).click();
+    await expect(page.getByText("Pine Script 已複製到剪貼簿")).toBeVisible();
+    const pineScript = await page.evaluate(() => navigator.clipboard.readText());
     expect(pineScript).toContain("rsiBuyThreshold =");
     expect(pineScript).toContain("rsiSellThreshold =");
     expect(pineScript).toContain("williamsBuyThreshold =");

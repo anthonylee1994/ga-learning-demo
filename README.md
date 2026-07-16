@@ -394,8 +394,8 @@ pnpm dev
 - 訓練／測試回報、死買唔賣對照
 - 冠軍指標參數（含 N 日新高／新低週期）
 - 圖表可切：**均線+保力加**／動量／MACD／風險／**N 日高**／**N 日低**
-- **匯出 Pine Script**（TradingView）
-- **匯出富途 Python**（富途牛牛自編指標；含 state machine + F17 持倉回饋）
+- **複製 Pine Script**（剪貼簿 → TradingView）
+- **複製富途 Python**（剪貼簿 → 富途牛牛自編指標；含 state machine + F17 持倉回饋）
 
 ---
 
@@ -447,7 +447,7 @@ pnpm dev
 | 播放速度     | 5    | 5 = 跑到盡快                         |
 | 神經網絡     | 開   | 關咗就用簡單規則投票（同股票交易頁） |
 
-分數、指標參數、訓練／測試、匯出 Pine／富途 Python——**全部同 ④ 股票交易頁共用**，唔使學第二套。  
+分數、指標參數、訓練／測試、複製 Pine／富途 Python——**全部同 ④ 股票交易頁共用**，唔使學第二套。  
 兩邊嘅「冠軍筆記」亦可以互相匯入匯出。
 
 #### 點玩（跟住撳就得）
@@ -543,14 +543,14 @@ pnpm dev
 **未，亦唔應該咁諗。**  
 呢啲頁示範嘅係「電腦點樣自己試錯搵做法」，**唔係保證未來賺錢**。
 
-### 匯出 Pine Script／富途 Python 係咩？
+### 複製 Pine Script／富途 Python 係咩？
 
-冠軍出嚟之後，喺「最佳指標參數」旁可以：
+冠軍出嚟之後，喺「最佳指標參數」旁可以（內容複製到剪貼簿，唔再下載檔）：
 
-| 掣                   | 產出    | 用喺邊                   |
-| -------------------- | ------- | ------------------------ |
-| **匯出 Pine Script** | `.pine` | TradingView strategy     |
-| **匯出富途 Python**  | `.py`   | 富途牛牛自編 Python 指標 |
+| 掣                   | 產出                 | 用喺邊                   |
+| -------------------- | -------------------- | ------------------------ |
+| **複製 Pine Script** | Pine 全文 → 剪貼簿   | TradingView strategy     |
+| **複製富途 Python**  | Python 全文 → 剪貼簿 | 富途牛牛自編 Python 指標 |
 
 兩邊都由同一份冠軍基因體生成（參數 + 網絡權重／規則）。  
 富途版用 **state machine**（空倉先開、有倉先平）+ **F17 持倉回饋** 餵網絡，畫 SMA／BB／**N 日高／N 日低** + 買賣 icon。  
@@ -588,8 +588,8 @@ pnpm dev
 | Flappy 畫面                    | `src/components/FlappyCanvas.tsx`       |
 | 股票基因／指標參數             | `src/domains/stock/strategyGenome.ts`   |
 | 股票分數（兩頁共用）           | `src/domains/stock/simulation.ts`       |
-| 匯出 Pine Script               | `src/domains/stock/pineScript.ts`       |
-| 匯出富途 Python                | `src/domains/stock/futuScript.ts`       |
+| 複製 Pine Script               | `src/domains/stock/pineScript.ts`       |
+| 複製富途 Python                | `src/domains/stock/futuScript.ts`       |
 | 股票兩頁同一個畫面             | `src/components/StockLab.tsx`           |
 | 各頁預設數字                   | `src/components/*Lab.tsx`               |
 

@@ -1,5 +1,5 @@
 import React from "react";
-import {Button} from "@heroui/react";
+import {Button, Toast} from "@heroui/react";
 import {Bird, Blocks, BookOpen, CandlestickChart, Dices, Dna, Network} from "lucide-react";
 import {Navigate, Route, Routes, useLocation, useNavigate} from "react-router-dom";
 
@@ -26,6 +26,7 @@ export const App = React.memo(() => {
 
     return (
         <div className="app-shell">
+            <Toast.Provider placement="top end" />
             <aside className="sidebar">
                 <div className="brand-lockup">
                     <div className="brand-mark">
@@ -54,10 +55,6 @@ export const App = React.memo(() => {
                         <span>實驗室</span>
                         <span>/</span>
                         <strong>{activeItem.label}</strong>
-                    </div>
-                    <div className="topbar-status">
-                        <span className="live-dot" />
-                        <span>本機模擬</span>
                     </div>
                 </header>
                 <div className="content-scroll">

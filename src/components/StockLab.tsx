@@ -1,6 +1,6 @@
 import React from "react";
-import {Button, Spinner, Switch} from "@heroui/react";
-import {CandlestickChart, Dices, FileDown, TriangleAlert} from "lucide-react";
+import {Button, Spinner, Switch, toast} from "@heroui/react";
+import {CandlestickChart, ClipboardCopy, Dices, TriangleAlert} from "lucide-react";
 import {Brush, CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis} from "recharts";
 import {useEvolutionDemo} from "../hooks/useEvolutionDemo";
 import type {GAConfig, Genome, MarketDataPoint, MarketDataResponse, TopicId, TradingPoint, TradingReplay} from "../lib/types";
@@ -344,13 +344,21 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
                                     <h3>最佳指標參數</h3>
                                 </div>
                                 <div className="export-actions">
-                                    <Button onPress={() => downloadPineScript(demo.champion!.genome, marketData?.symbol ?? "QQQ", useNetwork)} size="sm" variant="secondary">
-                                        <FileDown size={15} strokeWidth={1.5} />
-                                        匯出 Pine Script
+                                    <Button
+                                        onPress={() => copyScriptToClipboard(createPineScript(demo.champion!.genome, marketData?.symbol ?? "QQQ", useNetwork), "Pine Script 已複製到剪貼簿")}
+                                        size="sm"
+                                        variant="secondary"
+                                    >
+                                        <ClipboardCopy size={15} strokeWidth={1.5} />
+                                        複製 Pine Script
                                     </Button>
-                                    <Button onPress={() => downloadFutuPython(demo.champion!.genome, marketData?.symbol ?? "QQQ", useNetwork)} size="sm" variant="secondary">
-                                        <FileDown size={15} strokeWidth={1.5} />
-                                        匯出富途 Python
+                                    <Button
+                                        onPress={() => copyScriptToClipboard(createFutuPythonScript(demo.champion!.genome, useNetwork), "富途 Python 已複製到剪貼簿")}
+                                        size="sm"
+                                        variant="secondary"
+                                    >
+                                        <ClipboardCopy size={15} strokeWidth={1.5} />
+                                        複製富途 Python
                                     </Button>
                                 </div>
                             </div>
@@ -739,20 +747,11 @@ function formatMoneyTooltip(value: unknown): string {
     return String(value);
 }
 
-function downloadTextFile(filename: string, content: string, mime = "text/plain;charset=utf-8"): void {
-    const blob = new Blob([content], {type: mime});
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = filename;
-    anchor.click();
-    URL.revokeObjectURL(url);
-}
-
-function downloadPineScript(genome: number[], symbol: string, useNetwork: boolean): void {
-    downloadTextFile(`${symbol.toLowerCase()}-evolab-strategy.pine`, createPineScript(genome, symbol, useNetwork));
-}
-
-function downloadFutuPython(genome: number[], symbol: string, useNetwork: boolean): void {
-    downloadTextFile(`${symbol.toLowerCase()}-evolab-strategy-futu.py`, createFutuPythonScript(genome, useNetwork));
+async function copyScriptToClipboard(content: string, successText: string): Promise<void> {
+    try {
+        await navigator.clipboard.writeText(content);
+        toast.success(successText);
+    } catch {
+        toast.danger("複製失敗，請檢查瀏覽器剪貼簿權限。");
+    }
 }
