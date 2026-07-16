@@ -174,6 +174,9 @@ export function getIndicatorSnapshots(points: MarketDataPoint[], parameters: Opt
  * + 0.12 * robustScore       — train 前後半 soft floor
  * − 0.20 * max(0, train−val) — train 靚、validate 仆 → 罰過擬合
  * − L2(network)              — 淨 NN 模式先罰權重
+ *
+ * 執行：train→validate **一條連續 walk、同一個 withHoldCooldown**（同 UI replay），
+ * 段界唔重置 min-hold／cash 冷靜期，避免 fitness OOS 同畫面不一致。
  */
 export function evaluateStockGenome(genome: Genome, points: MarketDataPoint[], useNetwork = true): number {
     const {parameters, networkGenome} = decodeStockGenome(genome);
@@ -184,12 +187,9 @@ export function evaluateStockGenome(genome: Genome, points: MarketDataPoint[], u
         return -1_000;
     }
 
-    const baseDecide = createPositionDecider(columns, parameters, networkGenome, useNetwork);
+    const decide = withHoldCooldown(createPositionDecider(columns, parameters, networkGenome, useNetwork));
     const mid = Math.floor(trainEnd / 2);
-    // 每次 walk 新 cooldown state；後半段唔可以繼承前半嘅 hold 計數
-    const {full, firstHalf} = simulateFullAndFirstHalf(withHoldCooldown(baseDecide), columns, trainEnd, mid);
-    const secondHalf = simulateColumnMetrics(withHoldCooldown(baseDecide), columns, firstHalf.endingPosition, mid, trainEnd);
-    const validateMetrics = simulateColumnMetrics(withHoldCooldown(baseDecide), columns, full.endingPosition, Math.max(0, trainEnd - 1), validateEnd);
+    const {full, firstHalf, secondHalf, validate: validateMetrics} = simulateFitnessWalk(decide, columns, trainEnd, mid, validateEnd);
 
     const trainScore = scoreSegment(full, columns, 0, trainEnd);
     const halfA = scoreSegment(firstHalf, columns, 0, mid + 1);
@@ -500,52 +500,21 @@ function createIndicatorCacheKey(parameters: OptimizedIndicatorParameters): stri
 }
 
 /**
- * 喺 [start, end) 上 walk 一轉，只回 metrics（唔錄曲線／trades）。
- * 成交：T 收市 decide → T+1 開盤 fill；overnight 舊倉 + intraday 新倉 − 成本。
+ * 一次連續 walk：train 全段 + validate（同一 decide／cooldown）。
+ * 段回報各自用 STARTING_EQUITY 起計（分數只睇段內 return）；倉位同 min-hold 計數一路傳落去。
  */
-function simulateColumnMetrics(decide: PositionDecider, columns: IndicatorColumns, startingPosition: number, start: number, end: number): SegmentMetrics {
-    let equity = STARTING_EQUITY;
-    let position = startingPosition;
-    let peak = equity;
-    let maxDrawdown = 0;
-    let returnSum = 0;
-    let returnSqSum = 0;
-    let returnCount = 0;
-    let exposureSum = 0;
-    let turnoverSum = 0;
-
-    for (let index = start + 1; index < end; index += 1) {
-        const previous = index - 1;
-        const targetPosition = decide(previous, position);
-        const {dailyReturn, turnover} = applyNextOpenDay(columns, previous, index, position, targetPosition);
-        equity *= Math.max(0.01, 1 + dailyReturn); // floor 1% equity，防歸零
-        returnSum += dailyReturn;
-        returnSqSum += dailyReturn * dailyReturn;
-        returnCount += 1;
-        exposureSum += targetPosition;
-        turnoverSum += turnover;
-        peak = Math.max(peak, equity);
-        maxDrawdown = Math.max(maxDrawdown, peak > 0 ? (peak - equity) / peak : 0);
-        position = targetPosition;
-    }
-
-    return {
-        totalReturn: equity / STARTING_EQUITY - 1,
-        sharpe: calculateSharpeFromMoments(returnSum, returnSqSum, returnCount),
-        maxDrawdown,
-        endingPosition: position,
-        meanExposure: returnCount > 0 ? exposureSum / returnCount : 0,
-        meanTurnover: returnCount > 0 ? turnoverSum / returnCount : 0,
-    };
-}
-
-/**
- * 一次 walk 同時累積 full train + first half metrics。
- * 語意等同分別 call simulateColumnMetrics(full) 同 firstHalf，慳一次 loop。
- */
-function simulateFullAndFirstHalf(decide: PositionDecider, columns: IndicatorColumns, trainLength: number, mid: number): {full: SegmentMetrics; firstHalf: SegmentMetrics} {
-    let equity = STARTING_EQUITY;
+function simulateFitnessWalk(
+    decide: PositionDecider,
+    columns: IndicatorColumns,
+    trainEnd: number,
+    mid: number,
+    validateEnd: number
+): {full: SegmentMetrics; firstHalf: SegmentMetrics; secondHalf: SegmentMetrics; validate: SegmentMetrics} {
     let position = 0;
+    let trainEndingPosition = 0;
+
+    // train full
+    let equity = STARTING_EQUITY;
     let peak = equity;
     let maxDrawdown = 0;
     let returnSum = 0;
@@ -554,41 +523,87 @@ function simulateFullAndFirstHalf(decide: PositionDecider, columns: IndicatorCol
     let exposureSum = 0;
     let turnoverSum = 0;
 
-    // 前半段獨立累積（同 full 共用同一條 dailyReturn 路徑）
-    let halfEquity = STARTING_EQUITY;
-    let halfPeak = halfEquity;
-    let halfMaxDrawdown = 0;
-    let halfReturnSum = 0;
-    let halfReturnSqSum = 0;
-    let halfReturnCount = 0;
-    let halfExposureSum = 0;
-    let halfTurnoverSum = 0;
-    let halfEndingPosition = 0;
+    // train first half
+    let halfAEquity = STARTING_EQUITY;
+    let halfAPeak = halfAEquity;
+    let halfAMaxDrawdown = 0;
+    let halfAReturnSum = 0;
+    let halfAReturnSqSum = 0;
+    let halfAReturnCount = 0;
+    let halfAExposureSum = 0;
+    let halfATurnoverSum = 0;
+    let halfAEndingPosition = 0;
     const halfEnd = mid + 1;
 
-    for (let index = 1; index < trainLength; index += 1) {
+    // train second half（連續路徑；equity 獨立起計方便 scoreSegment）
+    let halfBEquity = STARTING_EQUITY;
+    let halfBPeak = halfBEquity;
+    let halfBMaxDrawdown = 0;
+    let halfBReturnSum = 0;
+    let halfBReturnSqSum = 0;
+    let halfBReturnCount = 0;
+    let halfBExposureSum = 0;
+    let halfBTurnoverSum = 0;
+    let halfBEndingPosition = 0;
+
+    // validate（連續 cooldown／倉位；equity 獨立起計）
+    let valEquity = STARTING_EQUITY;
+    let valPeak = valEquity;
+    let valMaxDrawdown = 0;
+    let valReturnSum = 0;
+    let valReturnSqSum = 0;
+    let valReturnCount = 0;
+    let valExposureSum = 0;
+    let valTurnoverSum = 0;
+    let valEndingPosition = 0;
+
+    for (let index = 1; index < validateEnd; index += 1) {
         const previous = index - 1;
         const targetPosition = decide(previous, position);
         const {dailyReturn, turnover} = applyNextOpenDay(columns, previous, index, position, targetPosition);
-        equity *= Math.max(0.01, 1 + dailyReturn);
-        returnSum += dailyReturn;
-        returnSqSum += dailyReturn * dailyReturn;
-        returnCount += 1;
-        exposureSum += targetPosition;
-        turnoverSum += turnover;
-        peak = Math.max(peak, equity);
-        maxDrawdown = Math.max(maxDrawdown, peak > 0 ? (peak - equity) / peak : 0);
 
-        if (index < halfEnd) {
-            halfEquity *= Math.max(0.01, 1 + dailyReturn);
-            halfReturnSum += dailyReturn;
-            halfReturnSqSum += dailyReturn * dailyReturn;
-            halfReturnCount += 1;
-            halfExposureSum += targetPosition;
-            halfTurnoverSum += turnover;
-            halfPeak = Math.max(halfPeak, halfEquity);
-            halfMaxDrawdown = Math.max(halfMaxDrawdown, halfPeak > 0 ? (halfPeak - halfEquity) / halfPeak : 0);
-            halfEndingPosition = targetPosition;
+        if (index < trainEnd) {
+            equity *= Math.max(0.01, 1 + dailyReturn);
+            returnSum += dailyReturn;
+            returnSqSum += dailyReturn * dailyReturn;
+            returnCount += 1;
+            exposureSum += targetPosition;
+            turnoverSum += turnover;
+            peak = Math.max(peak, equity);
+            maxDrawdown = Math.max(maxDrawdown, peak > 0 ? (peak - equity) / peak : 0);
+            trainEndingPosition = targetPosition;
+
+            if (index < halfEnd) {
+                halfAEquity *= Math.max(0.01, 1 + dailyReturn);
+                halfAReturnSum += dailyReturn;
+                halfAReturnSqSum += dailyReturn * dailyReturn;
+                halfAReturnCount += 1;
+                halfAExposureSum += targetPosition;
+                halfATurnoverSum += turnover;
+                halfAPeak = Math.max(halfAPeak, halfAEquity);
+                halfAMaxDrawdown = Math.max(halfAMaxDrawdown, halfAPeak > 0 ? (halfAPeak - halfAEquity) / halfAPeak : 0);
+                halfAEndingPosition = targetPosition;
+            } else {
+                halfBEquity *= Math.max(0.01, 1 + dailyReturn);
+                halfBReturnSum += dailyReturn;
+                halfBReturnSqSum += dailyReturn * dailyReturn;
+                halfBReturnCount += 1;
+                halfBExposureSum += targetPosition;
+                halfBTurnoverSum += turnover;
+                halfBPeak = Math.max(halfBPeak, halfBEquity);
+                halfBMaxDrawdown = Math.max(halfBMaxDrawdown, halfBPeak > 0 ? (halfBPeak - halfBEquity) / halfBPeak : 0);
+                halfBEndingPosition = targetPosition;
+            }
+        } else {
+            valEquity *= Math.max(0.01, 1 + dailyReturn);
+            valReturnSum += dailyReturn;
+            valReturnSqSum += dailyReturn * dailyReturn;
+            valReturnCount += 1;
+            valExposureSum += targetPosition;
+            valTurnoverSum += turnover;
+            valPeak = Math.max(valPeak, valEquity);
+            valMaxDrawdown = Math.max(valMaxDrawdown, valPeak > 0 ? (valPeak - valEquity) / valPeak : 0);
+            valEndingPosition = targetPosition;
         }
 
         position = targetPosition;
@@ -599,17 +614,33 @@ function simulateFullAndFirstHalf(decide: PositionDecider, columns: IndicatorCol
             totalReturn: equity / STARTING_EQUITY - 1,
             sharpe: calculateSharpeFromMoments(returnSum, returnSqSum, returnCount),
             maxDrawdown,
-            endingPosition: position,
+            endingPosition: trainEndingPosition,
             meanExposure: returnCount > 0 ? exposureSum / returnCount : 0,
             meanTurnover: returnCount > 0 ? turnoverSum / returnCount : 0,
         },
         firstHalf: {
-            totalReturn: halfEquity / STARTING_EQUITY - 1,
-            sharpe: calculateSharpeFromMoments(halfReturnSum, halfReturnSqSum, halfReturnCount),
-            maxDrawdown: halfMaxDrawdown,
-            endingPosition: halfEndingPosition,
-            meanExposure: halfReturnCount > 0 ? halfExposureSum / halfReturnCount : 0,
-            meanTurnover: halfReturnCount > 0 ? halfTurnoverSum / halfReturnCount : 0,
+            totalReturn: halfAEquity / STARTING_EQUITY - 1,
+            sharpe: calculateSharpeFromMoments(halfAReturnSum, halfAReturnSqSum, halfAReturnCount),
+            maxDrawdown: halfAMaxDrawdown,
+            endingPosition: halfAEndingPosition,
+            meanExposure: halfAReturnCount > 0 ? halfAExposureSum / halfAReturnCount : 0,
+            meanTurnover: halfAReturnCount > 0 ? halfATurnoverSum / halfAReturnCount : 0,
+        },
+        secondHalf: {
+            totalReturn: halfBEquity / STARTING_EQUITY - 1,
+            sharpe: calculateSharpeFromMoments(halfBReturnSum, halfBReturnSqSum, halfBReturnCount),
+            maxDrawdown: halfBMaxDrawdown,
+            endingPosition: halfBEndingPosition,
+            meanExposure: halfBReturnCount > 0 ? halfBExposureSum / halfBReturnCount : 0,
+            meanTurnover: halfBReturnCount > 0 ? halfBTurnoverSum / halfBReturnCount : 0,
+        },
+        validate: {
+            totalReturn: valEquity / STARTING_EQUITY - 1,
+            sharpe: calculateSharpeFromMoments(valReturnSum, valReturnSqSum, valReturnCount),
+            maxDrawdown: valMaxDrawdown,
+            endingPosition: valEndingPosition,
+            meanExposure: valReturnCount > 0 ? valExposureSum / valReturnCount : 0,
+            meanTurnover: valReturnCount > 0 ? valTurnoverSum / valReturnCount : 0,
         },
     };
 }

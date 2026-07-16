@@ -21,6 +21,18 @@ describe("stock simulation", () => {
         expect(Number.isFinite(evaluateStockGenome(genome, points))).toBe(true);
     });
 
+    it("uses one continuous cooldown path for train+validate fitness (finite, stable)", () => {
+        // Fitness walk no longer resets min-hold at the train|validate split.
+        // Score must stay finite and agree with itself (pure function).
+        const a = evaluateStockGenome(genome, points, true);
+        const b = evaluateStockGenome(genome, points, true);
+        expect(Number.isFinite(a)).toBe(true);
+        expect(a).toBe(b);
+        const seed = createStockSeedGenomes()[0];
+        expect(Number.isFinite(evaluateStockGenome(seed, points, true))).toBe(true);
+        expect(Number.isFinite(evaluateStockGenome(seed, points, false))).toBe(true);
+    });
+
     it("creates train / validate / test equity data with network-backed decisions", () => {
         const replay = createTradingReplay(genome, points);
         expect(replay.points.length).toBeGreaterThan(100);
