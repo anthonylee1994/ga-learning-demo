@@ -5,7 +5,7 @@ import {decodeStockGenome} from "./strategyGenome";
 /**
  * Futu Python indicator export (IndicatorParser-compatible).
  * - No generator expressions / list comprehensions with `for` inside calls
- * - True state machine + f17 position feedback (matches Pine process_orders_on_close)
+ * - True state machine + f17 position feedback (matches Pine next-bar open fills)
  * - Plots SMA / BB / nDayHigh / nDayLow + buy/sell icons
  */
 export function createFutuPythonScript(genome: Genome, useNetwork = true): string {
@@ -351,8 +351,8 @@ def compute_signals():
 
     position = 0
     bars_in_state = 0
-    MIN_BARS_LONG = 15
-    MIN_BARS_CASH = 15
+    MIN_BARS_LONG = 8
+    MIN_BARS_CASH = 8
     warm = SMA_SLOW
     if WILL_P > warm:
         warm = WILL_P

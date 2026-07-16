@@ -11,6 +11,8 @@ describe("Pine Script export", () => {
         expect(script).toContain("//@version=6");
         expect(script).toContain('strategy("EvoLab QQQ Evolved Strategy"');
         expect(script).toContain("default_qty_type=strategy.percent_of_equity");
+        expect(script).toContain("commission_value=0.15");
+        expect(script).toContain("process_orders_on_close=false");
         expect(script).toContain(`rsiPeriod = ${parameters.rsiPeriod}`);
         expect(script).toContain(`rsiBuyThreshold = ${parameters.rsiBuyThreshold}`);
         expect(script).toContain(`rsiSellThreshold = ${parameters.rsiSellThreshold}`);

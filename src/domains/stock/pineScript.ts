@@ -13,10 +13,11 @@ export function createPineScript(genome: Genome, symbol: string, useNetwork = tr
     const topologyLabel = [STOCK_TOPOLOGY.inputSize, ...STOCK_TOPOLOGY.hiddenLayers, STOCK_TOPOLOGY.outputSize].join(" → ");
 
     return `//@version=6
-strategy("EvoLab ${safeSymbol} Evolved Strategy", overlay=true, initial_capital=1000000, default_qty_type=strategy.percent_of_equity, default_qty_value=100, pyramiding=0, commission_type=strategy.commission.percent, commission_value=0.1, process_orders_on_close=true)
+strategy("EvoLab ${safeSymbol} Evolved Strategy", overlay=true, initial_capital=1000000, default_qty_type=strategy.percent_of_equity, default_qty_value=100, pyramiding=0, commission_type=strategy.commission.percent, commission_value=0.15, process_orders_on_close=false)
 
 // Optimized by EvoLab genetic algorithm — indicator periods, thresholds, and Brain.js weights.
 // Network topology: ${topologyLabel} (tanh on every layer, matching brain.js).
+// Fills next bar open (process_orders_on_close=false), 0.15% commission — matches browser sim.
 // Validate this strategy on fresh out-of-sample data before considering any use.
 smaFastPeriod = ${parameters.smaFastPeriod}
 smaSlowPeriod = ${parameters.smaSlowPeriod}

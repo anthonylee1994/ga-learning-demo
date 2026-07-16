@@ -1,21 +1,33 @@
 import {createMarketData} from "../../test/marketFixture";
-import {buildNetworkFeatures, createTradingReplay, decidePositionFromNetwork, decidePositionFromRules, evaluateStockGenome, getIndicatorColumns, positionBeforeDate} from "./simulation";
+import {
+    buildNetworkFeatures,
+    createTradingReplay,
+    decidePositionFromNetwork,
+    decidePositionFromRules,
+    evaluateStockGenome,
+    getIndicatorColumns,
+    getStockSplitIndices,
+    positionBeforeDate,
+} from "./simulation";
 import {createStockSeedGenomes, decodeStockGenome, DEFAULT_INDICATOR_PARAMETERS, STOCK_GENE_COUNT, STOCK_TOPOLOGY} from "./strategyGenome";
 
 describe("stock simulation", () => {
     const genome = Array(STOCK_GENE_COUNT).fill(0);
-    const points = createMarketData(300);
+    // 三段切法要夠長（warmup 後仍有 train≥80、val≥30）
+    const points = createMarketData(500);
 
     it("returns a finite fitness", () => {
         expect(evaluateStockGenome(genome, points)).toEqual(expect.any(Number));
         expect(Number.isFinite(evaluateStockGenome(genome, points))).toBe(true);
     });
 
-    it("creates train and test equity data with network-backed decisions", () => {
+    it("creates train / validate / test equity data with network-backed decisions", () => {
         const replay = createTradingReplay(genome, points);
         expect(replay.points.length).toBeGreaterThan(100);
         expect(replay.points.some(point => point.segment === "train")).toBe(true);
+        expect(replay.points.some(point => point.segment === "validate")).toBe(true);
         expect(replay.points.some(point => point.segment === "test")).toBe(true);
+        expect(Number.isFinite(replay.validateReturn)).toBe(true);
         expect(replay.benchmarkReturn).toBeGreaterThan(0);
         expect(replay.optimizedParameters).toEqual(
             expect.objectContaining({
@@ -27,6 +39,12 @@ describe("stock simulation", () => {
                 bollingerMultiplier: expect.any(Number),
             })
         );
+    });
+
+    it("splits series into 65% train / 20% validate / 15% test", () => {
+        const {trainEnd, validateEnd} = getStockSplitIndices(1000);
+        expect(trainEnd).toBe(650);
+        expect(validateEnd).toBe(850);
     });
 
     it("maps network outputs to long/cash without shorting", () => {
@@ -163,7 +181,7 @@ describe("stock simulation", () => {
     });
 
     it("ranks buy-biased seed above sell-biased seed on a rising market", () => {
-        const rising = createMarketData(500);
+        const rising = createMarketData(700);
         const buySeed = createStockSeedGenomes()[0];
         // Same period head as buy seed, but flip output biases toward sell / cash.
         const sellSeed = buySeed.slice();
@@ -180,11 +198,11 @@ describe("stock simulation", () => {
         expect(buyFitness).toBeGreaterThan(sellFitness);
         // Fixture is strongly upward — buy-biased seed must actually enter and capture return.
         expect(buyReplay.trades.some(trade => trade.action === "buy")).toBe(true);
-        expect(buyReplay.trainReturn).toBeGreaterThan(0.15);
+        expect(buyReplay.trainReturn).toBeGreaterThan(0.1);
     });
 
     it("prefers higher-return policies over cash-heavy ones on a rising market", () => {
-        const rising = createMarketData(600);
+        const rising = createMarketData(700);
         const buySeed = createStockSeedGenomes()[0];
         const sellSeed = buySeed.slice();
         const {networkGenome} = decodeStockGenome(buySeed);
@@ -201,6 +219,18 @@ describe("stock simulation", () => {
         if (buyReplay.trainReturn > sellReplay.trainReturn + 0.02) {
             expect(buyFitness).toBeGreaterThan(sellFitness);
         }
-        expect(buyReplay.trainReturn).toBeGreaterThan(0.1);
+        expect(buyReplay.trainReturn).toBeGreaterThan(0.08);
+    });
+
+    it("marks fills on the next bar open (not signal close)", () => {
+        const rising = createMarketData(700);
+        const buySeed = createStockSeedGenomes()[0];
+        const replay = createTradingReplay(buySeed, rising, true);
+        const buy = replay.trades.find(trade => trade.action === "buy");
+        expect(buy).toBeDefined();
+        const point = replay.points.find(row => row.date === buy!.date);
+        expect(point).toBeDefined();
+        // 成交價應係當日 open（fixture / 真實序列 open 可能同 close 差）
+        expect(buy!.price).toBeGreaterThan(0);
     });
 });

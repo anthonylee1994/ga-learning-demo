@@ -119,7 +119,7 @@ export const StockPlaybackCanvas = React.memo<Props>(({replay, speed, playing = 
                 <HudStat label="策略權益" value={point ? formatPrice(point.strategy) : "—"} mono />
                 <HudStat label="買入持有" value={point ? formatPrice(point.benchmark) : "—"} mono />
                 <HudStat label="動作" value={trade ? (trade.action === "buy" ? "買入" : "賣出") : "持有"} accent={trade?.action === "buy" ? "buy" : trade?.action === "sell" ? "sell" : undefined} />
-                <HudStat label="區段" value={point?.segment === "test" ? "測試" : "訓練"} />
+                <HudStat label="區段" value={segmentLabel(point?.segment)} />
                 <HudStat label="進度" value={`${index + 1}/${replay?.points.length ?? 0}`} mono />
             </div>
             <div className="stock-playback-progress" aria-hidden>
@@ -330,12 +330,18 @@ function drawPlayback(context: CanvasRenderingContext2D, width: number, height: 
         context.fillText(slice[i].date.slice(0, 7), xAt(i), padT + plotH + 8);
     }
 
-    // Train / test badge on playhead day
+    // Train / validate / test badge on playhead day
     const segment = slice[slice.length - 1].segment;
-    context.fillStyle = segment === "test" ? "rgba(231, 185, 85, 0.15)" : "rgba(93, 166, 217, 0.12)";
-    context.strokeStyle = segment === "test" ? "#e7b955" : "#5da6d9";
+    const badgeStyle =
+        segment === "test"
+            ? {fill: "rgba(231, 185, 85, 0.15)", stroke: "#e7b955", text: "#e7b955", label: "純樣本外測試"}
+            : segment === "validate"
+              ? {fill: "rgba(93, 166, 217, 0.15)", stroke: "#5da6d9", text: "#5da6d9", label: "驗證段"}
+              : {fill: "rgba(88, 214, 141, 0.12)", stroke: "#58d68d", text: "#58d68d", label: "訓練段"};
+    context.fillStyle = badgeStyle.fill;
+    context.strokeStyle = badgeStyle.stroke;
     context.lineWidth = 1;
-    const badge = segment === "test" ? "樣本外測試" : "訓練段";
+    const badge = badgeStyle.label;
     context.font = "11px ui-sans-serif, system-ui, sans-serif";
     const tw = context.measureText(badge).width;
     const bx = padL + 8;
@@ -344,10 +350,20 @@ function drawPlayback(context: CanvasRenderingContext2D, width: number, height: 
     context.roundRect(bx, by, tw + 14, 20, 4);
     context.fill();
     context.stroke();
-    context.fillStyle = segment === "test" ? "#e7b955" : "#5da6d9";
+    context.fillStyle = badgeStyle.text;
     context.textAlign = "left";
     context.textBaseline = "middle";
     context.fillText(badge, bx + 7, by + 10);
+}
+
+function segmentLabel(segment: TradingReplay["points"][number]["segment"] | undefined): string {
+    if (segment === "test") {
+        return "測試";
+    }
+    if (segment === "validate") {
+        return "驗證";
+    }
+    return "訓練";
 }
 
 function drawLine(context: CanvasRenderingContext2D, points: {x: number; y: number}[], stroke: string, width: number): void {

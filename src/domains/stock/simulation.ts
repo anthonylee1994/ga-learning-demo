@@ -2,9 +2,9 @@
  * Stock 交易模擬：genome = 指標參數 +（可選）NN 權重，喺歷史 K 線上做 long / cash。
  *
  * 流程概覽：
- * 1. evaluateStockGenome — GA 評分：只用 train 段（前 80%），walk-forward 半段 robust
- * 2. createTradingReplay — UI 曲線：train→test 連續模擬，出 equity / 買賣標記 / 指標
- * 3. 每 bar：decider 決定目標倉位 0|1 → 收日回報 − 換手手續費
+ * 1. evaluateStockGenome — GA 評分：train（65%）+ validate（20%）；純 test（15%）永不入分
+ * 2. createTradingReplay — UI 曲線：train→validate→test 連續模擬
+ * 3. 成交：T 日收市決策 → T+1 開盤成交（overnight 用舊倉、intraday 用新倉）− 換手成本
  *
  * 兩種決策模式：
  * - useNetwork=true：NN 睇 22 維特徵 → 買／持／賣（要有 margin 先轉倉）
@@ -51,8 +51,15 @@ export const STOCK_OUTPUT_LABELS = ["買入", "持有", "賣出"] as const;
 
 /** 模擬起始資金 */
 const STARTING_EQUITY = 10_000;
-/** 單邊換手成本（|Δposition| * 0.1%） */
-const TRANSACTION_COST = 0.001;
+/**
+ * 單邊換手成本（|Δposition| × 0.15%）。
+ * 略高過理想 0.1%，逼策略計埋滑價／佣金，少啲「紙上 thrash」。
+ */
+const TRANSACTION_COST = 0.0015;
+/** 訓練段比例（入 fitness 主力） */
+const TRAIN_RATIO = 0.65;
+/** 驗證段結尾 = TRAIN+VAL；驗證入 fitness，純 test 係之後 */
+const VALIDATE_END_RATIO = 0.85;
 /** 每條價格序列最多 cache 幾套指標參數（Float64Array，約 ~1MB／全歷史） */
 const MAX_INDICATOR_CACHE = 16;
 /**
@@ -64,17 +71,34 @@ const WEIGHT_L2_PENALTY = 0.28;
  * 做多至少持幾多 bar 先准賣。
  * 擋住 multi-day thrash（fee bleed）同「持幾日就翻」嘅 noise。
  */
-const MIN_BARS_IN_LONG = 5;
+const MIN_BARS_IN_LONG = 8;
 /**
  * 沽出後至少 cash 幾多 bar 先准再買。
  * 專門堵「噚日沽、今日又買返」round-trip。
  */
-const MIN_BARS_IN_CASH = 5;
+const MIN_BARS_IN_CASH = 8;
 /**
  * NN 模式：buy/sell 要比 hold 大呢個 tanh 空間 margin 先轉倉。
  * 平手／近平手維持現狀 → 長倉段穩陣啲。
  */
 const ACTION_MARGIN = 0.08;
+
+/** 三段切法：train / validate（fitness）/ test（只展示） */
+export function getStockSplitIndices(length: number): {trainEnd: number; validateEnd: number} {
+    const trainEnd = Math.max(2, Math.floor(length * TRAIN_RATIO));
+    const validateEnd = Math.min(length, Math.max(trainEnd + 2, Math.floor(length * VALIDATE_END_RATIO)));
+    return {trainEnd, validateEnd};
+}
+
+function segmentAt(index: number, trainEnd: number, validateEnd: number): "train" | "validate" | "test" {
+    if (index < trainEnd) {
+        return "train";
+    }
+    if (index < validateEnd) {
+        return "validate";
+    }
+    return "test";
+}
 
 /**
  * 指標欄 cache：key = points 陣列 reference（WeakMap）→ 參數字串 → columns。
@@ -135,44 +159,51 @@ export function getIndicatorSnapshots(points: MarketDataPoint[], parameters: Opt
 }
 
 /**
- * GA fitness：只喺 train 段（前 80%）評分，避免直接 overfit test。
+ * GA fitness：train（65%）+ validate（20%）入分；純 test（尾 15%）永不入收生。
  *
  * 計分結構：
- *   0.9 * fullScore          — 成段 train 相對 buy-and-hold 嘅 excess 為主
- * + 0.1 * robustScore        — 前後半段 soft floor，防「半段爆、半段死」
- * − L2(network)              — 淨 NN 模式先罰權重（rule 模式唔用 NN tail）
+ *   0.50 * trainScore        — 訓練段超額為主
+ * + 0.30 * validateScore     — 驗證段 OOS 壓力（逼可轉移）
+ * + 0.12 * robustScore       — train 前後半 soft floor
+ * − 0.20 * max(0, train−val) — train 靚、validate 仆 → 罰過擬合
+ * − L2(network)              — 淨 NN 模式先罰權重
  */
 export function evaluateStockGenome(genome: Genome, points: MarketDataPoint[], useNetwork = true): number {
     const {parameters, networkGenome} = decodeStockGenome(genome);
     const columns = getIndicatorColumns(points, parameters);
-    const trainLength = Math.max(2, Math.floor(columns.length * 0.8));
-    // 資料太短冇意義，直接大負分
-    if (trainLength < 100) {
+    const {trainEnd, validateEnd} = getStockSplitIndices(columns.length);
+    // 資料太短（三段都要有料）直接大負分
+    if (trainEnd < 80 || validateEnd - trainEnd < 30) {
         return -1_000;
     }
 
     const baseDecide = createPositionDecider(columns, parameters, networkGenome, useNetwork);
-    const mid = Math.floor(trainLength / 2);
+    const mid = Math.floor(trainEnd / 2);
     // 每次 walk 新 cooldown state；後半段唔可以繼承前半嘅 hold 計數
-    const {full, firstHalf} = simulateFullAndFirstHalf(withHoldCooldown(baseDecide), columns, trainLength, mid);
-    const secondHalf = simulateColumnMetrics(withHoldCooldown(baseDecide), columns, firstHalf.endingPosition, mid, trainLength);
-    const fullScore = scoreSegment(full, columns, 0, trainLength);
+    const {full, firstHalf} = simulateFullAndFirstHalf(withHoldCooldown(baseDecide), columns, trainEnd, mid);
+    const secondHalf = simulateColumnMetrics(withHoldCooldown(baseDecide), columns, firstHalf.endingPosition, mid, trainEnd);
+    const validateMetrics = simulateColumnMetrics(withHoldCooldown(baseDecide), columns, full.endingPosition, Math.max(0, trainEnd - 1), validateEnd);
+
+    const trainScore = scoreSegment(full, columns, 0, trainEnd);
     const halfA = scoreSegment(firstHalf, columns, 0, mid + 1);
-    const halfB = scoreSegment(secondHalf, columns, mid, trainLength);
+    const halfB = scoreSegment(secondHalf, columns, mid, trainEnd);
+    const validateScore = scoreSegment(validateMetrics, columns, Math.max(0, trainEnd - 1), validateEnd);
     // soft robust：輕 floor，弱半段唔會完全抹走強 train return
-    const robustScore = 0.22 * Math.min(halfA, halfB) + 0.78 * ((halfA + halfB) / 2);
+    const robustScore = 0.35 * Math.min(halfA, halfB) + 0.65 * ((halfA + halfB) / 2);
+    // train 勁過 validate 太多 = 溫習卷過擬合
+    const overfitPenalty = Math.max(0, trainScore - validateScore) * 0.2;
     // rule 模式完全唔用 NN 尾，罰權重淨係加 noise
     const regularization = useNetwork ? WEIGHT_L2_PENALTY * meanSquare(networkGenome) : 0;
-    return fullScore * 0.9 + robustScore * 0.1 - regularization;
+    return trainScore * 0.5 + validateScore * 0.3 + robustScore * 0.12 - overfitPenalty - regularization;
 }
 
 /**
  * 單段 score：excess return 優先，再加參與度／絕對回報，扣 thrash 同「永遠 cash」。
  *
- * 調校目標係 demo GA（唔係純 quant research）：
- * - 永遠 cash 有硬罰，唔係 GA 停喺 0 交易
- * - thrash 罰溫和，輕度活躍交易可以喺 fee 下生存
- * - 牛市要 long participation 先贏，唔係 thrash 刷分
+ * 調校目標：可轉移 > 紙上 thrash；
+ * - 永遠 cash 有硬罰
+ * - thrash 罰比舊版重（配合 0.15% 成本）
+ * - 牛市要 long participation 先贏
  *
  * 對齊 buy-and-hold 時 excess 部分 ≈ 0。
  */
@@ -187,9 +218,9 @@ function scoreSegment(metrics: SegmentMetrics, columns: IndicatorColumns, start:
     // 幾乎唔入市：牛市窗口下差過弱 long
     const cashPenalty = metrics.meanExposure < 0.08 ? 40 : metrics.meanExposure < 0.2 ? 12 : 0;
     // 日日 flip 有稅；持幾個星期轉倉問題唔大
-    const thrashPenalty = metrics.meanTurnover * 18;
+    const thrashPenalty = metrics.meanTurnover * 28;
 
-    return annualizedExcess * 220 + logExcess * 45 + metrics.totalReturn * 55 + metrics.meanExposure * 24 + metrics.sharpe * 5 - metrics.maxDrawdown * 10 - thrashPenalty - cashPenalty;
+    return annualizedExcess * 220 + logExcess * 45 + metrics.totalReturn * 55 + metrics.meanExposure * 24 + metrics.sharpe * 5 - metrics.maxDrawdown * 12 - thrashPenalty - cashPenalty;
 }
 
 /** genome 權重均方（L2 用） */
@@ -205,40 +236,32 @@ function meanSquare(genome: Genome): number {
 }
 
 /**
- * UI 用完整 replay：train（0→80%）→ test（80%→尾），cooldown 跨 split 連續。
- * equity 曲線喺 split 處按 train 結尾 scale 接上去，視覺上係一條線。
+ * UI 用完整 replay：train→validate→test 一條連續 walk（cooldown 跨段唔重置）。
+ * 段回報用 equity 邊界計；純 test 永不入 fitness。
  */
 export function createTradingReplay(genome: Genome, points: MarketDataPoint[], useNetwork = true): TradingReplay {
     const {parameters, networkGenome} = decodeStockGenome(genome);
     const columns = getIndicatorColumns(points, parameters);
-    // 同一個 hold/cooldown 貫穿 train→test，split bar 唔會「免費解 thrash lock」
+    const {trainEnd, validateEnd} = getStockSplitIndices(columns.length);
     const decide = withHoldCooldown(createPositionDecider(columns, parameters, networkGenome, useNetwork));
-    const splitIndex = Math.max(2, Math.floor(columns.length * 0.8));
-    const trainResult = simulateColumnReplay(decide, columns, points, 0, splitIndex, 0);
-    // test 接 train 結束倉位；曲線從 STARTING_EQUITY 再 walk，之後 scale 接上
-    const testResult = simulateColumnReplay(decide, columns, points, Math.max(0, splitIndex - 1), columns.length, trainResult.endingPosition);
-    const trainCurve = trainResult.equityCurve;
-    const testScale = trainCurve.at(-1) ?? STARTING_EQUITY;
-    const fullCurve = new Array<number>(columns.length);
-    for (let index = 0; index < trainCurve.length; index += 1) {
-        fullCurve[index] = trainCurve[index];
-    }
-    // test 曲線 index 0 同 train 尾重疊日，由 index 1 開始接；按比例縮放到 train 結尾資金
-    for (let index = 1; index < testResult.equityCurve.length; index += 1) {
-        fullCurve[splitIndex - 1 + index] = (testResult.equityCurve[index] / STARTING_EQUITY) * testScale;
-    }
+    // 全程一轉：避免 split 處「免費解 thrash lock」
+    const full = simulateColumnReplay(decide, columns, points, 0, columns.length, 0);
+    const equityAt = (index: number) => full.equityCurve[Math.min(Math.max(0, index), full.equityCurve.length - 1)] ?? STARTING_EQUITY;
+    const trainEquity = equityAt(trainEnd - 1);
+    const validateEquity = equityAt(validateEnd - 1);
+    const endEquity = equityAt(columns.length - 1);
     const firstClose = columns.close[0] || 1;
     const lastClose = columns.close[columns.length - 1] || firstClose;
-    // 每個 bar 一筆 TradingPoint（策略／基準／指標），畀圖表同 scrubber
+
     const tradingPoints: TradingPoint[] = new Array(columns.length);
     for (let index = 0; index < columns.length; index += 1) {
         const close = columns.close[index];
         tradingPoints[index] = {
             date: points[columns.warmup + index].date,
             close,
-            strategy: fullCurve[index] ?? fullCurve[fullCurve.length - 1] ?? STARTING_EQUITY,
+            strategy: full.equityCurve[index] ?? endEquity,
             benchmark: STARTING_EQUITY * (close / firstClose),
-            segment: index < splitIndex ? "train" : "test",
+            segment: segmentAt(index, trainEnd, validateEnd),
             smaFast: columns.smaFast[index],
             smaSlow: columns.smaSlow[index],
             rsi: columns.rsi[index],
@@ -259,12 +282,13 @@ export function createTradingReplay(genome: Genome, points: MarketDataPoint[], u
 
     return {
         points: tradingPoints,
-        trades: [...trainResult.trades, ...testResult.trades],
-        trainReturn: trainResult.totalReturn,
-        testReturn: testResult.totalReturn,
+        trades: full.trades,
+        trainReturn: trainEquity / STARTING_EQUITY - 1,
+        validateReturn: trainEquity > 0 ? validateEquity / trainEquity - 1 : 0,
+        testReturn: validateEquity > 0 ? endEquity / validateEquity - 1 : 0,
         benchmarkReturn: columns.length > 1 ? lastClose / firstClose - 1 : 0,
-        sharpe: trainResult.sharpe,
-        maxDrawdown: trainResult.maxDrawdown,
+        sharpe: full.sharpe,
+        maxDrawdown: full.maxDrawdown,
         optimizedParameters: parameters,
     };
 }
@@ -461,7 +485,7 @@ function createIndicatorCacheKey(parameters: OptimizedIndicatorParameters): stri
 
 /**
  * 喺 [start, end) 上 walk 一轉，只回 metrics（唔錄曲線／trades）。
- * 每日：用 previous bar 嘅 decide → 當日 close 回報 × 原倉位 − 換手成本。
+ * 成交：T 收市 decide → T+1 開盤 fill；overnight 舊倉 + intraday 新倉 − 成本。
  */
 function simulateColumnMetrics(decide: PositionDecider, columns: IndicatorColumns, startingPosition: number, start: number, end: number): SegmentMetrics {
     let equity = STARTING_EQUITY;
@@ -476,16 +500,13 @@ function simulateColumnMetrics(decide: PositionDecider, columns: IndicatorColumn
 
     for (let index = start + 1; index < end; index += 1) {
         const previous = index - 1;
-        // 用「昨日」資訊決定「今日」目標倉；當日回報按「轉倉前」倉位計
         const targetPosition = decide(previous, position);
-        const turnover = Math.abs(targetPosition - position);
-        const priceReturn = columns.close[index] / columns.close[previous] - 1;
-        const dailyReturn = position * priceReturn - turnover * TRANSACTION_COST;
+        const {dailyReturn, turnover} = applyNextOpenDay(columns, previous, index, position, targetPosition);
         equity *= Math.max(0.01, 1 + dailyReturn); // floor 1% equity，防歸零
         returnSum += dailyReturn;
         returnSqSum += dailyReturn * dailyReturn;
         returnCount += 1;
-        exposureSum += position;
+        exposureSum += targetPosition;
         turnoverSum += turnover;
         peak = Math.max(peak, equity);
         maxDrawdown = Math.max(maxDrawdown, peak > 0 ? (peak - equity) / peak : 0);
@@ -532,14 +553,12 @@ function simulateFullAndFirstHalf(decide: PositionDecider, columns: IndicatorCol
     for (let index = 1; index < trainLength; index += 1) {
         const previous = index - 1;
         const targetPosition = decide(previous, position);
-        const turnover = Math.abs(targetPosition - position);
-        const priceReturn = columns.close[index] / columns.close[previous] - 1;
-        const dailyReturn = position * priceReturn - turnover * TRANSACTION_COST;
+        const {dailyReturn, turnover} = applyNextOpenDay(columns, previous, index, position, targetPosition);
         equity *= Math.max(0.01, 1 + dailyReturn);
         returnSum += dailyReturn;
         returnSqSum += dailyReturn * dailyReturn;
         returnCount += 1;
-        exposureSum += position;
+        exposureSum += targetPosition;
         turnoverSum += turnover;
         peak = Math.max(peak, equity);
         maxDrawdown = Math.max(maxDrawdown, peak > 0 ? (peak - equity) / peak : 0);
@@ -549,7 +568,7 @@ function simulateFullAndFirstHalf(decide: PositionDecider, columns: IndicatorCol
             halfReturnSum += dailyReturn;
             halfReturnSqSum += dailyReturn * dailyReturn;
             halfReturnCount += 1;
-            halfExposureSum += position;
+            halfExposureSum += targetPosition;
             halfTurnoverSum += turnover;
             halfPeak = Math.max(halfPeak, halfEquity);
             halfMaxDrawdown = Math.max(halfMaxDrawdown, halfPeak > 0 ? (halfPeak - halfEquity) / halfPeak : 0);
@@ -581,7 +600,7 @@ function simulateFullAndFirstHalf(decide: PositionDecider, columns: IndicatorCol
 
 /**
  * 同 simulateColumnMetrics，但額外錄 equityCurve 同 trades（UI replay 用）。
- * trade 標記喺「轉倉決策日」嘅 previous bar date／price。
+ * trade 標記喺成交日（T+1 開盤）嘅 date／open。
  */
 function simulateColumnReplay(decide: PositionDecider, columns: IndicatorColumns, points: MarketDataPoint[], start: number, end: number, startingPosition: number): SegmentResult {
     const length = Math.max(0, end - start);
@@ -603,14 +622,12 @@ function simulateColumnReplay(decide: PositionDecider, columns: IndicatorColumns
     for (let index = start + 1; index < end; index += 1) {
         const previous = index - 1;
         const targetPosition = decide(previous, position);
-        const turnover = Math.abs(targetPosition - position);
-        const priceReturn = columns.close[index] / columns.close[previous] - 1;
-        const dailyReturn = position * priceReturn - turnover * TRANSACTION_COST;
+        const {dailyReturn, turnover} = applyNextOpenDay(columns, previous, index, position, targetPosition);
         equity *= Math.max(0.01, 1 + dailyReturn);
         returnSum += dailyReturn;
         returnSqSum += dailyReturn * dailyReturn;
         returnCount += 1;
-        exposureSum += position;
+        exposureSum += targetPosition;
         turnoverSum += turnover;
         equityCurve[index - start] = equity;
         peak = Math.max(peak, equity);
@@ -618,12 +635,12 @@ function simulateColumnReplay(decide: PositionDecider, columns: IndicatorColumns
 
         if (targetPosition !== position) {
             trades.push({
-                date: points[columns.warmup + previous].date,
+                date: points[columns.warmup + index].date,
                 action: targetPosition > position ? "buy" : "sell",
-                price: columns.close[previous],
+                price: columns.open[index],
             });
-            position = targetPosition;
         }
+        position = targetPosition;
     }
 
     return {
@@ -636,6 +653,23 @@ function simulateColumnReplay(decide: PositionDecider, columns: IndicatorColumns
         meanExposure: returnCount > 0 ? exposureSum / returnCount : 0,
         meanTurnover: returnCount > 0 ? turnoverSum / returnCount : 0,
     };
+}
+
+/**
+ * T 收市訊號 → T+1 開盤成交：
+ * - overnight gap：舊倉 × (open_t / close_{t-1} − 1)
+ * - 開盤換手成本
+ * - intraday：新倉 × (close_t / open_t − 1)
+ */
+function applyNextOpenDay(columns: IndicatorColumns, previous: number, index: number, position: number, targetPosition: number): {dailyReturn: number; turnover: number} {
+    const prevClose = Math.max(columns.close[previous], 1e-9);
+    const open = Math.max(columns.open[index], 1e-9);
+    const close = Math.max(columns.close[index], 1e-9);
+    const overnight = open / prevClose - 1;
+    const intraday = close / open - 1;
+    const turnover = Math.abs(targetPosition - position);
+    const dailyReturn = position * overnight + targetPosition * intraday - turnover * TRANSACTION_COST;
+    return {dailyReturn, turnover};
 }
 
 /**
