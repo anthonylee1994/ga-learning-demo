@@ -23,6 +23,7 @@
     --muted: oklch(0.67 0.015 250);
     --snake: #58d68d;
     --breaker: #e7b955;
+    --flappy: #5ec8e8;
     --stock: #e36f5b;
     --stock-mc: #d48bd4;
     --blue: #5da6d9;
@@ -151,6 +152,9 @@ button {
 }
 .nav-snake i {
     background: var(--snake);
+}
+.nav-flappy i {
+    background: var(--flappy);
 }
 .nav-breaker i {
     background: var(--breaker);
@@ -1025,7 +1029,7 @@ button.flow-stage {
 }
 .demo-map-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 12px;
     margin-top: 18px;
 }
@@ -1050,6 +1054,9 @@ button.flow-stage {
 }
 .demo-map-breaker:hover {
     border-color: rgba(231, 185, 85, 0.4);
+}
+.demo-map-flappy:hover {
+    border-color: rgba(94, 200, 232, 0.45);
 }
 .demo-map-stock:hover {
     border-color: rgba(227, 111, 91, 0.4);
@@ -1076,6 +1083,9 @@ button.flow-stage {
 }
 .demo-map-breaker .demo-map-head h4 {
     color: #e7b955;
+}
+.demo-map-flappy .demo-map-head h4 {
+    color: #7ed4f0;
 }
 .demo-map-stock .demo-map-head h4 {
     color: #e89a8c;
@@ -1263,6 +1273,9 @@ button.flow-stage {
 }
 .accent-breaker {
     --accent-color: var(--breaker);
+}
+.accent-flappy {
+    --accent-color: var(--flappy);
 }
 .accent-stock {
     --accent-color: var(--stock);
@@ -1482,6 +1495,18 @@ button.flow-stage {
 .simulation-canvas.breaker {
     max-width: 760px;
     aspect-ratio: 4 / 3;
+}
+.simulation-canvas.flappy {
+    max-width: 420px;
+    max-height: min(68vh, 560px);
+    aspect-ratio: 360 / 520;
+    border-color: #3a9aa8;
+    image-rendering: pixelated;
+    background: #4ec0ca;
+}
+.simulation-stage.flappy-stage {
+    place-items: center;
+    background: #0a1014;
 }
 .simulation-stage.stock-stage {
     min-height: 0;

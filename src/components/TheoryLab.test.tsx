@@ -30,6 +30,7 @@ describe("TheoryLab", () => {
         expect(screen.getByText("src/lib/ga.ts")).toBeInTheDocument();
         expect(screen.getByRole("link", {name: /貪食蛇/})).toHaveAttribute("href", "/snake");
         expect(screen.getByRole("link", {name: /撞磚/})).toHaveAttribute("href", "/breaker");
+        expect(screen.getByRole("link", {name: /Flappy Bird/})).toHaveAttribute("href", "/flappy");
         expect(screen.getByRole("link", {name: /股票 \(GA\)/})).toHaveAttribute("href", "/stock");
     });
 

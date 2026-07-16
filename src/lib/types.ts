@@ -1,4 +1,4 @@
-export type TopicId = "theory" | "snake" | "breaker" | "stock" | "stock-mc";
+export type TopicId = "theory" | "snake" | "breaker" | "flappy" | "stock" | "stock-mc";
 
 export interface GAConfig {
     populationSize: number;
@@ -78,6 +78,29 @@ export interface BreakerReplay {
     frames: BreakerFrame[];
     bricksCleared: number;
     hits: number;
+    steps: number;
+}
+
+export interface FlappyPipe {
+    x: number;
+    /** Gap vertical centre (px). */
+    gapY: number;
+    gapHeight: number;
+    passed: boolean;
+}
+
+export interface FlappyFrame {
+    birdY: number;
+    birdVy: number;
+    pipes: FlappyPipe[];
+    score: number;
+    step: number;
+    terminal?: "crash" | "timeout";
+}
+
+export interface FlappyReplay {
+    frames: FlappyFrame[];
+    score: number;
     steps: number;
 }
 

@@ -140,7 +140,7 @@ const CONCEPTS = [
 
 const PIPELINE = [
     {icon: Layers, title: "UI 參數", text: "population · mutation · elite · seed · speed"},
-    {icon: Cpu, title: "Web Worker", text: "snake / breaker / stock.worker 跑演化"},
+    {icon: Cpu, title: "Web Worker", text: "snake / breaker / flappy / stock.worker 跑演化"},
     {icon: GitBranch, title: "ga.ts", text: "create / select / cross / mutate / elite"},
     {icon: Network, title: "NN Adapter", text: "genome → forward run() · 無 train()"},
     {icon: Target, title: "Domain sim", text: "fitness 分數 + champion replay"},
@@ -171,6 +171,18 @@ const DEMOS = [
         fitness: "清磚 + 全清獎 − 多餘接球",
         note: "5 場唔同發射角平均，逼學跟波",
         defaults: "族群 12 · 突變 14% · 菁英保留",
+    },
+    {
+        path: "/flappy",
+        accent: "flappy" as const,
+        title: "Flappy Bird",
+        blurb: "拍翼過水管",
+        topology: "6 → 10 → 2",
+        genes: "92 權重",
+        genome: "整條網絡權重 / 偏差",
+        fitness: "過管² + 存活 + 縫心 shaping",
+        note: "三個固定 seed 平均，減少水管幸運",
+        defaults: "族群 40 · 突變 13% · 菁英 8%",
     },
     {
         path: "/stock",
@@ -448,7 +460,7 @@ export const TheoryLab = React.memo(() => {
             <section className="theory-demos">
                 <div className="panel-heading">
                     <div>
-                        <p className="eyebrow">三個實驗</p>
+                        <p className="eyebrow">實驗列表</p>
                         <h3>同一 GA，唔同問題</h3>
                     </div>
                 </div>
