@@ -162,8 +162,12 @@ function nextPipe(pipes: FlappyPipe[]): FlappyPipe | undefined {
 }
 
 function spawnPipe(x: number, float: () => number): FlappyPipe {
-    const margin = 70;
-    const gapY = margin + PIPE_GAP / 2 + float() * (FLAPPY_HEIGHT - margin * 2 - PIPE_GAP);
+    // 上管可以短啲；下管要留夠高度，唔好縫隙貼地（視覺上 base 亦會擋住）
+    const topMargin = 70;
+    const bottomMargin = 160;
+    const minGapY = topMargin + PIPE_GAP / 2;
+    const maxGapY = FLAPPY_HEIGHT - bottomMargin - PIPE_GAP / 2;
+    const gapY = minGapY + float() * (maxGapY - minGapY);
     return {x, gapY, gapHeight: PIPE_GAP, passed: false};
 }
 

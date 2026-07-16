@@ -19,6 +19,8 @@ describe("flappy simulation", () => {
             for (const pipe of frame.pipes) {
                 expect(pipe.gapY).toBeGreaterThan(0);
                 expect(pipe.gapY).toBeLessThan(FLAPPY_HEIGHT);
+                // 下管唔好太短：縫隙下沿要留夠距離到畫面底
+                expect(pipe.gapY + pipe.gapHeight / 2).toBeLessThanOrEqual(FLAPPY_HEIGHT - 160);
             }
         }
         expect(replay.frames.at(-1)?.terminal).toMatch(/crash|timeout/);

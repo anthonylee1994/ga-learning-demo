@@ -1,5 +1,22 @@
 import React from "react";
-import birdSpriteUrl from "../assets/flappy-bird.png";
+import digit0 from "../assets/flappy-bird-sprites/0.png";
+import digit1 from "../assets/flappy-bird-sprites/1.png";
+import digit2 from "../assets/flappy-bird-sprites/2.png";
+import digit3 from "../assets/flappy-bird-sprites/3.png";
+import digit4 from "../assets/flappy-bird-sprites/4.png";
+import digit5 from "../assets/flappy-bird-sprites/5.png";
+import digit6 from "../assets/flappy-bird-sprites/6.png";
+import digit7 from "../assets/flappy-bird-sprites/7.png";
+import digit8 from "../assets/flappy-bird-sprites/8.png";
+import digit9 from "../assets/flappy-bird-sprites/9.png";
+import backgroundDayUrl from "../assets/flappy-bird-sprites/background-day.png";
+import baseUrl from "../assets/flappy-bird-sprites/base.png";
+import gameoverUrl from "../assets/flappy-bird-sprites/gameover.png";
+import messageUrl from "../assets/flappy-bird-sprites/message.png";
+import pipeGreenUrl from "../assets/flappy-bird-sprites/pipe-green.png";
+import birdDownUrl from "../assets/flappy-bird-sprites/yellowbird-downflap.png";
+import birdMidUrl from "../assets/flappy-bird-sprites/yellowbird-midflap.png";
+import birdUpUrl from "../assets/flappy-bird-sprites/yellowbird-upflap.png";
 import {FLAPPY_HEIGHT, FLAPPY_WIDTH} from "../domains/flappy/simulation";
 import type {FlappyFrame, FlappyReplay} from "../lib/types";
 
@@ -7,29 +24,26 @@ const TERMINAL_HOLD_MS = 900;
 /** 同 simulation 碰撞盒一致 */
 const BIRD_X = 78;
 const PIPE_WIDTH = 48;
-const GROUND_H = 56;
-/** 畫面上雀嘅顯示闊（邏輯 px）；跟住參考 sprite 比例 */
-const BIRD_DRAW_W = 42;
-const BIRD_DRAW_H = 30;
+/** 地面顯示高度（邏輯 px）— base sprite 縮放到呢度 */
+const GROUND_H = 96;
+/** 雀顯示尺寸（邏輯 px；原版 34×24） */
+const BIRD_DRAW_W = 38;
+const BIRD_DRAW_H = 27;
+/** 分數數字高度（邏輯 px） */
+const DIGIT_H = 36;
 
-const birdSprite = new Image();
-birdSprite.src = birdSpriteUrl;
+const digitUrls = [digit0, digit1, digit2, digit3, digit4, digit5, digit6, digit7, digit8, digit9] as const;
+const birdUrls = [birdUpUrl, birdMidUrl, birdDownUrl] as const;
 
-/** 經典 Flappy 配色（參考原版） */
-const SKY = "#4EC0CA";
-const CLOUD = "#FFFFFF";
-const CLOUD_EDGE = "#E8F6F8";
-const CITY = "#D5E99A";
-const CITY_EDGE = "#C5DB88";
-const BUSH = "#73BF2E";
-const BUSH_DARK = "#5DA322";
-const GROUND = "#DED895";
-const GROUND_EDGE = "#E5C65A";
-const GRASS = "#73BF2E";
-const PIPE = "#73BF2E";
-const PIPE_LIGHT = "#96E05A";
-const PIPE_DARK = "#548C2F";
-const PIPE_LIP = "#5DA322";
+const sprites = {
+    background: loadImage(backgroundDayUrl),
+    base: loadImage(baseUrl),
+    pipe: loadImage(pipeGreenUrl),
+    gameover: loadImage(gameoverUrl),
+    message: loadImage(messageUrl),
+    digits: digitUrls.map(loadImage),
+    birds: birdUrls.map(loadImage),
+};
 
 interface Props {
     replay?: FlappyReplay;
@@ -43,18 +57,31 @@ interface Props {
 export const FlappyCanvas = React.memo<Props>(({replay, speed, playing = true, loop = true, restartKey = 0, onFrameChange}) => {
     const canvasRef = React.useRef<HTMLCanvasElement>(null);
     const [frameIndex, setFrameIndex] = React.useState(0);
-    const [spriteReady, setSpriteReady] = React.useState(() => birdSprite.complete && birdSprite.naturalWidth > 0);
+    const [spritesReady, setSpritesReady] = React.useState(() => allSpritesReady());
     const onFrameChangeRef = React.useRef(onFrameChange);
     onFrameChangeRef.current = onFrameChange;
 
     React.useEffect(() => {
-        if (birdSprite.complete && birdSprite.naturalWidth > 0) {
-            setSpriteReady(true);
+        if (allSpritesReady()) {
+            setSpritesReady(true);
             return;
         }
-        const onLoad = () => setSpriteReady(true);
-        birdSprite.addEventListener("load", onLoad);
-        return () => birdSprite.removeEventListener("load", onLoad);
+        const images = collectImages();
+        const onLoad = () => {
+            if (allSpritesReady()) {
+                setSpritesReady(true);
+            }
+        };
+        for (const image of images) {
+            image.addEventListener("load", onLoad);
+            image.addEventListener("error", onLoad);
+        }
+        return () => {
+            for (const image of images) {
+                image.removeEventListener("load", onLoad);
+                image.removeEventListener("error", onLoad);
+            }
+        };
     }, []);
 
     React.useEffect(() => {
@@ -99,11 +126,13 @@ export const FlappyCanvas = React.memo<Props>(({replay, speed, playing = true, l
         const height = canvas.height;
         const sx = width / FLAPPY_WIDTH;
         const sy = height / FLAPPY_HEIGHT;
-        // 背景 parallax：用 frame step 做輕微滾動
-        const scroll = ((replay?.frames[frameIndex]?.step ?? 0) * 0.6) % FLAPPY_WIDTH;
+        const step = replay?.frames[frameIndex]?.step ?? 0;
+        // 地面滾動速度跟 simulation 水管速度大致一致
+        const scroll = (step * 2.6) % (sprites.base.naturalWidth || 336);
 
         context.imageSmoothingEnabled = false;
-        drawBackground(context, width, height, sx, sy, scroll);
+
+        drawBackground(context, width, height);
 
         const frame = replay?.frames[frameIndex];
         if (frame) {
@@ -112,39 +141,21 @@ export const FlappyCanvas = React.memo<Props>(({replay, speed, playing = true, l
             }
         }
 
-        // 前景草 + 地面：有冇冠軍都要畫，唔好 idle 時缺一塊地
-        drawBushes(context, width, height, sx, sy, scroll * 1.15, 1, 0.42);
-        drawGround(context, width, height, sy);
+        // base 要蓋住水管下半截
+        drawBase(context, width, height, sx, sy, scroll);
 
         if (!frame) {
-            context.fillStyle = "rgba(20, 40, 48, 0.45)";
-            context.fillRect(0, height / 2 - 36, width, 72);
-            context.fillStyle = "#FFFFFF";
-            context.font = "600 18px Inter, sans-serif";
-            context.textAlign = "center";
-            context.fillText("等待第一個冠軍", width / 2, height / 2 + 6);
+            drawIdle(context, width, height, sy);
             return;
         }
 
-        // 雀（跟用戶提供嘅像素 design sprite）
-        drawBird(context, BIRD_X * sx, frame.birdY * sy, Math.min(sx, sy), frame.birdVy);
-
-        // 分數（白字 + 深色描邊，原版感覺）
+        drawBird(context, BIRD_X * sx, frame.birdY * sy, Math.min(sx, sy), frame.birdVy, frame.step);
         drawScore(context, width, frame.score, sy);
 
         if (frame.terminal) {
-            context.fillStyle = "rgba(0, 0, 0, 0.45)";
-            context.fillRect(0, height / 2 - 40, width, 80);
-            context.fillStyle = "#FFFFFF";
-            context.font = "700 24px Inter, sans-serif";
-            context.textAlign = "center";
-            context.strokeStyle = "rgba(0,0,0,0.55)";
-            context.lineWidth = 4;
-            const label = frame.terminal === "crash" ? "撞到了" : "本局完結";
-            context.strokeText(label, width / 2, height / 2 + 8);
-            context.fillText(label, width / 2, height / 2 + 8);
+            drawGameOver(context, width, height, sx);
         }
-    }, [frameIndex, replay, spriteReady]);
+    }, [frameIndex, replay, spritesReady]);
 
     return (
         <canvas
@@ -161,182 +172,188 @@ export const FlappyCanvas = React.memo<Props>(({replay, speed, playing = true, l
     );
 });
 
-function drawBackground(context: CanvasRenderingContext2D, width: number, height: number, sx: number, sy: number, scroll: number): void {
-    context.fillStyle = SKY;
-    context.fillRect(0, 0, width, height);
-
-    // 雲
-    const clouds = [
-        {x: 40, y: 48, s: 1},
-        {x: 180, y: 72, s: 0.75},
-        {x: 280, y: 40, s: 1.1},
-    ];
-    for (const cloud of clouds) {
-        const cx = (((cloud.x - scroll * 0.25 + FLAPPY_WIDTH * 2) % (FLAPPY_WIDTH + 80)) - 40) * sx;
-        drawCloud(context, cx, cloud.y * sy, cloud.s * sx);
-    }
-
-    const groundTop = height - GROUND_H * sy;
-
-    // 遠景草丘先畫（矮一截），之後再畫樓，避免蓋住樓身
-    drawBushes(context, width, height, sx, sy, scroll * 0.55, 0.75, 0.55);
-
-    // 城市剪影：貼地 + 加高，畫喺草上面
-    const buildings = [48, 72, 40, 86, 58, 78, 44, 66, 82, 52, 70, 42, 76, 56];
-    let bx = -((scroll * 0.35) % 36) * sx;
-    for (const h of buildings) {
-        const bw = 26 * sx;
-        const bh = h * sy;
-        const top = groundTop - bh;
-        context.fillStyle = CITY;
-        context.fillRect(bx, top, bw - 2 * sx, bh);
-        context.fillStyle = CITY_EDGE;
-        context.fillRect(bx, top, bw - 2 * sx, 3 * sy);
-        bx += 28 * sx;
-    }
+function loadImage(src: string): HTMLImageElement {
+    const image = new Image();
+    image.src = src;
+    return image;
 }
 
-function drawCloud(context: CanvasRenderingContext2D, x: number, y: number, scale: number): void {
-    context.fillStyle = CLOUD;
-    const r = 14 * scale;
-    context.beginPath();
-    context.arc(x, y, r * 1.1, 0, Math.PI * 2);
-    context.arc(x + r * 1.2, y - r * 0.2, r * 1.35, 0, Math.PI * 2);
-    context.arc(x + r * 2.4, y, r, 0, Math.PI * 2);
-    context.arc(x + r * 1.1, y + r * 0.35, r * 0.95, 0, Math.PI * 2);
-    context.fill();
-    context.fillStyle = CLOUD_EDGE;
-    context.beginPath();
-    context.ellipse(x + r * 1.1, y + r * 0.55, r * 1.6, r * 0.35, 0, 0, Math.PI * 2);
-    context.fill();
+function collectImages(): HTMLImageElement[] {
+    return [sprites.background, sprites.base, sprites.pipe, sprites.gameover, sprites.message, ...sprites.digits, ...sprites.birds];
 }
 
-function drawBushes(context: CanvasRenderingContext2D, _width: number, height: number, sx: number, sy: number, scroll: number, alpha = 1, sizeScale = 1): void {
-    const baseY = height - GROUND_H * sy;
-    context.save();
-    context.globalAlpha = alpha;
-    const offset = -((scroll * 0.9) % 48) * sx;
-    const s = sizeScale;
-    for (let i = -1; i < 12; i += 1) {
-        const x = offset + i * 48 * sx;
-        context.fillStyle = BUSH_DARK;
-        context.beginPath();
-        context.ellipse(x + 10 * sx, baseY, 22 * sx * s, 16 * sy * s, 0, 0, Math.PI * 2);
-        context.ellipse(x + 28 * sx, baseY - 4 * sy * s, 20 * sx * s, 18 * sy * s, 0, 0, Math.PI * 2);
-        context.ellipse(x + 44 * sx, baseY, 18 * sx * s, 14 * sy * s, 0, 0, Math.PI * 2);
-        context.fill();
-        context.fillStyle = BUSH;
-        context.beginPath();
-        context.ellipse(x + 12 * sx, baseY - 2 * sy * s, 18 * sx * s, 13 * sy * s, 0, 0, Math.PI * 2);
-        context.ellipse(x + 30 * sx, baseY - 6 * sy * s, 16 * sx * s, 14 * sy * s, 0, 0, Math.PI * 2);
-        context.fill();
-    }
-    context.restore();
+function allSpritesReady(): boolean {
+    return collectImages().every(image => image.complete && image.naturalWidth > 0);
 }
 
-function drawGround(context: CanvasRenderingContext2D, width: number, height: number, sy: number): void {
-    const gy = height - GROUND_H * sy;
-    context.fillStyle = GRASS;
-    context.fillRect(0, gy, width, 8 * sy);
-    context.fillStyle = GROUND_EDGE;
-    context.fillRect(0, gy + 8 * sy, width, 4 * sy);
-    context.fillStyle = GROUND;
-    context.fillRect(0, gy + 12 * sy, width, GROUND_H * sy);
-    // 泥面點點
-    context.fillStyle = "rgba(180, 150, 70, 0.35)";
-    for (let i = 0; i < 18; i += 1) {
-        context.fillRect((i * 37 + 8) % width, gy + (18 + (i % 5) * 6) * sy, 6, 3 * sy);
-    }
+function isReady(image: HTMLImageElement): boolean {
+    return image.complete && image.naturalWidth > 0;
 }
 
-function drawPipe(context: CanvasRenderingContext2D, x: number, gapTop: number, gapBottom: number, pw: number, height: number, sy: number): void {
-    const lipH = 16 * sy;
-    const lipPad = 4;
-    const bodyW = pw;
-    const lipW = pw + lipPad * 2;
-
-    // 上管身
-    fillPipeBody(context, x, 0, bodyW, Math.max(0, gapTop - lipH));
-    // 上管口
-    fillPipeLip(context, x - lipPad, gapTop - lipH, lipW, lipH);
-
-    // 下管身（唔蓋地面）
-    const groundY = height - GROUND_H * sy;
-    const bodyTop = gapBottom + lipH;
-    fillPipeBody(context, x, bodyTop, bodyW, Math.max(0, groundY - bodyTop));
-    // 下管口
-    fillPipeLip(context, x - lipPad, gapBottom, lipW, lipH);
-}
-
-function fillPipeBody(context: CanvasRenderingContext2D, x: number, y: number, w: number, h: number): void {
-    if (h <= 0) {
+function drawBackground(context: CanvasRenderingContext2D, width: number, height: number): void {
+    if (isReady(sprites.background)) {
+        context.drawImage(sprites.background, 0, 0, width, height);
         return;
     }
-    context.fillStyle = PIPE;
-    context.fillRect(x, y, w, h);
-    // 高光條
-    context.fillStyle = PIPE_LIGHT;
-    context.fillRect(x + 4, y, 6, h);
-    context.fillStyle = PIPE_DARK;
-    context.fillRect(x + w - 5, y, 4, h);
-    context.strokeStyle = PIPE_DARK;
-    context.lineWidth = 2;
-    context.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-}
-
-function fillPipeLip(context: CanvasRenderingContext2D, x: number, y: number, w: number, h: number): void {
-    context.fillStyle = PIPE_LIP;
-    context.fillRect(x, y, w, h);
-    context.fillStyle = PIPE_LIGHT;
-    context.fillRect(x + 5, y + 2, 7, h - 4);
-    context.fillStyle = PIPE_DARK;
-    context.fillRect(x + w - 7, y + 2, 5, h - 4);
-    context.strokeStyle = PIPE_DARK;
-    context.lineWidth = 2;
-    context.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+    context.fillStyle = "#4EC0CA";
+    context.fillRect(0, 0, width, height);
 }
 
 /**
- * 用戶提供嘅像素黃雀 sprite：深紫 outline、黃身、白眼、紅咀、左翼。
- * 跟住 vy 旋轉；imageSmoothing 關咗保持像素感。
+ * 原版 base 係橫向 tile；用 scroll 做出滾動感。
  */
-function drawBird(context: CanvasRenderingContext2D, x: number, y: number, scale: number, birdVy: number): void {
+function drawBase(context: CanvasRenderingContext2D, width: number, height: number, sx: number, sy: number, scroll: number): void {
+    const baseH = GROUND_H * sy;
+    const baseY = height - baseH;
+    if (!isReady(sprites.base)) {
+        context.fillStyle = "#DED895";
+        context.fillRect(0, baseY, width, baseH);
+        return;
+    }
+
+    // 按高度等比縮放，闊度跟住比例
+    const srcW = sprites.base.naturalWidth;
+    const srcH = sprites.base.naturalHeight;
+    const tileW = (srcW / srcH) * baseH;
+    const offset = -((scroll * sx) % tileW);
+    for (let x = offset; x < width + tileW; x += tileW) {
+        context.drawImage(sprites.base, x, baseY, tileW, baseH);
+    }
+}
+
+/**
+ * pipe-green 原圖：管口喺頂、管身向下。
+ * 下管直接畫；上管垂直翻轉。
+ */
+function drawPipe(context: CanvasRenderingContext2D, x: number, gapTop: number, gapBottom: number, pw: number, height: number, sy: number): void {
+    const groundY = height - GROUND_H * sy;
+
+    if (!isReady(sprites.pipe)) {
+        context.fillStyle = "#73BF2E";
+        context.fillRect(x, 0, pw, Math.max(0, gapTop));
+        context.fillRect(x, gapBottom, pw, Math.max(0, groundY - gapBottom));
+        return;
+    }
+
+    const srcW = sprites.pipe.naturalWidth;
+    const srcH = sprites.pipe.naturalHeight;
+
+    // 下管：從 gapBottom 向下畫，高度最多去到地面
+    const bottomH = Math.max(0, groundY - gapBottom);
+    if (bottomH > 0) {
+        const srcDrawH = Math.min(srcH, (bottomH / pw) * srcW);
+        context.drawImage(sprites.pipe, 0, 0, srcW, srcDrawH, x, gapBottom, pw, bottomH);
+    }
+
+    // 上管：翻轉後管口朝下貼 gapTop
+    const topH = Math.max(0, gapTop);
+    if (topH > 0) {
+        const srcDrawH = Math.min(srcH, (topH / pw) * srcW);
+        context.save();
+        context.translate(x, gapTop);
+        context.scale(1, -1);
+        context.drawImage(sprites.pipe, 0, 0, srcW, srcDrawH, 0, 0, pw, topH);
+        context.restore();
+    }
+}
+
+function drawBird(context: CanvasRenderingContext2D, x: number, y: number, scale: number, birdVy: number, step: number): void {
     const tilt = Math.max(-0.55, Math.min(0.9, birdVy * 0.09));
     const dw = BIRD_DRAW_W * scale;
     const dh = BIRD_DRAW_H * scale;
+    // 拍翼循環：每 4 幀換一張
+    const flapIndex = Math.floor(step / 4) % sprites.birds.length;
+    const bird = sprites.birds[flapIndex] ?? sprites.birds[1];
 
     context.save();
     context.translate(x, y);
     context.rotate(tilt);
     context.imageSmoothingEnabled = false;
 
-    if (birdSprite.complete && birdSprite.naturalWidth > 0) {
-        context.drawImage(birdSprite, -dw / 2, -dh / 2, dw, dh);
+    if (bird && isReady(bird)) {
+        context.drawImage(bird, -dw / 2, -dh / 2, dw, dh);
     } else {
-        // sprite 未 load 前嘅 fallback（同樣 palette）
         context.fillStyle = "#F7D031";
         context.beginPath();
         context.ellipse(0, 0, dw * 0.42, dh * 0.38, 0, 0, Math.PI * 2);
         context.fill();
-        context.fillStyle = "#E8F8E0";
-        context.beginPath();
-        context.ellipse(dw * 0.12, -dh * 0.05, dw * 0.16, dh * 0.18, 0, 0, Math.PI * 2);
-        context.fill();
-        context.fillStyle = "#D80000";
-        context.fillRect(dw * 0.18, dh * 0.02, dw * 0.28, dh * 0.18);
     }
 
     context.restore();
 }
 
 function drawScore(context: CanvasRenderingContext2D, width: number, score: number, sy: number): void {
-    const text = String(score);
-    context.font = "800 36px Inter, ui-sans-serif, system-ui, sans-serif";
-    context.textAlign = "center";
-    context.lineJoin = "round";
-    context.strokeStyle = "rgba(0,0,0,0.55)";
-    context.lineWidth = 6;
-    context.strokeText(text, width / 2, 48 * sy);
+    const digits = String(Math.max(0, Math.floor(score)))
+        .split("")
+        .map(ch => Number(ch));
+    const digitH = DIGIT_H * sy;
+    const gaps = 2 * sy;
+    let totalW = 0;
+    const widths: number[] = [];
+
+    for (const d of digits) {
+        const img = sprites.digits[d];
+        if (img && isReady(img)) {
+            const w = (img.naturalWidth / img.naturalHeight) * digitH;
+            widths.push(w);
+            totalW += w;
+        } else {
+            widths.push(digitH * 0.66);
+            totalW += digitH * 0.66;
+        }
+    }
+    totalW += gaps * Math.max(0, digits.length - 1);
+
+    let x = (width - totalW) / 2;
+    const y = 40 * sy;
+    for (let i = 0; i < digits.length; i += 1) {
+        const img = sprites.digits[digits[i] ?? 0];
+        const w = widths[i] ?? digitH * 0.66;
+        if (img && isReady(img)) {
+            context.drawImage(img, x, y, w, digitH);
+        } else {
+            context.fillStyle = "#FFFFFF";
+            context.font = `800 ${Math.round(digitH)}px Inter, sans-serif`;
+            context.textAlign = "left";
+            context.fillText(String(digits[i]), x, y + digitH * 0.85);
+        }
+        x += w + gaps;
+    }
+}
+
+function drawGameOver(context: CanvasRenderingContext2D, width: number, height: number, sx: number): void {
+    context.fillStyle = "rgba(0, 0, 0, 0.28)";
+    context.fillRect(0, 0, width, height);
+
+    if (isReady(sprites.gameover)) {
+        const srcW = sprites.gameover.naturalWidth;
+        const srcH = sprites.gameover.naturalHeight;
+        const drawW = Math.min(width * 0.72, srcW * sx * 1.15);
+        const drawH = (srcH / srcW) * drawW;
+        context.drawImage(sprites.gameover, (width - drawW) / 2, height * 0.38 - drawH / 2, drawW, drawH);
+        return;
+    }
+
     context.fillStyle = "#FFFFFF";
-    context.fillText(text, width / 2, 48 * sy);
+    context.font = "700 24px Inter, sans-serif";
+    context.textAlign = "center";
+    context.fillText("GAME OVER", width / 2, height / 2);
+}
+
+function drawIdle(context: CanvasRenderingContext2D, width: number, height: number, sy: number): void {
+    if (isReady(sprites.message)) {
+        const srcW = sprites.message.naturalWidth;
+        const srcH = sprites.message.naturalHeight;
+        const drawH = Math.min(height * 0.48, srcH * sy * 1.05);
+        const drawW = (srcW / srcH) * drawH;
+        context.drawImage(sprites.message, (width - drawW) / 2, (height - drawH) / 2 - 12 * sy, drawW, drawH);
+        return;
+    }
+
+    context.fillStyle = "rgba(20, 40, 48, 0.45)";
+    context.fillRect(0, height / 2 - 36, width, 72);
+    context.fillStyle = "#FFFFFF";
+    context.font = "600 18px Inter, sans-serif";
+    context.textAlign = "center";
+    context.fillText("等待第一個冠軍", width / 2, height / 2 + 6);
 }
