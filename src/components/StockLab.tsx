@@ -201,8 +201,9 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
     const metricsExtra = React.useMemo(
         () => [
             {label: "訓練回報", value: replay ? formatPercent(replay.trainReturn) : "—"},
+            {label: "訓練·買入持有", value: replay ? formatPercent(replay.trainBenchmarkReturn) : "—"},
             {label: "測試回報", value: replay ? formatPercent(replay.testReturn) : "—"},
-            {label: "買入持有", value: replay ? formatPercent(replay.benchmarkReturn) : "—"},
+            {label: "測試·買入持有", value: replay ? formatPercent(replay.testBenchmarkReturn) : "—"},
             {label: "最大回撤", value: replay ? formatPercent(-replay.maxDrawdown) : "—"},
         ],
         [replay]
@@ -317,7 +318,7 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
                                         <span>網絡預覽日</span>
                                         <strong className="font-mono text-xs">
                                             {networkPreview.date || "—"} · {networkPreview.segment}
-                                            {liveDay?.trade ? ` · ${liveDay.trade.action === "buy" ? "買" : "沽"}` : ""}
+                                            {liveDay?.trade ? ` · ${liveDay.trade.action === "buy" ? "買" : "平"}` : ""}
                                         </strong>
                                     </span>
                                     <input
@@ -417,7 +418,7 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
                     <FitnessChart eyebrow={isMonteCarlo ? "搜尋訊號" : "演化訊號"} history={demo.history} title={isMonteCarlo ? "批次適應度趨勢" : "適應度趨勢"} />
                     <ApplicationPanel
                         eyebrow={isMonteCarlo ? "蒙地卡羅對應" : "GA 對應"}
-                        fitness="test 55% + train 30% + robust 15% − L2；測試回報主軸；次日開盤成交；0.15% 成本；換手 thrash 分數罰"
+                        fitness="test 80% + train 12% + robust 8% − L2；log 回報＋超額／輸大市罰；次日開盤；0.15% 成本；長→空倉→空；換手 thrash 罰"
                         genome={
                             isMonteCarlo
                                 ? `${STOCK_PARAMETER_GENE_COUNT} 週期/門檻 + ${STOCK_NETWORK_GENE_COUNT} 決策頭；每批混合全域隨機抽樣 + 冠軍附近局部遊走（局部比例 = 滑桿）；開局有接近買入持有等種子`
@@ -425,7 +426,7 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
                         }
                         genomeLabel={isMonteCarlo ? "參數向量" : "基因體"}
                         inputs="18 維特徵：全部指標常開（含 N 日新高／新低）+ 持倉狀態；唔餵開高低收。"
-                        outputs={useNetwork ? "薄隱藏層取最大 → 買 / 持 / 沽空；搜尋主力喺週期 / 門檻" : "SMA / MACD / RSI / 威廉 多數票買入；升勢要 RSI+威廉齊過熱先沽空，否則單一過熱沽空"}
+                        outputs={useNetwork ? "薄隱藏層取最大 → 買 / 持 / 平倉；搜尋主力喺週期 / 門檻" : "SMA / MACD / RSI / 威廉 多數票買入；升勢要 RSI+威廉齊過熱先平倉，否則單一過熱平倉"}
                         termination={isMonteCarlo ? "尾 40% 測試主分 + 60% 訓練輔助；每批保留全域最佳" : "尾 40% 測試主分 + 60% 訓練輔助；移民只重抽 head（參數）"}
                         title={isMonteCarlo ? "點樣套用蒙地卡羅優化" : "點樣套用遺傳演算法"}
                     />
@@ -551,7 +552,7 @@ const MarketChart = React.memo<MarketChartProps>(
                     {hasReplay ? (
                         <React.Fragment>
                             <Line connectNulls={false} dataKey="buy" dot={BUY_DOT} isAnimationActive={false} name="買入" stroke="none" yAxisId="price" />
-                            <Line connectNulls={false} dataKey="sell" dot={SELL_DOT} isAnimationActive={false} name="沽空" stroke="none" yAxisId="price" />
+                            <Line connectNulls={false} dataKey="sell" dot={SELL_DOT} isAnimationActive={false} name="平倉" stroke="none" yAxisId="price" />
                         </React.Fragment>
                     ) : null}
                     {indicatorView === "price" && hasReplay && parameters ? (
@@ -694,7 +695,7 @@ const ParameterValue = React.memo(({label, value}: {label: string; value: string
 
 async function loadMarketData(symbol: string): Promise<MarketDataResponse> {
     const normalized = symbol.trim().toUpperCase() || "QQQ";
-    const response = await fetch(`/api/market-data?symbol=${encodeURIComponent(normalized)}&range=max&interval=1d`);
+    const response = await fetch(`/api/market-data?symbol=${encodeURIComponent(normalized)}&range=10y&interval=1d`);
     const payload = (await response.json()) as MarketDataResponse | {error: string};
     if (!response.ok || "error" in payload) {
         throw new Error("error" in payload ? payload.error : "下載市場數據失敗。");

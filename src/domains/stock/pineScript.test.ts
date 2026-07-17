@@ -3,7 +3,7 @@ import {createPineScript, createNetworkDecisionLines, decodeLayers, evaluatePine
 import {createStockSeedGenomes, decodeStockGenome, STOCK_GENE_COUNT, STOCK_NETWORK_GENE_COUNT, STOCK_TOPOLOGY} from "./strategyGenome";
 
 describe("Pine Script export", () => {
-    it("embeds optimized parameters, multi-layer network, and long/short orders", () => {
+    it("embeds optimized parameters, multi-layer network, and long/flat orders", () => {
         const genome = Array.from({length: STOCK_GENE_COUNT}, (_, index) => Math.sin(index) * 0.4);
         const {parameters} = decodeStockGenome(genome);
         const script = createPineScript(genome, "QQQ");
@@ -50,14 +50,15 @@ describe("Pine Script export", () => {
         expect(script).not.toContain("f3 = clamp((close / close[1]");
         expect(script).toContain("18 → 10 → 5 → 3");
         expect(script).toContain('strategy.entry("Long", strategy.long)');
-        expect(script).toContain('strategy.entry("Short", strategy.short)');
-        expect(script).not.toContain('strategy.close("Long")');
+        expect(script).toContain('strategy.close("Long")');
+        expect(script).not.toContain('strategy.entry("Short"');
+        expect(script).not.toContain('strategy.close("Short")');
         // Parity with browser sim: margin + sticky stay (no min-hold hard lock)
         expect(script).toContain("actionMargin = 0.08");
         expect(script).toContain("stayIfFlat = math.max(outHold, outSell)");
         expect(script).toContain("stayIfLong = math.max(outHold, outBuy)");
         expect(script).toContain("flatPos < 1");
-        expect(script).toContain("flatPos > -1");
+        expect(script).toContain("flatPos > 0");
         expect(script).not.toContain("minBarsLong");
         expect(script).not.toContain("barsInState");
     });

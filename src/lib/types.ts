@@ -176,6 +176,8 @@ export interface TradeMarker {
     date: string;
     action: "buy" | "sell";
     price: number;
+    /** Position after the fill: 0 flat / +1 long */
+    position: number;
 }
 
 export interface TradingPoint {
@@ -208,7 +210,12 @@ export interface TradingReplay {
     trainReturn: number;
     /** 測試段回報（fitness 主軸） */
     testReturn: number;
+    /** 全段買入持有（權益曲線對照） */
     benchmarkReturn: number;
+    /** 訓練段買入持有（同 trainReturn 對齊） */
+    trainBenchmarkReturn: number;
+    /** 測試段買入持有（同 testReturn 對齊） */
+    testBenchmarkReturn: number;
     sharpe: number;
     maxDrawdown: number;
     optimizedParameters: OptimizedIndicatorParameters;

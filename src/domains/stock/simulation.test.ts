@@ -56,15 +56,17 @@ describe("stock simulation", () => {
         expect(trainEnd).toBe(600);
     });
 
-    it("maps network outputs to long/short (no flat close)", () => {
+    it("maps network outputs to long/flat only (sell = close)", () => {
         expect(decidePositionFromNetwork([0.9, 0.1, 0.0], 0)).toBe(1);
         expect(decidePositionFromNetwork([0.1, 0.9, 0.2], 1)).toBe(1);
-        expect(decidePositionFromNetwork([0.1, 0.2, 0.9], 1)).toBe(-1);
+        // Long + clear sell → flat
+        expect(decidePositionFromNetwork([0.1, 0.2, 0.9], 1)).toBe(0);
         expect(decidePositionFromNetwork([0.1, 0.9, 0.2], 0)).toBe(0);
-        expect(decidePositionFromNetwork([0.0, 0.1, 0.9], 0)).toBe(-1);
-        // Short: clear buy flips to long; weak buy stays short
+        // Flat + clear sell → stay flat (no short)
+        expect(decidePositionFromNetwork([0.0, 0.1, 0.9], 0)).toBe(0);
+        // Legacy short treated as flat: clear buy → long
         expect(decidePositionFromNetwork([0.9, 0.1, 0.0], -1)).toBe(1);
-        expect(decidePositionFromNetwork([0.1, 0.9, 0.2], -1)).toBe(-1);
+        expect(decidePositionFromNetwork([0.1, 0.9, 0.2], -1)).toBe(0);
     });
 
     it("ignores weak buy/sell edges that barely beat hold (margin)", () => {
@@ -74,30 +76,33 @@ describe("stock simulation", () => {
         expect(decidePositionFromNetwork([0.5, 0.1, 0.0], 0, 0.08)).toBe(1);
         // sell barely above hold — stay long
         expect(decidePositionFromNetwork([0.0, 0.1, 0.12], 1, 0.08)).toBe(1);
-        // clear sell → short
-        expect(decidePositionFromNetwork([0.0, 0.1, 0.5], 1, 0.08)).toBe(-1);
+        // clear sell → flat
+        expect(decidePositionFromNetwork([0.0, 0.1, 0.5], 1, 0.08)).toBe(0);
     });
 
-    it("uses position-sticky decisions when buy≈sell (anti thrash)", () => {
+    it("uses position-sticky long/flat decisions (anti thrash)", () => {
         // Long: sell must beat max(hold, buy)+margin — noisy sell above buy alone is not enough
         expect(decidePositionFromNetwork([0.55, 0.1, 0.6], 1, 0.08)).toBe(1);
-        // Long: clear sell over the buy channel → flip short
-        expect(decidePositionFromNetwork([0.5, 0.1, 0.7], 1, 0.08)).toBe(-1);
+        // Long: clear sell → exit to flat
+        expect(decidePositionFromNetwork([0.5, 0.1, 0.7], 1, 0.08)).toBe(0);
         // Flat: buy must beat max(hold, sell)+margin
         expect(decidePositionFromNetwork([0.6, 0.1, 0.55], 0, 0.08)).toBe(0);
         expect(decidePositionFromNetwork([0.7, 0.1, 0.5], 0, 0.08)).toBe(1);
-        // Short: buy must beat max(hold, sell)+margin
-        expect(decidePositionFromNetwork([0.6, 0.1, 0.55], -1, 0.08)).toBe(-1);
-        expect(decidePositionFromNetwork([0.7, 0.1, 0.5], -1, 0.08)).toBe(1);
+        // Flat: clear sell → stay flat (never open short)
+        expect(decidePositionFromNetwork([0.0, 0.1, 0.7], 0, 0.08)).toBe(0);
     });
 
-    it("never stacks same-action fills (binary long/short flips)", () => {
+    it("records absolute position on each fill (long/flat only)", () => {
         const rising = createMarketData(700);
         for (const seed of createStockSeedGenomes()) {
             for (const useNetwork of [true, false]) {
                 const replay = createTradingReplay(seed, rising, useNetwork);
-                for (let index = 1; index < replay.trades.length; index += 1) {
-                    expect(replay.trades[index].action).not.toBe(replay.trades[index - 1].action);
+                let position = 0;
+                for (const trade of replay.trades) {
+                    expect([0, 1]).toContain(trade.position);
+                    expect(Math.abs(trade.position - position)).toBe(1);
+                    expect(trade.position).not.toBe(position);
+                    position = trade.position;
                 }
             }
         }
@@ -128,12 +133,12 @@ describe("stock simulation", () => {
         expect(Number.isFinite(evaluateStockGenome(thrash, rising, true))).toBe(true);
     });
 
-    it("tracks long/short position from the trade log before a date", () => {
+    it("tracks long/flat position from the trade log before a date", () => {
         expect(
             positionBeforeDate(
                 [
-                    {date: "2020-01-02", action: "buy", price: 100},
-                    {date: "2020-01-10", action: "sell", price: 110},
+                    {date: "2020-01-02", action: "buy", price: 100, position: 1},
+                    {date: "2020-01-10", action: "sell", price: 110, position: 0},
                 ],
                 "2020-01-05"
             )
@@ -141,12 +146,12 @@ describe("stock simulation", () => {
         expect(
             positionBeforeDate(
                 [
-                    {date: "2020-01-02", action: "buy", price: 100},
-                    {date: "2020-01-10", action: "sell", price: 110},
+                    {date: "2020-01-02", action: "buy", price: 100, position: 1},
+                    {date: "2020-01-10", action: "sell", price: 110, position: 0},
                 ],
                 "2020-01-10"
             )
-        ).toBe(-1);
+        ).toBe(0);
         expect(positionBeforeDate([], "2020-01-01")).toBe(0);
     });
 
@@ -159,10 +164,9 @@ describe("stock simulation", () => {
             expect(value).toBeGreaterThanOrEqual(-1);
             expect(value).toBeLessThanOrEqual(1);
         });
-        // 持倉特徵喺 index 13（N 日新低喺 12）：做多=1、空倉=0、做空=-1
+        // 持倉特徵喺 index 13（N 日新低喺 12）：做多=1、空倉=0
         expect(features[13]).toBe(1);
         expect(buildNetworkFeatures(columns, Math.min(50, columns.length - 1), 0, DEFAULT_INDICATOR_PARAMETERS)[13]).toBe(0);
-        expect(buildNetworkFeatures(columns, Math.min(50, columns.length - 1), -1, DEFAULT_INDICATOR_PARAMETERS)[13]).toBe(-1);
     });
 
     it("does not include raw OHLC candle structure in the feature vector", () => {
@@ -215,13 +219,14 @@ describe("stock simulation", () => {
         columns.williamsR[index] = DEFAULT_INDICATOR_PARAMETERS.williamsBuyThreshold;
         expect(decidePositionFromRules(columns, index, 0, DEFAULT_INDICATOR_PARAMETERS)).toBe(1);
 
-        // Downtrend: a single overbought exit is enough to short.
+        // Downtrend: a single overbought exit flattens long; flat stays flat (no short).
         columns.rsi[index] = DEFAULT_INDICATOR_PARAMETERS.rsiSellThreshold;
         columns.williamsR[index] = -50;
-        expect(decidePositionFromRules(columns, index, 1, DEFAULT_INDICATOR_PARAMETERS)).toBe(-1);
+        expect(decidePositionFromRules(columns, index, 1, DEFAULT_INDICATOR_PARAMETERS)).toBe(0);
+        expect(decidePositionFromRules(columns, index, 0, DEFAULT_INDICATOR_PARAMETERS)).toBe(0);
     });
 
-    it("requires both exits to short while the SMA trend is up (rule mode)", () => {
+    it("requires both exits to leave long while the SMA trend is up (rule mode)", () => {
         const columns = getIndicatorColumns(points, DEFAULT_INDICATOR_PARAMETERS);
         const index = Math.min(50, columns.length - 1);
         columns.smaFast[index] = 110;
@@ -234,8 +239,9 @@ describe("stock simulation", () => {
         expect(decidePositionFromRules(columns, index, 1, DEFAULT_INDICATOR_PARAMETERS)).toBe(1);
 
         columns.williamsR[index] = DEFAULT_INDICATOR_PARAMETERS.williamsSellThreshold;
-        // Both exits fire → flip short even in uptrend.
-        expect(decidePositionFromRules(columns, index, 1, DEFAULT_INDICATOR_PARAMETERS)).toBe(-1);
+        // Both exits fire → flatten long; flat stays cash (no short).
+        expect(decidePositionFromRules(columns, index, 1, DEFAULT_INDICATOR_PARAMETERS)).toBe(0);
+        expect(decidePositionFromRules(columns, index, 0, DEFAULT_INDICATOR_PARAMETERS)).toBe(0);
     });
 
     it("scores seed genomes finitely on a rising market", () => {
@@ -288,6 +294,17 @@ describe("stock simulation", () => {
             expect(buyFitness).toBeGreaterThan(sellFitness);
         }
         expect(buyReplay.trainReturn).toBeGreaterThan(0.08);
+    });
+
+    it("reports segment buy-and-hold returns aligned with train/test", () => {
+        const rising = createMarketData(700);
+        const seed = createStockSeedGenomes()[0];
+        const replay = createTradingReplay(seed, rising, true);
+        expect(replay.trainBenchmarkReturn).toBeGreaterThan(0);
+        expect(replay.testBenchmarkReturn).toBeGreaterThan(0);
+        // Full-period B&H should be near compound of the two segment B&Hs (fixture is steadily rising).
+        expect(replay.benchmarkReturn).toBeGreaterThan(replay.trainBenchmarkReturn);
+        expect(replay.benchmarkReturn).toBeGreaterThan(replay.testBenchmarkReturn);
     });
 
     it("weights test return above train return in fitness", () => {

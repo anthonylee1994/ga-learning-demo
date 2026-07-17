@@ -41,14 +41,16 @@ export function createApp(): express.Express {
         const symbol = String(request.query.symbol ?? "QQQ")
             .trim()
             .toUpperCase();
-        const range = String(request.query.range ?? "max");
+        // Default 10y — full "max" history (1999+) lets GA overfit the dot-com crash for huge train %.
+        const range = String(request.query.range ?? "10y");
         const interval = String(request.query.interval ?? "1d");
-        if (!SYMBOL_PATTERN.test(symbol) || range !== "max" || interval !== "1d") {
+        if (!SYMBOL_PATTERN.test(symbol) || (range !== "10y" && range !== "max") || interval !== "1d") {
             response.status(400).json({error: "Ticker、range 或 interval 格式無效。"});
             return;
         }
 
-        const cached = cache.get(symbol);
+        const cacheKey = `${symbol}:${range}:${interval}`;
+        const cached = cache.get(cacheKey);
         if (cached && cached.expiresAt > Date.now()) {
             response.json(cached.payload);
             return;
@@ -56,8 +58,14 @@ export function createApp(): express.Express {
 
         try {
             const period2 = new Date();
+            const period1 = new Date(period2);
+            if (range === "10y") {
+                period1.setFullYear(period1.getFullYear() - 10);
+            } else {
+                period1.setFullYear(1900, 0, 1);
+            }
             const result = await yahooFinance.chart(symbol, {
-                period1: "1900-01-01",
+                period1,
                 period2,
                 interval: "1d",
                 return: "array",
@@ -66,14 +74,18 @@ export function createApp(): express.Express {
                 if (quote.open === null || quote.high === null || quote.low === null || quote.close === null || quote.volume === null) {
                     return [];
                 }
+                // Align OHLC to adjClose so overnight/intraday PnL matches dividend/split-adjusted equity.
+                const close = quote.close;
+                const adjClose = quote.adjclose ?? close;
+                const factor = close !== 0 ? adjClose / close : 1;
                 return [
                     {
                         date: quote.date.toISOString().slice(0, 10),
-                        open: quote.open,
-                        high: quote.high,
-                        low: quote.low,
-                        close: quote.close,
-                        adjClose: quote.adjclose ?? null,
+                        open: quote.open * factor,
+                        high: quote.high * factor,
+                        low: quote.low * factor,
+                        close: adjClose,
+                        adjClose,
                         volume: quote.volume,
                     },
                 ];
@@ -91,7 +103,7 @@ export function createApp(): express.Express {
                 fetchedAt: new Date().toISOString(),
                 points,
             };
-            cache.set(symbol, {expiresAt: Date.now() + CACHE_TTL, payload});
+            cache.set(cacheKey, {expiresAt: Date.now() + CACHE_TTL, payload});
             response.json(payload);
         } catch (error) {
             const message = error instanceof Error ? error.message : "Yahoo Finance request failed";

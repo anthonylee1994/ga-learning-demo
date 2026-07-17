@@ -1,5 +1,5 @@
 /**
- * Stock 交易模擬：genome = 指標參數 +（可選）NN 權重，喺歷史 K 線上做 long / short。
+ * Stock 交易模擬：genome = 指標參數 +（可選）NN 權重，喺歷史 K 線上做 long / flat。
  *
  * 流程概覽：
  * 1. evaluateStockGenome — GA 評分：test（尾 40%）為主 + train（60%）輔助
@@ -7,10 +7,10 @@
  * 3. 成交：T 日收市決策 → T+1 開盤成交（overnight 用舊倉、intraday 用新倉）− 換手成本
  *
  * 兩種決策模式：
- * - useNetwork=true：NN 睇 18 維特徵 → 買／持／沽空（持倉 sticky + margin 先轉倉）
+ * - useNetwork=true：NN 睇 18 維特徵 → 買／持／平倉（持倉 sticky + margin 先轉倉）
  * - useNetwork=false：規則投票（SMA / MACD / RSI / Williams）
  *
- * 倉位 ∈ {-1, 0, 1}：開局可空倉；買入 → 做多，沽空 → 做空（唔再平倉落現金）。
+ * 倉位 ∈ {0, 1}：做多 或 空倉（賣出 = 平倉落現金，唔做沽空）。
  * 唔再硬 lock 最少持倉日數；thrash 靠 0.15% 成本 + fitness 換手罰（meanTurnover）打壓。
  */
 import {createForwardRunner} from "../../lib/neuralNetwork";
@@ -44,7 +44,7 @@ export const STOCK_INPUT_LABELS = [
 ] as const;
 
 /** 對應 3 維輸出 */
-export const STOCK_OUTPUT_LABELS = ["買入", "持有", "沽空"] as const;
+export const STOCK_OUTPUT_LABELS = ["買入", "持有", "平倉"] as const;
 
 /** 模擬起始資金 */
 const STARTING_EQUITY = 10_000;
@@ -55,17 +55,20 @@ const STARTING_EQUITY = 10_000;
 const TRANSACTION_COST = 0.0015;
 /** 訓練段比例（資料切分）；其餘為 test（fitness 主軸） */
 const TRAIN_RATIO = 0.6;
-/** fitness 權重：test 回報優先於 train（打擊過擬合） */
-const FITNESS_TEST_WEIGHT = 0.55;
-const FITNESS_TRAIN_WEIGHT = 0.3;
-const FITNESS_ROBUST_WEIGHT = 0.15;
+/**
+ * fitness 權重：test 超額為主，train 只做輔助（防記熟舊卷攞 10,000%+ 假冠軍）。
+ * 截圖常見病：train 31,000% / test 輸大市 —— 絕對回報線性加權會令 train 淹沒 test。
+ */
+const FITNESS_TEST_WEIGHT = 0.8;
+const FITNESS_TRAIN_WEIGHT = 0.12;
+const FITNESS_ROBUST_WEIGHT = 0.08;
 /** 每條價格序列最多 cache 幾套指標參數（Float64Array，約 ~1MB／全歷史） */
 const MAX_INDICATOR_CACHE = 16;
 /**
  * NN 權重 L2 衰減係數。要細過 return scale，唔係 GA 寧願 cash 都好過 invest。
  * 夠細先可以令強 buy/hold bias seed 喺 mutation 下生存耐啲。
  */
-const WEIGHT_L2_PENALTY = 0.28;
+const WEIGHT_L2_PENALTY = 0.22;
 /**
  * NN 模式：轉倉要比「留守」大呢個 tanh 空間 margin。
  * 平手／近平手維持現狀 → 長倉段穩陣啲。
@@ -77,9 +80,12 @@ const ACTION_MARGIN = STOCK_ACTION_MARGIN;
 /**
  * fitness 換手罰：線性 + 二次。
  * 偶而轉倉（meanTurnover 細）扣少；日日 full flip 二次項爆罰（取代舊 min-hold hard lock）。
+ * 略鬆：long↔flat 換手已有 0.15% 成本，唔好再罰死正常進出。
  */
-const THRASH_LINEAR = 48;
-const THRASH_QUADRATIC = 140;
+const THRASH_LINEAR = 28;
+const THRASH_QUADRATIC = 80;
+/** 輸大市（log excess < 0）額外罰，逼冠軍貼住／贏過 buy-and-hold */
+const UNDERPERFORM_BENCH_PENALTY = 100;
 
 /** 兩段切法：train（輔助）/ test（主分） */
 export function getStockSplitIndices(length: number): {trainEnd: number} {
@@ -104,7 +110,7 @@ interface SegmentMetrics {
     sharpe: number;
     maxDrawdown: number;
     endingPosition: number;
-    /** 平均 |position| 曝險 ∈ [0,1]；全程空倉 ≈ 0（做多／做空都算入市） */
+    /** 平均 |position| 曝險 ∈ [0,1]；全程空倉 ≈ 0（做多先算入市） */
     meanExposure: number;
     /** 平均 |Δposition|／bar； thrash 策略偏高（成日 full flip） */
     meanTurnover: number;
@@ -153,12 +159,13 @@ export function getIndicatorSnapshots(points: MarketDataPoint[], parameters: Opt
  * GA fitness：test（尾 40%）為主，train（前 60%）輔助。
  *
  * 計分結構：
- *   0.55 * testScore    — 測試段回報／超額（主軸；可轉移先贏）
- * + 0.30 * trainScore   — 訓練段超額（輔助；唔俾淨背 test 噪音）
- * + 0.15 * robustScore  — train 前後半 soft floor（半段穩健）
+ *   0.80 * testScore    — 測試段超額／log 回報（主軸；可轉移先贏）
+ * + 0.12 * trainScore   — 訓練段（輕；防記熟舊卷）
+ * + 0.08 * robustScore  — train 前後半 soft floor
  * − L2(network)         — 淨 NN 模式先罰權重
  *
  * thrash 淨靠成本 + scoreSegment 換手罰，唔硬鎖持倉日數。
+ * 絕對回報用 log(1+r)，避免 train 300× 線性爆炸蓋過 test。
  */
 export function evaluateStockGenome(genome: Genome, points: MarketDataPoint[], useNetwork = true): number {
     const {parameters, networkGenome} = decodeStockGenome(genome);
@@ -185,30 +192,33 @@ export function evaluateStockGenome(genome: Genome, points: MarketDataPoint[], u
 }
 
 /**
- * 單段 score：excess return 優先，再加參與度／絕對回報，扣 thrash 同「永遠空倉」。
+ * 單段 score：以 log 回報 + 相對大盤超額為主，扣 thrash／空倉／輸大市。
  *
- * 調校目標：可轉移 > 紙上 thrash；
- * - 永遠空倉有硬罰
- * - thrash 用線性+二次罰（取代 min-hold hard lock；配合 0.15% 成本）
- * - 牛市要有曝險（做多）先贏；熊市沽空可貢獻 absolute return
- *
- * 對齊 buy-and-hold 時 excess 部分 ≈ 0。
+ * 調校目標：
+ * - 贏／貼 buy-and-hold 先係王道（輸大市有硬罰）
+ * - log(1+r) 壓縮極端 train 倍數，唔俾 10,000%+ 假冠軍
+ * - 永遠空倉有硬罰；thrash 二次罰
+ * - 牛市要有做多曝險
  */
 function scoreSegment(metrics: SegmentMetrics, columns: IndicatorColumns, start: number, end: number): number {
     const first = columns.close[start] || 1;
     const last = columns.close[end - 1] || first;
     const years = Math.max((end - start) / 252, 0.5);
     const benchmarkReturn = last / first - 1;
-    // log excess：策略相對大盤；clamp -0.99 防 log 爆
-    const logExcess = Math.log(1 + Math.max(metrics.totalReturn, -0.99)) - Math.log(1 + Math.max(benchmarkReturn, -0.99));
+    // log 空間：317× → ~5.8，唔再 317 倍線性碾壓
+    const logReturn = Math.log(1 + Math.max(metrics.totalReturn, -0.99));
+    const logBench = Math.log(1 + Math.max(benchmarkReturn, -0.99));
+    const logExcess = logReturn - logBench;
     const annualizedExcess = logExcess / years;
     // 幾乎唔入市：牛市窗口下差過弱 long
-    const cashPenalty = metrics.meanExposure < 0.08 ? 40 : metrics.meanExposure < 0.2 ? 12 : 0;
+    const cashPenalty = metrics.meanExposure < 0.08 ? 50 : metrics.meanExposure < 0.25 ? 18 : 0;
     // 換手：輕轉倉扣少；日日 full flip 二次項重罰
     const t = metrics.meanTurnover;
     const thrashPenalty = t * THRASH_LINEAR + t * t * THRASH_QUADRATIC;
+    // 輸大市：罰幅度跟住落後幾多（逼貼住 B&H，唔好淨 train 炫技）
+    const underBenchPenalty = logExcess < 0 ? -logExcess * UNDERPERFORM_BENCH_PENALTY : 0;
 
-    return annualizedExcess * 220 + logExcess * 45 + metrics.totalReturn * 55 + metrics.meanExposure * 24 + metrics.sharpe * 5 - metrics.maxDrawdown * 12 - thrashPenalty - cashPenalty;
+    return annualizedExcess * 220 + logExcess * 140 + logReturn * 55 + metrics.meanExposure * 30 + metrics.sharpe * 4 - metrics.maxDrawdown * 16 - thrashPenalty - cashPenalty - underBenchPenalty;
 }
 
 /** genome 權重均方（L2 用） */
@@ -238,6 +248,8 @@ export function createTradingReplay(genome: Genome, points: MarketDataPoint[], u
     const endEquity = equityAt(columns.length - 1);
     const firstClose = columns.close[0] || 1;
     const lastClose = columns.close[columns.length - 1] || firstClose;
+    const trainEndClose = columns.close[Math.max(0, trainEnd - 1)] || firstClose;
+    const testStartClose = columns.close[Math.min(trainEnd, columns.length - 1)] || trainEndClose;
 
     const tradingPoints: TradingPoint[] = new Array(columns.length);
     for (let index = 0; index < columns.length; index += 1) {
@@ -272,6 +284,8 @@ export function createTradingReplay(genome: Genome, points: MarketDataPoint[], u
         trainReturn: trainEquity / STARTING_EQUITY - 1,
         testReturn: trainEquity > 0 ? endEquity / trainEquity - 1 : 0,
         benchmarkReturn: columns.length > 1 ? lastClose / firstClose - 1 : 0,
+        trainBenchmarkReturn: trainEndClose / firstClose - 1,
+        testBenchmarkReturn: lastClose / testStartClose - 1,
         sharpe: full.sharpe,
         maxDrawdown: full.maxDrawdown,
         optimizedParameters: parameters,
@@ -279,14 +293,13 @@ export function createTradingReplay(genome: Genome, points: MarketDataPoint[], u
 }
 
 /**
- * 將 NN 輸出映射成 long(1)、flat(0) 或 short(-1)。
- * output[0]=買、[1]=持、[2]=沽空。
+ * 將 NN 輸出映射成 long(1) 或 flat(0)。
+ * output[0]=買、[1]=持、[2]=平倉。
  *
  * 持倉 sticky（堵 thrash）：
- * - 已做多：buy 當「留守」；淨得沽空明確贏 max(hold,buy)+margin 先翻空
- * - 已做空：sell 當「留守」；淨得買入明確贏 max(hold,sell)+margin 先翻多
- * - 空倉：買／沽都要明確贏對方通道 + margin；兩邊齊過取較強
- * 近平手維持原倉，減少 buy≈sell 時日日翻。
+ * - 已做多：buy 當「留守」；平倉明確贏 max(hold,buy)+margin → 落空倉
+ * - 空倉：買明確贏 max(hold,平倉)+margin → 做多（平倉訊號唔開空）
+ * 近平手維持原倉。
  */
 export function decidePositionFromNetwork(output: number[], position: number, margin = ACTION_MARGIN): number {
     const buy = output[0] ?? 0;
@@ -295,33 +308,19 @@ export function decidePositionFromNetwork(output: number[], position: number, ma
     if (position > 0) {
         const stay = Math.max(hold, buy);
         if (sell >= stay + margin) {
-            return -1;
+            return 0;
         }
         return 1;
     }
-    if (position < 0) {
-        const stay = Math.max(hold, sell);
-        if (buy >= stay + margin) {
-            return 1;
-        }
-        return -1;
-    }
-    const buyEdge = buy >= Math.max(hold, sell) + margin;
-    const sellEdge = sell >= Math.max(hold, buy) + margin;
-    if (buyEdge && sellEdge) {
-        return buy >= sell ? 1 : -1;
-    }
-    if (buyEdge) {
+    // Flat（或舊 short 當空倉）：淨得買入可開多
+    if (buy >= Math.max(hold, sell) + margin) {
         return 1;
-    }
-    if (sellEdge) {
-        return -1;
     }
     return 0;
 }
 
 /**
- * 由 trade log 還原「date 之前」嘅倉位（-1|0|1）。
+ * 由 trade log 還原「date 之前」嘅倉位（0|1）。
  * stock lab scrub NN activation 預覽時用。
  */
 export function positionBeforeDate(trades: TradeMarker[], date: string): number {
@@ -330,7 +329,7 @@ export function positionBeforeDate(trades: TradeMarker[], date: string): number 
         if (trade.date > date) {
             break;
         }
-        position = trade.action === "buy" ? 1 : -1;
+        position = trade.position;
     }
     return position;
 }
@@ -343,7 +342,7 @@ export function positionBeforeDate(trades: TradeMarker[], date: string): number 
  * 特徵分組：
  *   0–2   SMA 快慢／交叉
  *   3–12  動量／波動／量／新高／新低
- *   13    目前持倉（-1 沽空 / 0 空倉 / 1 做多）
+ *   13    目前持倉（0 空倉 / 1 做多）
  *   14–17 離 genome 解出嘅 RSI／Williams 買賣門檻距離
  */
 export function buildNetworkFeatures(
@@ -382,24 +381,14 @@ export function buildNetworkFeatures(
 /**
  * 規則模式：SMA / MACD / RSI / Williams 四票。
  * 買：多數贊成（≥2）→ 做多。
- * 沽空：RSI 或 Williams 超買；但上升趨勢（快 SMA > 慢）要兩個 exit 一齊先翻空，
- *     避免單指標「超買」喺強牛市提早翻空。
- * 超買訊號將長倉翻做空（唔再平倉落現金）；空倉亦可直接開空。
+ * 平倉：RSI 或 Williams 超買；上升趨勢要兩個 exit 一齊。
+ * 長倉遇平倉訊號 → 落現金；空倉唔開沽空。
  */
 export function decidePositionFromRules(columns: IndicatorColumns, index: number, position: number, parameters: OptimizedIndicatorParameters): number {
     const hasRsiExit = columns.rsi[index] >= parameters.rsiSellThreshold;
     const hasWilliamsExit = columns.williamsR[index] >= parameters.williamsSellThreshold;
-    if (position >= 0 && (hasRsiExit || hasWilliamsExit)) {
-        const uptrend = columns.smaFast[index] > columns.smaSlow[index];
-        if (uptrend) {
-            // 強趨勢：兩個動量 exit 齊先翻空
-            if (hasRsiExit && hasWilliamsExit) {
-                return -1;
-            }
-        } else if (hasRsiExit || hasWilliamsExit) {
-            return -1;
-        }
-    }
+    const uptrend = columns.smaFast[index] > columns.smaSlow[index];
+    const hasExit = uptrend ? hasRsiExit && hasWilliamsExit : hasRsiExit || hasWilliamsExit;
 
     const votes = [
         columns.smaFast[index] > columns.smaSlow[index] ? 1 : 0,
@@ -410,11 +399,18 @@ export function decidePositionFromRules(columns: IndicatorColumns, index: number
 
     const yes = votes.reduce((sum, vote) => sum + vote, 0);
     const needed = Math.max(1, Math.ceil(votes.length / 2));
-    if (yes >= needed) {
+    const hasBuy = yes >= needed;
+
+    if (position > 0) {
+        if (hasExit) {
+            return 0;
+        }
         return 1;
     }
-    // 唔夠票：維持現倉（做空會一直持有到買票夠數先翻多）
-    return position;
+    if (hasBuy) {
+        return 1;
+    }
+    return 0;
 }
 
 type PositionDecider = (index: number, position: number) => number;
@@ -637,6 +633,7 @@ function simulateColumnReplay(decide: PositionDecider, columns: IndicatorColumns
                 date: points[columns.warmup + index].date,
                 action: targetPosition > position ? "buy" : "sell",
                 price: columns.open[index],
+                position: targetPosition,
             });
         }
         position = targetPosition;

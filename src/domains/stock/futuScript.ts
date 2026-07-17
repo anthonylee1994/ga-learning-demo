@@ -6,7 +6,7 @@ import {decodeStockGenome} from "./strategyGenome";
 /**
  * Futu Python indicator export (IndicatorParser-compatible).
  * - No generator expressions / list comprehensions with `for` inside calls
- * - True state machine + f13 position feedback (matches Pine next-bar open fills)
+ * - True state machine + f13 position feedback (long/flat; matches Pine next-bar open fills)
  * - Plots SMA / BB / nDayHigh / nDayLow + buy/sell icons
  */
 export function createFutuPythonScript(genome: Genome, useNetwork = true): string {
@@ -413,8 +413,6 @@ def compute_signals():
 
         if position > 0:
             f13 = 1.0
-        elif position < 0:
-            f13 = -1.0
         else:
             f13 = 0.0
 
@@ -424,15 +422,15 @@ def compute_signals():
 
 ${decisionBlock}
 
-        # Flat 兩邊齊過：network 已喺 decision 內取強；rule 模式沽空優先。
+        # Long / flat only (matches decidePositionFromNetwork / Rules); sell = close to cash.
         if buy_signal and sell_signal and position == 0:
-            buy_signal = False
+            sell_signal = False
         if buy_signal and position < 1:
             enter[i] = 1
             position = 1
-        elif sell_signal and position > -1:
+        elif sell_signal and position > 0:
             exit_[i] = 1
-            position = -1
+            position = 0
 
         i = i + 1
 
@@ -603,33 +601,19 @@ function emitNetworkDecisionLoop(): string {
         out_hold = _dense(h2, OUT[1])
         out_sell = _dense(h2, OUT[2])
 
-        # Sticky + margin (matches decidePositionFromNetwork): long / short, no flat close.
+        # Sticky + margin (matches decidePositionFromNetwork): long / flat; sell = close.
         if position > 0:
             stay = out_hold
             if out_buy > stay:
                 stay = out_buy
             buy_signal = False
             sell_signal = out_sell >= stay + ACTION_MARGIN
-        elif position < 0:
-            stay = out_hold
-            if out_sell > stay:
-                stay = out_sell
-            sell_signal = False
-            buy_signal = out_buy >= stay + ACTION_MARGIN
         else:
             stay_buy = out_hold
             if out_sell > stay_buy:
                 stay_buy = out_sell
-            stay_sell = out_hold
-            if out_buy > stay_sell:
-                stay_sell = out_buy
             buy_signal = out_buy >= stay_buy + ACTION_MARGIN
-            sell_signal = out_sell >= stay_sell + ACTION_MARGIN
-            if buy_signal and sell_signal:
-                if out_buy >= out_sell:
-                    sell_signal = False
-                else:
-                    buy_signal = False`;
+            sell_signal = False`;
 }
 
 function emitRuleDecisionLoop(): string {
