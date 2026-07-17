@@ -41,8 +41,8 @@ const GA_DEFAULT_CONFIG: GAConfig = {
     seed: Math.round(Math.random() * 1_000_000),
     // Max speed ⇒ 0ms inter-generation delay (see workerRuntime scheduleNext).
     speed: 5,
-    // 預設規則模式：搜尋空間細、較易轉移；要神經演化再開。
-    useNeuralNetwork: false,
+    // 預設開神經網絡決策頭；可手動切返規則模式。
+    useNeuralNetwork: true,
 };
 
 /** 蒙地卡羅：較大批次、較高冠軍附近局部遊走比例。 */
@@ -53,7 +53,7 @@ const MC_DEFAULT_CONFIG: GAConfig = {
     eliteRate: 0,
     seed: Math.round(Math.random() * 1_000_000),
     speed: 5,
-    useNeuralNetwork: false,
+    useNeuralNetwork: true,
 };
 
 type IndicatorView = "price" | "momentum" | "macd" | "risk" | "newHigh" | "newLow";
@@ -94,6 +94,16 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
             seed: Math.round(Math.random() * 1_000_000),
         },
         data: trainingData,
+        restoreChampion: (genome, points, config) => {
+            if (!points?.length) {
+                return null;
+            }
+            const useNeuralNetwork = config.useNeuralNetwork !== false;
+            return {
+                replay: createTradingReplay(genome, points, useNeuralNetwork),
+                fitness: evaluateStockGenome(genome, points, useNeuralNetwork),
+            };
+        },
     });
 
     const load = (symbol: string) => {
@@ -248,8 +258,8 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
             accent={isMonteCarlo ? "stock-mc" : "stock"}
             description={
                 isMonteCarlo
-                    ? "以蒙地卡羅隨機抽樣搜尋交易策略：尾 40% 測試回報為主分，60% 訓練輔助。次日開盤成交、0.15% 成本。預設規則模式（可開神經網絡）。"
-                    : "以遺傳演算法進化指標週期／門檻（可開神經網絡決策頭）。尾 40% 測試回報為主分，60% 訓練輔助。次日開盤成交、0.15% 成本。"
+                    ? "以蒙地卡羅隨機抽樣搜尋交易策略：尾 40% 測試回報為主分，60% 訓練輔助。次日開盤成交、0.15% 成本。預設開神經網絡（可切規則模式）。"
+                    : "以遺傳演算法進化指標週期／門檻同神經網絡決策頭。尾 40% 測試回報為主分，60% 訓練輔助。次日開盤成交、0.15% 成本。"
             }
             icon={isMonteCarlo ? <Dices size={20} strokeWidth={1.5} /> : <CandlestickChart size={20} strokeWidth={1.5} />}
             title={isMonteCarlo ? "股票交易 · 蒙地卡羅" : "股票交易 · 神經演化"}

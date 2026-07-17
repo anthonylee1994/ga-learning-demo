@@ -29,6 +29,10 @@ export const BreakerLab = React.memo(() => {
             ...DEFAULT_CONFIG,
             seed: Math.round(Math.random() * 1_000_000),
         },
+        restoreChampion: genome => ({
+            replay: createBreakerReplay(genome),
+            fitness: evaluateBreakerGenome(genome),
+        }),
     });
     const [liveInput, setLiveInput] = React.useState<number[] | null>(null);
     const [transferMessage, setTransferMessage] = React.useState<{type: "status" | "error"; text: string} | null>(null);

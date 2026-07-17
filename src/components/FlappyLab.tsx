@@ -29,6 +29,10 @@ export const FlappyLab = React.memo(() => {
             ...DEFAULT_CONFIG,
             seed: Math.round(Math.random() * 1_000_000),
         },
+        restoreChampion: genome => ({
+            replay: createFlappyReplay(genome),
+            fitness: evaluateFlappyGenome(genome),
+        }),
     });
     const [liveInput, setLiveInput] = React.useState<number[] | null>(null);
     const [transferMessage, setTransferMessage] = React.useState<{type: "status" | "error"; text: string} | null>(null);

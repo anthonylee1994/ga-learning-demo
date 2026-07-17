@@ -1,14 +1,24 @@
 import React from "react";
-import type {Champion, GAConfig, GenerationStats, PersistedLabStateV1, TopicId, WorkerCommand, WorkerEvent} from "../lib/types";
+import type {Champion, GAConfig, GenerationStats, Genome, PersistedLabStateV1, TopicId, WorkerCommand, WorkerEvent} from "../lib/types";
 
 type DemoTopic = Exclude<TopicId, "theory">;
 type TrainingStatus = "idle" | "running" | "paused";
 
-interface EvolutionDemoOptions<TData> {
+export interface RestoreChampionResult<TReplay> {
+    replay: TReplay;
+    fitness?: number;
+}
+
+interface EvolutionDemoOptions<TData, TReplay = unknown> {
     topic: DemoTopic;
     createWorker: () => Worker;
     defaultConfig: GAConfig;
     data?: TData;
+    /**
+     * Rebuild a champion replay from a persisted genome after refresh / data load.
+     * Return null while prerequisites are missing (e.g. stock market data still loading).
+     */
+    restoreChampion?: (genome: Genome, data: TData | undefined, config: GAConfig) => RestoreChampionResult<TReplay> | null;
 }
 
 export interface LoadChampionPayload<TReplay> {
@@ -40,7 +50,7 @@ export interface EvolutionDemoState<TReplay> {
 const STORAGE_KEY = "evolab-state-v1";
 const PERSIST_DEBOUNCE_MS = 750;
 
-export function useEvolutionDemo<TData, TReplay>(options: EvolutionDemoOptions<TData>): EvolutionDemoState<TReplay> {
+export function useEvolutionDemo<TData, TReplay>(options: EvolutionDemoOptions<TData, TReplay>): EvolutionDemoState<TReplay> {
     const {topic, defaultConfig, data} = options;
     const stored = React.useMemo(() => readStoredDemo(topic), [topic]);
     const [config, setConfig] = React.useState<GAConfig>(stored?.config ?? options.defaultConfig);
@@ -54,8 +64,17 @@ export function useEvolutionDemo<TData, TReplay>(options: EvolutionDemoOptions<T
     const createWorkerRef = React.useRef(options.createWorker);
     const configRef = React.useRef(config);
     const storedChampionRef = React.useRef(stored?.champion);
+    const storedBestFitnessRef = React.useRef(stored?.bestFitness);
+    const restoreChampionRef = React.useRef(options.restoreChampion);
     const persistTimerRef = React.useRef<number | null>(null);
     const skipNextConfigPersistRef = React.useRef(false);
+    /**
+     * Bumped on reset/start so late worker messages (and their startTransition callbacks)
+     * cannot resurrect a cleared champion / re-write localStorage.
+     */
+    const workerEpochRef = React.useRef(0);
+    /** False after reset until the user starts again — drop all worker generation payloads. */
+    const acceptWorkerResultsRef = React.useRef(true);
     /** Block live training champion thrash while paused / waiting for showcase. */
     const suppressChampionUpdatesRef = React.useRef(false);
     /** Next generation payload with a full replay is the pause showcase snapshot. */
@@ -64,6 +83,7 @@ export function useEvolutionDemo<TData, TReplay>(options: EvolutionDemoOptions<T
     const lockChampionRef = React.useRef(false);
 
     configRef.current = config;
+    restoreChampionRef.current = options.restoreChampion;
 
     const schedulePersist = React.useCallback(
         (nextConfig: GAConfig, genome?: number[], bestFitness?: number) => {
@@ -83,7 +103,13 @@ export function useEvolutionDemo<TData, TReplay>(options: EvolutionDemoOptions<T
         workerRef.current = worker;
         worker.onmessage = (message: MessageEvent<WorkerEvent<TReplay>>) => {
             const event = message.data;
+            const epochAtReceive = workerEpochRef.current;
+            const isStale = () => epochAtReceive !== workerEpochRef.current || !acceptWorkerResultsRef.current;
+
             if (event.type === "status") {
+                if (isStale()) {
+                    return;
+                }
                 setStatus(event.status);
                 if (event.status === "running") {
                     suppressChampionUpdatesRef.current = false;
@@ -95,14 +121,25 @@ export function useEvolutionDemo<TData, TReplay>(options: EvolutionDemoOptions<T
                     awaitingPauseShowcaseRef.current = false;
                 }
             } else if (event.type === "error") {
+                if (isStale()) {
+                    return;
+                }
                 setError(event.message);
                 setStatus("paused");
                 suppressChampionUpdatesRef.current = true;
                 awaitingPauseShowcaseRef.current = false;
             } else {
+                if (isStale()) {
+                    return;
+                }
                 // Stats/history are cheap; champion replays (stock series) are huge. Keep the
                 // generation ticker responsive without blocking paint on structured-clone payloads.
                 React.startTransition(() => {
+                    // Reset may have landed while this transition was queued — do not revive weights.
+                    if (isStale()) {
+                        return;
+                    }
+
                     setStats(event.stats);
                     setHistory(current => [...current.slice(-79), event.stats]);
 
@@ -118,6 +155,7 @@ export function useEvolutionDemo<TData, TReplay>(options: EvolutionDemoOptions<T
                     setChampion(current => {
                         const next = event.champion;
                         storedChampionRef.current = next.genome;
+                        storedBestFitnessRef.current = next.fitness;
                         if (next.replay !== undefined) {
                             return {genome: next.genome, fitness: next.fitness, replay: next.replay};
                         }
@@ -151,11 +189,41 @@ export function useEvolutionDemo<TData, TReplay>(options: EvolutionDemoOptions<T
     }, [schedulePersist, topic]);
 
     React.useEffect(() => {
-        if (data && workerRef.current) {
+        if (data !== undefined && workerRef.current) {
             const command: WorkerCommand<TData> = {type: "set-data", data};
             workerRef.current.postMessage(command);
             setStats(null);
             setHistory([]);
+        }
+
+        // Re-hydrate champion UI from localStorage after refresh / market data load.
+        // Labs without data (snake etc.) run once on mount; stock waits until points arrive.
+        const genome = storedChampionRef.current;
+        const restore = restoreChampionRef.current;
+        if (!genome?.length || !restore) {
+            if (data !== undefined) {
+                setChampion(null);
+            }
+            return;
+        }
+
+        try {
+            const restored = restore(genome, data, configRef.current);
+            if (!restored) {
+                // Prerequisites missing (e.g. market data still loading) — leave UI empty.
+                return;
+            }
+            setChampion({
+                genome: [...genome],
+                fitness: restored.fitness ?? storedBestFitnessRef.current ?? 0,
+                replay: restored.replay,
+            });
+            setShowcaseEpoch(value => value + 1);
+            setStatus(current => (current === "running" ? current : "paused"));
+        } catch {
+            // Corrupt / incompatible genome — drop so the next start seeds a fresh population.
+            storedChampionRef.current = undefined;
+            storedBestFitnessRef.current = undefined;
             setChampion(null);
         }
     }, [data]);
@@ -164,7 +232,7 @@ export function useEvolutionDemo<TData, TReplay>(options: EvolutionDemoOptions<T
         if (skipNextConfigPersistRef.current) {
             skipNextConfigPersistRef.current = false;
         } else {
-            schedulePersist(config, storedChampionRef.current);
+            schedulePersist(config, storedChampionRef.current, storedBestFitnessRef.current);
         }
         if (workerRef.current) {
             const command: WorkerCommand<TData> = {type: "update-config", config};
@@ -174,6 +242,9 @@ export function useEvolutionDemo<TData, TReplay>(options: EvolutionDemoOptions<T
 
     const start = () => {
         setError(null);
+        // New epoch: accept worker results again after a prior reset discarded them.
+        workerEpochRef.current += 1;
+        acceptWorkerResultsRef.current = true;
         suppressChampionUpdatesRef.current = false;
         awaitingPauseShowcaseRef.current = false;
         lockChampionRef.current = false;
@@ -194,11 +265,15 @@ export function useEvolutionDemo<TData, TReplay>(options: EvolutionDemoOptions<T
         workerRef.current?.postMessage({type: "pause"} satisfies WorkerCommand<TData>);
     };
     const reset = () => {
-        suppressChampionUpdatesRef.current = false;
+        // Invalidate any in-flight worker generation / pause-showcase (including queued transitions).
+        workerEpochRef.current += 1;
+        acceptWorkerResultsRef.current = false;
+        suppressChampionUpdatesRef.current = true;
         awaitingPauseShowcaseRef.current = false;
-        lockChampionRef.current = false;
+        lockChampionRef.current = true;
         workerRef.current?.postMessage({type: "reset"} satisfies WorkerCommand<TData>);
         storedChampionRef.current = undefined;
+        storedBestFitnessRef.current = undefined;
         setStatus("idle");
         setStats(null);
         setHistory([]);
@@ -208,7 +283,8 @@ export function useEvolutionDemo<TData, TReplay>(options: EvolutionDemoOptions<T
             window.clearTimeout(persistTimerRef.current);
             persistTimerRef.current = null;
         }
-        skipNextConfigPersistRef.current = config !== defaultConfig;
+        // Always skip the config-effect re-persist so we never write the cleared topic back.
+        skipNextConfigPersistRef.current = true;
         clearStoredDemo(topic);
         setConfig(defaultConfig);
     };
@@ -226,6 +302,7 @@ export function useEvolutionDemo<TData, TReplay>(options: EvolutionDemoOptions<T
 
         const fitness = payload.fitness ?? 0;
         storedChampionRef.current = payload.genome;
+        storedBestFitnessRef.current = fitness;
         setChampion({genome: payload.genome, fitness, replay: payload.replay});
         setShowcaseEpoch(value => value + 1);
         // Paused so canvas loops the imported champion (idle would freeze playback).
