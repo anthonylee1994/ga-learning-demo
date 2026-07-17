@@ -1474,6 +1474,20 @@ button.flow-stage {
     font-weight: 500;
     text-overflow: ellipsis;
 }
+.metric--good strong {
+    color: #63c6a1;
+}
+.metric--bad strong {
+    color: #e36f5b;
+}
+.metric--neutral strong {
+    color: #e7b955;
+}
+@media (max-width: 1100px) {
+    .metrics-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
 .simulation-stage {
     position: relative;
     display: grid;

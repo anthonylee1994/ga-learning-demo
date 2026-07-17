@@ -198,16 +198,40 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
         setMarketRange(current => (current.startIndex === range.startIndex && current.endIndex === range.endIndex ? current : range));
     }, []);
     const testDate = replay?.points.find(point => point.segment === "test")?.date;
-    const metricsExtra = React.useMemo(
-        () => [
-            {label: "訓練回報", value: replay ? formatPercent(replay.trainReturn) : "—"},
-            {label: "訓練·買入持有", value: replay ? formatPercent(replay.trainBenchmarkReturn) : "—"},
-            {label: "測試回報", value: replay ? formatPercent(replay.testReturn) : "—"},
-            {label: "測試·買入持有", value: replay ? formatPercent(replay.testBenchmarkReturn) : "—"},
-            {label: "最大回撤", value: replay ? formatPercent(-replay.maxDrawdown) : "—"},
-        ],
-        [replay]
-    );
+    const metricsExtra = React.useMemo(() => {
+        if (!replay) {
+            return [
+                {label: "訓練回報", value: "—"},
+                {label: "訓練·買入持有", value: "—"},
+                {label: "測試回報", value: "—"},
+                {label: "測試·買入持有", value: "—"},
+                {label: "測試超額", value: "—"},
+                {label: "最大回撤", value: "—"},
+            ];
+        }
+        const trainExcess = replay.trainReturn - replay.trainBenchmarkReturn;
+        const testExcess = replay.testReturn - replay.testBenchmarkReturn;
+        return [
+            {
+                label: "訓練回報",
+                value: formatPercent(replay.trainReturn),
+                tone: toneVsBench(trainExcess),
+            },
+            {label: "訓練·買入持有", value: formatPercent(replay.trainBenchmarkReturn)},
+            {
+                label: "測試回報",
+                value: formatPercent(replay.testReturn),
+                tone: toneVsBench(testExcess),
+            },
+            {label: "測試·買入持有", value: formatPercent(replay.testBenchmarkReturn)},
+            {
+                label: "測試超額（主軸）",
+                value: formatExcess(testExcess),
+                tone: toneVsBench(testExcess),
+            },
+            {label: "最大回撤", value: formatPercent(-replay.maxDrawdown), tone: "bad" as const},
+        ];
+    }, [replay]);
 
     /** Index into warm-up-aligned indicator columns for NN activation (driven by playback). */
     const [previewIndex, setPreviewIndex] = React.useState(0);
@@ -705,6 +729,22 @@ async function loadMarketData(symbol: string): Promise<MarketDataResponse> {
 
 function formatPercent(value: number): string {
     return new Intl.NumberFormat("zh-HK", {style: "percent", maximumFractionDigits: 1}).format(value);
+}
+
+/** 策略 − 買入持有（百分點）；正數 = 贏大市 */
+function formatExcess(excess: number): string {
+    const sign = excess > 0 ? "+" : "";
+    return `${sign}${(excess * 100).toFixed(1)} pp`;
+}
+
+function toneVsBench(excess: number): "good" | "bad" | "neutral" {
+    if (excess > 0.01) {
+        return "good";
+    }
+    if (excess < -0.01) {
+        return "bad";
+    }
+    return "neutral";
 }
 
 function formatBrushDate(value: string): string {

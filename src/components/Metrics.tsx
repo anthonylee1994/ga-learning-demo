@@ -1,15 +1,22 @@
 import React from "react";
 import type {GenerationStats} from "../lib/types";
 
+export interface MetricItem {
+    label: string;
+    value: string;
+    /** Highlight beat/miss vs benchmark (or other signed signal). */
+    tone?: "good" | "bad" | "neutral";
+}
+
 interface MetricsProps {
     stats: GenerationStats | null;
-    extra?: Array<{label: string; value: string}>;
+    extra?: MetricItem[];
     /** Override for the generation counter label (e.g. 蒙地卡羅 → 批次). */
     generationLabel?: string;
 }
 
 export const Metrics = React.memo<MetricsProps>(({stats, extra = [], generationLabel = "世代"}) => {
-    const values = [
+    const values: MetricItem[] = [
         {label: generationLabel, value: stats ? String(stats.generation) : "0"},
         {label: "最佳適應度", value: stats ? formatNumber(stats.bestFitness) : "—"},
         {label: "平均適應度", value: stats ? formatNumber(stats.averageFitness) : "—"},
@@ -19,7 +26,7 @@ export const Metrics = React.memo<MetricsProps>(({stats, extra = [], generationL
     return (
         <div className="metrics-grid">
             {values.map(item => (
-                <div className="metric" key={item.label}>
+                <div className={item.tone ? `metric metric--${item.tone}` : "metric"} key={item.label}>
                     <span>{item.label}</span>
                     <strong>{item.value}</strong>
                 </div>
