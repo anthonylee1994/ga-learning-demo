@@ -17,7 +17,7 @@ interface WorkerDefinition<TData, TReplay> {
     /** Optional head/tail mutation bias (stock lab prioritizes indicator periods). */
     mutationProfile?: MutationProfile;
     evaluate(genome: Genome, data: TData | undefined, config: GAConfig | null): number;
-    createReplay(genome: Genome, data: TData | undefined, config: GAConfig | null): TReplay;
+    createReplay(genome: Genome, data: TData | undefined, config: GAConfig | null, purpose: "progress" | "showcase"): TReplay;
 }
 
 export function setupEvolutionWorker<TData, TReplay>(definition: WorkerDefinition<TData, TReplay>): void {
@@ -142,7 +142,7 @@ export function setupEvolutionWorker<TData, TReplay>(definition: WorkerDefinitio
                 champion: {
                     genome: result.bestGenome,
                     fitness: result.bestFitness,
-                    ...(shouldRefreshReplay ? {replay: definition.createReplay(result.bestGenome, data, config)} : {}),
+                    ...(shouldRefreshReplay ? {replay: definition.createReplay(result.bestGenome, data, config, "progress")} : {}),
                 },
             });
             scheduleNext(token);
@@ -171,7 +171,7 @@ export function setupEvolutionWorker<TData, TReplay>(definition: WorkerDefinitio
                 genome: bestGenome,
                 fitness,
                 // Always rebuild so pause shows the true latest optimized network end-to-end.
-                replay: definition.createReplay(bestGenome, data, config),
+                replay: definition.createReplay(bestGenome, data, config, "showcase"),
             },
         });
         lastReplayFitness = fitness;

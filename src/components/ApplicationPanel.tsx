@@ -10,6 +10,7 @@ interface ApplicationPanelProps {
     title?: string;
     /** First row label — defaults to 基因體. */
     genomeLabel?: string;
+    fitnessLabel?: string;
 }
 
 export const ApplicationPanel = React.memo<ApplicationPanelProps>(props => {
@@ -35,7 +36,7 @@ export const ApplicationPanel = React.memo<ApplicationPanelProps>(props => {
                     <dd>{props.outputs}</dd>
                 </div>
                 <div>
-                    <dt>適應度</dt>
+                    <dt>{props.fitnessLabel ?? "適應度"}</dt>
                     <dd>{props.fitness}</dd>
                 </div>
                 <div>

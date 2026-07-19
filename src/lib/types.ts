@@ -185,8 +185,8 @@ export interface TradingPoint {
     close: number;
     strategy: number;
     benchmark: number;
-    /** train=輔助；test=fitness 主軸 */
-    segment: "train" | "test";
+    /** development 參與 walk-forward fitness；holdout 只喺暫停後揭示 */
+    segment: "development" | "holdout";
     smaFast: number;
     smaSlow: number;
     rsi: number;
@@ -207,15 +207,15 @@ export interface TradingPoint {
 export interface TradingReplay {
     points: TradingPoint[];
     trades: TradeMarker[];
-    trainReturn: number;
-    /** 測試段回報（fitness 主軸） */
-    testReturn: number;
+    developmentReturn: number;
+    /** 封存 holdout 回報；訓練中未評估所以係 null */
+    holdoutReturn: number | null;
     /** 全段買入持有（權益曲線對照） */
     benchmarkReturn: number;
-    /** 訓練段買入持有（同 trainReturn 對齊） */
-    trainBenchmarkReturn: number;
-    /** 測試段買入持有（同 testReturn 對齊） */
-    testBenchmarkReturn: number;
+    /** Development 買入持有（同 developmentReturn 對齊） */
+    developmentBenchmarkReturn: number;
+    /** 封存 holdout 買入持有；訓練中未評估所以係 null */
+    holdoutBenchmarkReturn: number | null;
     sharpe: number;
     maxDrawdown: number;
     optimizedParameters: OptimizedIndicatorParameters;

@@ -8,9 +8,10 @@ interface Props {
     showDiversity?: boolean;
     eyebrow?: string;
     title?: string;
+    emptyMessage?: string;
 }
 
-export const FitnessChart = React.memo<Props>(({history, showDiversity = true, eyebrow = "演化訊號", title = "適應度趨勢"}) => {
+export const FitnessChart = React.memo<Props>(({history, showDiversity = true, eyebrow = "演化訊號", title = "適應度趨勢", emptyMessage = "開始訓練後，呢度會顯示每一代嘅適應度。"}) => {
     return (
         <div className="chart-panel">
             <div className="panel-heading">
@@ -50,7 +51,7 @@ export const FitnessChart = React.memo<Props>(({history, showDiversity = true, e
                         </LineChart>
                     </ResponsiveContainer>
                 ) : (
-                    <div className="empty-chart">開始訓練後，呢度會顯示每一代嘅適應度。</div>
+                    <div className="empty-chart">{emptyMessage}</div>
                 )}
             </div>
         </div>

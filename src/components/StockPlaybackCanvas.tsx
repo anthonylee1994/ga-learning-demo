@@ -54,7 +54,7 @@ export const StockPlaybackCanvas = React.memo<Props>(({replay, speed, playing = 
         if (!playing || !replay?.points.length) {
             return;
         }
-        // Higher speed → more days per tick + shorter delay (full-history series needs chunking).
+        // Higher speed → more days per tick + shorter delay (15-year series needs chunking).
         const step = Math.max(1, Math.round(speed * 1.5));
         const frameMs = Math.max(16, 90 - speed * 12);
         const last = replay.points.length - 1;
@@ -331,12 +331,12 @@ function drawPlayback(context: CanvasRenderingContext2D, width: number, height: 
         context.fillText(slice[i].date.slice(0, 7), xAt(i), padT + plotH + 8);
     }
 
-    // Train / test badge on playhead day
+    // Development / sealed holdout badge on playhead day
     const segment = slice[slice.length - 1].segment;
     const badgeStyle =
-        segment === "test"
-            ? {fill: "rgba(231, 185, 85, 0.15)", stroke: "#e7b955", text: "#e7b955", label: "純樣本外測試"}
-            : {fill: "rgba(88, 214, 141, 0.12)", stroke: "#58d68d", text: "#58d68d", label: "訓練段"};
+        segment === "holdout"
+            ? {fill: "rgba(231, 185, 85, 0.15)", stroke: "#e7b955", text: "#e7b955", label: "封存樣本外測試"}
+            : {fill: "rgba(88, 214, 141, 0.12)", stroke: "#58d68d", text: "#58d68d", label: "開發段"};
     context.fillStyle = badgeStyle.fill;
     context.strokeStyle = badgeStyle.stroke;
     context.lineWidth = 1;
@@ -356,10 +356,10 @@ function drawPlayback(context: CanvasRenderingContext2D, width: number, height: 
 }
 
 function segmentLabel(segment: TradingReplay["points"][number]["segment"] | undefined): string {
-    if (segment === "test") {
-        return "測試";
+    if (segment === "holdout") {
+        return "封存測試";
     }
-    return "訓練";
+    return "開發段";
 }
 
 function drawLine(context: CanvasRenderingContext2D, points: {x: number; y: number}[], stroke: string, width: number): void {

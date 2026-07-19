@@ -13,7 +13,7 @@ interface MonteCarloWorkerDefinition<TData, TReplay> {
     seedGenomes?: Genome[];
     mutationProfile?: MutationProfile;
     evaluate(genome: Genome, data: TData | undefined, config: GAConfig | null): number;
-    createReplay(genome: Genome, data: TData | undefined, config: GAConfig | null): TReplay;
+    createReplay(genome: Genome, data: TData | undefined, config: GAConfig | null, purpose: "progress" | "showcase"): TReplay;
 }
 
 /**
@@ -121,7 +121,7 @@ export function setupMonteCarloWorker<TData, TReplay>(definition: MonteCarloWork
                 champion: {
                     genome: bestGenome,
                     fitness: bestFitnessSeen,
-                    ...(shouldRefreshReplay ? {replay: definition.createReplay(bestGenome, data, config)} : {}),
+                    ...(shouldRefreshReplay ? {replay: definition.createReplay(bestGenome, data, config, "progress")} : {}),
                 },
             });
             scheduleNext(token);
@@ -149,7 +149,7 @@ export function setupMonteCarloWorker<TData, TReplay>(definition: MonteCarloWork
             champion: {
                 genome: bestGenome,
                 fitness,
-                replay: definition.createReplay(bestGenome, data, config),
+                replay: definition.createReplay(bestGenome, data, config, "showcase"),
             },
         });
         lastReplayFitness = fitness;

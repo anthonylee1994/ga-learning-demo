@@ -7,13 +7,14 @@ import {
     evaluateStockGenome,
     getIndicatorColumns,
     getStockSplitIndices,
+    getStockWalkForwardFolds,
     positionBeforeDate,
 } from "./simulation";
 import {createStockSeedGenomes, decodeStockGenome, DEFAULT_INDICATOR_PARAMETERS, STOCK_GENE_COUNT, STOCK_TOPOLOGY} from "./strategyGenome";
 
 describe("stock simulation", () => {
     const genome = Array(STOCK_GENE_COUNT).fill(0);
-    // 三段切法要夠長（warmup 後仍有 train≥80、val≥30）
+    // Walk-forward + holdout 切法要夠長。
     const points = createMarketData(500);
 
     it("returns a finite fitness", () => {
@@ -31,13 +32,13 @@ describe("stock simulation", () => {
         expect(Number.isFinite(evaluateStockGenome(seed, points, false))).toBe(true);
     });
 
-    it("creates train / test equity data with network-backed decisions", () => {
+    it("creates development / holdout equity data with network-backed decisions", () => {
         const replay = createTradingReplay(genome, points);
         expect(replay.points.length).toBeGreaterThan(100);
-        expect(replay.points.some(point => point.segment === "train")).toBe(true);
-        expect(replay.points.every(point => point.segment === "train" || point.segment === "test")).toBe(true);
-        expect(replay.points.some(point => point.segment === "test")).toBe(true);
-        expect(Number.isFinite(replay.testReturn)).toBe(true);
+        expect(replay.points.some(point => point.segment === "development")).toBe(true);
+        expect(replay.points.every(point => point.segment === "development" || point.segment === "holdout")).toBe(true);
+        expect(replay.points.some(point => point.segment === "holdout")).toBe(true);
+        expect(Number.isFinite(replay.holdoutReturn)).toBe(true);
         expect(replay.benchmarkReturn).toBeGreaterThan(0);
         expect(replay.optimizedParameters).toEqual(
             expect.objectContaining({
@@ -51,9 +52,14 @@ describe("stock simulation", () => {
         );
     });
 
-    it("splits series into 60% train / 40% test", () => {
-        const {trainEnd} = getStockSplitIndices(1000);
-        expect(trainEnd).toBe(600);
+    it("reserves the final 20% and keeps every walk-forward fold before it", () => {
+        const {developmentEnd, holdoutStart} = getStockSplitIndices(1000);
+        const folds = getStockWalkForwardFolds(1000);
+        expect(developmentEnd).toBe(800);
+        expect(holdoutStart).toBe(800);
+        expect(folds.length).toBeGreaterThanOrEqual(1);
+        expect(folds.every(fold => fold.trainingEnd === fold.validationStart && fold.validationEnd <= holdoutStart)).toBe(true);
+        expect(folds.every((fold, index) => index === 0 || fold.validationStart === folds[index - 1].validationEnd)).toBe(true);
     });
 
     it("maps network outputs to long/flat only (sell = close)", () => {
@@ -127,7 +133,7 @@ describe("stock simulation", () => {
         const buyReplay = createTradingReplay(buySeed, rising, true);
         const choppyReplay = createTradingReplay(choppy, rising, true);
         // When buy-seed holds longer / trades less and earns more, fitness must not prefer thrash.
-        if (buyReplay.trades.length < choppyReplay.trades.length && buyReplay.trainReturn >= choppyReplay.trainReturn - 0.05) {
+        if (buyReplay.trades.length < choppyReplay.trades.length && buyReplay.developmentReturn >= choppyReplay.developmentReturn - 0.05) {
             expect(buyFit).toBeGreaterThan(choppyFit);
         }
         expect(Number.isFinite(evaluateStockGenome(thrash, rising, true))).toBe(true);
@@ -272,7 +278,7 @@ describe("stock simulation", () => {
         expect(buyFitness).toBeGreaterThan(sellFitness);
         // Fixture is strongly upward — buy-biased seed must actually enter and capture return.
         expect(buyReplay.trades.some(trade => trade.action === "buy")).toBe(true);
-        expect(buyReplay.trainReturn).toBeGreaterThan(0.1);
+        expect(buyReplay.developmentReturn).toBeGreaterThan(0.1);
     });
 
     it("prefers higher-return policies over cash-heavy ones on a rising market", () => {
@@ -289,44 +295,45 @@ describe("stock simulation", () => {
         const sellReplay = createTradingReplay(sellSeed, rising, true);
         const buyFitness = evaluateStockGenome(buySeed, rising, true);
         const sellFitness = evaluateStockGenome(sellSeed, rising, true);
-        // When buy-seed actually earns more train return, fitness must agree (return-first).
-        if (buyReplay.trainReturn > sellReplay.trainReturn + 0.02) {
+        // When buy-seed actually earns more development return, fitness must agree (return-first).
+        if (buyReplay.developmentReturn > sellReplay.developmentReturn + 0.02) {
             expect(buyFitness).toBeGreaterThan(sellFitness);
         }
-        expect(buyReplay.trainReturn).toBeGreaterThan(0.08);
+        expect(buyReplay.developmentReturn).toBeGreaterThan(0.08);
     });
 
-    it("reports segment buy-and-hold returns aligned with train/test", () => {
+    it("reports segment buy-and-hold returns aligned with development/holdout", () => {
         const rising = createMarketData(700);
         const seed = createStockSeedGenomes()[0];
         const replay = createTradingReplay(seed, rising, true);
-        expect(replay.trainBenchmarkReturn).toBeGreaterThan(0);
-        expect(replay.testBenchmarkReturn).toBeGreaterThan(0);
+        expect(replay.developmentBenchmarkReturn).toBeGreaterThan(0);
+        expect(replay.holdoutBenchmarkReturn).toBeGreaterThan(0);
         // Full-period B&H should be near compound of the two segment B&Hs (fixture is steadily rising).
-        expect(replay.benchmarkReturn).toBeGreaterThan(replay.trainBenchmarkReturn);
-        expect(replay.benchmarkReturn).toBeGreaterThan(replay.testBenchmarkReturn);
+        expect(replay.benchmarkReturn).toBeGreaterThan(replay.developmentBenchmarkReturn);
+        expect(replay.benchmarkReturn).toBeGreaterThan(replay.holdoutBenchmarkReturn ?? 0);
     });
 
-    it("weights test return above train return in fitness", () => {
-        const rising = createMarketData(700);
-        const buySeed = createStockSeedGenomes()[0];
-        const sellSeed = buySeed.slice();
-        const {networkGenome} = decodeStockGenome(buySeed);
-        const headLen = STOCK_GENE_COUNT - networkGenome.length;
-        const outputBiasStart = headLen + networkGenome.length - 3;
-        sellSeed[outputBiasStart] = -1.2;
-        sellSeed[outputBiasStart + 1] = 0.2;
-        sellSeed[outputBiasStart + 2] = 1.2;
-        const buyReplay = createTradingReplay(buySeed, rising, true);
-        const sellReplay = createTradingReplay(sellSeed, rising, true);
-        const buyFitness = evaluateStockGenome(buySeed, rising, true);
-        const sellFitness = evaluateStockGenome(sellSeed, rising, true);
-        // Rising fixture：買偏策略 test 亦應食到升浪；fitness 以 test 為主軸
-        expect(Number.isFinite(buyReplay.testReturn)).toBe(true);
-        expect(Number.isFinite(sellReplay.testReturn)).toBe(true);
-        if (buyReplay.testReturn > sellReplay.testReturn + 0.02) {
-            expect(buyFitness).toBeGreaterThan(sellFitness);
-        }
+    it("never lets sealed holdout prices affect fitness", () => {
+        const original = createMarketData(1000);
+        const {holdoutStart} = getStockSplitIndices(original.length);
+        const changedHoldout = original.map((point, index) => {
+            if (index < holdoutStart) {
+                return point;
+            }
+            const scale = index % 2 === 0 ? 0.2 : 5;
+            return {...point, open: point.open * scale, high: point.high * scale, low: point.low * scale, close: point.close * scale, adjClose: point.adjClose === null ? null : point.adjClose * scale};
+        });
+        const seed = createStockSeedGenomes()[0];
+
+        expect(evaluateStockGenome(seed, changedHoldout, true)).toBe(evaluateStockGenome(seed, original, true));
+        expect(createTradingReplay(seed, changedHoldout, true).holdoutReturn).not.toBe(createTradingReplay(seed, original, true).holdoutReturn);
+    });
+
+    it("keeps holdout sealed in progress replays", () => {
+        const replay = createTradingReplay(createStockSeedGenomes()[0], createMarketData(700), true, false);
+        expect(replay.holdoutReturn).toBeNull();
+        expect(replay.holdoutBenchmarkReturn).toBeNull();
+        expect(replay.points.every(point => point.segment === "development")).toBe(true);
     });
 
     it("marks fills on the next bar open (not signal close)", () => {

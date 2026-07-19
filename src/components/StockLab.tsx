@@ -179,10 +179,13 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
             return rawChartData;
         }
         const trades = new Map(replay.trades.map(trade => [trade.date, trade]));
-        return replay.points.map(point => {
+        const replayPoints = new Map(replay.points.map(point => [point.date, point]));
+        return rawChartData.map(point => {
+            const replayPoint = replayPoints.get(point.date);
             const trade = trades.get(point.date);
             return {
                 ...point,
+                ...replayPoint,
                 buy: trade?.action === "buy" ? trade.price : null,
                 sell: trade?.action === "sell" ? trade.price : null,
             };
@@ -197,37 +200,37 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
     const onMarketRangeChange = React.useCallback((range: {startIndex: number; endIndex: number}) => {
         setMarketRange(current => (current.startIndex === range.startIndex && current.endIndex === range.endIndex ? current : range));
     }, []);
-    const testDate = replay?.points.find(point => point.segment === "test")?.date;
+    const holdoutDate = replay?.points.find(point => point.segment === "holdout")?.date;
     const metricsExtra = React.useMemo(() => {
         if (!replay) {
             return [
-                {label: "訓練回報", value: "—"},
-                {label: "訓練·買入持有", value: "—"},
-                {label: "測試回報", value: "—"},
-                {label: "測試·買入持有", value: "—"},
-                {label: "測試超額", value: "—"},
+                {label: "開發段回報", value: "—"},
+                {label: "開發段·買入持有", value: "—"},
+                {label: "封存測試回報", value: "—"},
+                {label: "封存測試·買入持有", value: "—"},
+                {label: "封存測試超額", value: "—"},
                 {label: "最大回撤", value: "—"},
             ];
         }
-        const trainExcess = replay.trainReturn - replay.trainBenchmarkReturn;
-        const testExcess = replay.testReturn - replay.testBenchmarkReturn;
+        const developmentExcess = replay.developmentReturn - replay.developmentBenchmarkReturn;
+        const holdoutExcess = replay.holdoutReturn !== null && replay.holdoutBenchmarkReturn !== null ? replay.holdoutReturn - replay.holdoutBenchmarkReturn : null;
         return [
             {
-                label: "訓練回報",
-                value: formatPercent(replay.trainReturn),
-                tone: toneVsBench(trainExcess),
+                label: "開發段回報",
+                value: formatPercent(replay.developmentReturn),
+                tone: toneVsBench(developmentExcess),
             },
-            {label: "訓練·買入持有", value: formatPercent(replay.trainBenchmarkReturn)},
+            {label: "開發段·買入持有", value: formatPercent(replay.developmentBenchmarkReturn)},
             {
-                label: "測試回報",
-                value: formatPercent(replay.testReturn),
-                tone: toneVsBench(testExcess),
+                label: "封存測試回報",
+                value: replay.holdoutReturn === null ? "暫停後揭示" : formatPercent(replay.holdoutReturn),
+                ...(holdoutExcess === null ? {} : {tone: toneVsBench(holdoutExcess)}),
             },
-            {label: "測試·買入持有", value: formatPercent(replay.testBenchmarkReturn)},
+            {label: "封存測試·買入持有", value: replay.holdoutBenchmarkReturn === null ? "暫停後揭示" : formatPercent(replay.holdoutBenchmarkReturn)},
             {
-                label: "測試超額（主軸）",
-                value: formatExcess(testExcess),
-                tone: toneVsBench(testExcess),
+                label: "封存測試超額",
+                value: holdoutExcess === null ? "暫停後揭示" : formatExcess(holdoutExcess),
+                ...(holdoutExcess === null ? {} : {tone: toneVsBench(holdoutExcess)}),
             },
             {label: "最大回撤", value: formatPercent(-replay.maxDrawdown), tone: "bad" as const},
         ];
@@ -264,8 +267,8 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
             const date = marketData.points[columns.warmup + index]?.date ?? "";
             const position = liveDay?.index === index ? liveDay.position : replay ? positionBeforeDate(replay.trades, date) : 0;
             const input = buildNetworkFeatures(columns, index, position, decoded.parameters);
-            const {trainEnd} = getStockSplitIndices(columns.length);
-            const segmentLabel = index < trainEnd ? "訓練" : "測試";
+            const {holdoutStart} = getStockSplitIndices(marketData.points.length, columns.warmup);
+            const segmentLabel = index < holdoutStart ? "開發段" : "封存測試";
             return {
                 input,
                 index,
@@ -283,8 +286,8 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
             accent={isMonteCarlo ? "stock-mc" : "stock"}
             description={
                 isMonteCarlo
-                    ? "以蒙地卡羅隨機抽樣搜尋交易策略：尾 40% 測試回報為主分，60% 訓練輔助。次日開盤成交、0.15% 成本。預設開神經網絡（可切規則模式）。"
-                    : "以遺傳演算法進化指標週期／門檻同神經網絡決策頭。尾 40% 測試回報為主分，60% 訓練輔助。次日開盤成交、0.15% 成本。"
+                    ? "以蒙地卡羅隨機抽樣搜尋交易策略：前 80% 歷史數據會分段反覆測試，最後 20% 保留到暫停先做最終驗證。回報已計翌日開市成交同 0.15% 交易成本。"
+                    : "以遺傳演算法進化指標週期、買賣門檻同神經網絡決策。前 80% 歷史數據會分段反覆測試，最後 20% 保留到暫停先做最終驗證。"
             }
             icon={isMonteCarlo ? <Dices size={20} strokeWidth={1.5} /> : <CandlestickChart size={20} strokeWidth={1.5} />}
             title={isMonteCarlo ? "股票交易 · 蒙地卡羅" : "股票交易 · 神經演化"}
@@ -318,7 +321,7 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
             ) : null}
             <div className="workspace-grid">
                 <main className="demo-main">
-                    <Metrics extra={metricsExtra} generationLabel={isMonteCarlo ? "批次" : "世代"} stats={demo.stats} />
+                    <Metrics averageFitnessLabel="平均策略評分" bestFitnessLabel="最佳策略評分" extra={metricsExtra} generationLabel={isMonteCarlo ? "批次" : "世代"} stats={demo.stats} />
                     <div className="simulation-stage stock-stage">
                         <div className="stage-overlay">
                             <span>{marketData?.symbol ?? "QQQ"} · 逐日重播</span>
@@ -423,7 +426,7 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
                                     onRangeChange={onMarketRangeChange}
                                     parameters={chartParameters}
                                     replay={replay}
-                                    testDate={testDate}
+                                    holdoutDate={holdoutDate}
                                 />
                             ) : (
                                 <div className="empty-chart">未有市場數據。</div>
@@ -437,12 +440,20 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
                                 <h3>策略 vs 買入持有</h3>
                             </div>
                         </div>
-                        <div className="chart-height-md">{replay ? <EquityChart points={replay.points} testDate={testDate} /> : <div className="empty-chart">訓練出冠軍後會顯示權益曲線。</div>}</div>
+                        <div className="chart-height-md">
+                            {replay ? <EquityChart holdoutDate={holdoutDate} points={replay.points} /> : <div className="empty-chart">訓練出冠軍後會顯示權益曲線。</div>}
+                        </div>
                     </section>
-                    <FitnessChart eyebrow={isMonteCarlo ? "搜尋訊號" : "演化訊號"} history={demo.history} title={isMonteCarlo ? "批次適應度趨勢" : "適應度趨勢"} />
+                    <FitnessChart
+                        emptyMessage={isMonteCarlo ? "開始搜尋後，呢度會顯示每一批嘅策略評分。" : "開始訓練後，呢度會顯示每一代嘅策略評分。"}
+                        eyebrow={isMonteCarlo ? "搜尋訊號" : "演化訊號"}
+                        history={demo.history}
+                        title={isMonteCarlo ? "每批策略評分趨勢" : "策略評分趨勢"}
+                    />
                     <ApplicationPanel
                         eyebrow={isMonteCarlo ? "蒙地卡羅對應" : "GA 對應"}
-                        fitness="test 80% + train 12% + robust 8% − L2；log 回報＋超額／輸大市罰；次日開盤；0.15% 成本；長→空倉→空；換手 thrash 罰"
+                        fitness="用前 80% 歷史數據逐段試策略，表現穩定先有高分：中間表現佔 50%、平均表現佔 30%、最差一段佔 20%。跑輸買入持有、回撤太大、太少入市、轉倉太密或神經網絡太複雜都會扣分。最後 20% 數據唔參與評分，只會喺暫停後做最終驗證。回報已計翌日開市成交同 0.15% 交易成本。"
+                        fitnessLabel="策略點樣評分"
                         genome={
                             isMonteCarlo
                                 ? `${STOCK_PARAMETER_GENE_COUNT} 週期/門檻 + ${STOCK_NETWORK_GENE_COUNT} 決策頭；每批混合全域隨機抽樣 + 冠軍附近局部遊走（局部比例 = 滑桿）；開局有接近買入持有等種子`
@@ -451,7 +462,11 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
                         genomeLabel={isMonteCarlo ? "參數向量" : "基因體"}
                         inputs="18 維特徵：全部指標常開（含 N 日新高／新低）+ 持倉狀態；唔餵開高低收。"
                         outputs={useNetwork ? "薄隱藏層取最大 → 買 / 持 / 平倉；搜尋主力喺週期 / 門檻" : "SMA / MACD / RSI / 威廉 多數票買入；升勢要 RSI+威廉齊過熱先平倉，否則單一過熱平倉"}
-                        termination={isMonteCarlo ? "尾 40% 測試主分 + 60% 訓練輔助；每批保留全域最佳" : "尾 40% 測試主分 + 60% 訓練輔助；移民只重抽 head（參數）"}
+                        termination={
+                            isMonteCarlo
+                                ? "用前 80% 歷史數據揀最高分策略；暫停後先用最後 20% 做最終驗證；每批保留目前最高分策略"
+                                : "用前 80% 歷史數據揀最高分策略；暫停後先用最後 20% 做最終驗證；每代加入重新抽樣嘅指標參數"
+                        }
                         title={isMonteCarlo ? "點樣套用蒙地卡羅優化" : "點樣套用遺傳演算法"}
                     />
                 </main>
@@ -506,7 +521,7 @@ const StockLabView = React.memo(({optimizer}: {optimizer: StockOptimizer}) => {
                             genome={demo.champion?.genome}
                             onImport={handleImportGenome}
                             onMessage={setTransferMessage}
-                            score={replay ? Math.round(replay.trainReturn * 1000) / 10 : undefined}
+                            score={replay ? Math.round(replay.developmentReturn * 1000) / 10 : undefined}
                             topic={topic}
                             topology={STOCK_TOPOLOGY}
                         />
@@ -545,18 +560,18 @@ interface MarketChartProps {
     indicatorView: IndicatorView;
     parameters: TradingReplay["optimizedParameters"] | undefined;
     replay: TradingReplay | undefined;
-    testDate: string | undefined;
+    holdoutDate: string | undefined;
     marketRange: {startIndex: number; endIndex: number};
     onRangeChange: (range: {startIndex: number; endIndex: number}) => void;
 }
 
 /**
- * Heavy full-history market chart. Memoized so the ~8/sec generation ticks (which only touch
+ * Heavy 15-year market chart. Memoized so the ~8/sec generation ticks (which only touch
  * stats/history) do not force recharts to redraw thousands of points every frame —
  * series data only re-renders when the champion replay actually refreshes.
  */
 const MarketChart = React.memo<MarketChartProps>(
-    ({data, indicatorView, parameters, replay, testDate, marketRange, onRangeChange}) => {
+    ({data, indicatorView, parameters, replay, holdoutDate, marketRange, onRangeChange}) => {
         const hasReplay = replay !== undefined;
         const handleBrushChange = (range: {startIndex?: number; endIndex?: number}) => {
             onRangeChange({startIndex: range.startIndex ?? 0, endIndex: range.endIndex ?? data.length - 1});
@@ -654,7 +669,7 @@ const MarketChart = React.memo<MarketChartProps>(
                             <Line dataKey="volumeZScore" dot={false} isAnimationActive={false} name="成交量" stroke="#5da6d9" strokeWidth={1} yAxisId="indicator" />
                         </React.Fragment>
                     ) : null}
-                    {testDate ? <ReferenceLine label={{value: "測試", fill: "#e7b955", fontSize: 12}} stroke="#e7b955" strokeDasharray="4 4" x={testDate} /> : null}
+                    {holdoutDate ? <ReferenceLine label={{value: "封存測試", fill: "#e7b955", fontSize: 12}} stroke="#e7b955" strokeDasharray="4 4" x={holdoutDate} /> : null}
                     <Brush
                         ariaLabel="市場日期縮放範圍"
                         className="market-zoom-brush"
@@ -678,7 +693,7 @@ const MarketChart = React.memo<MarketChartProps>(
         prev.indicatorView === next.indicatorView &&
         prev.parameters === next.parameters &&
         prev.replay === next.replay &&
-        prev.testDate === next.testDate &&
+        prev.holdoutDate === next.holdoutDate &&
         prev.marketRange.startIndex === next.marketRange.startIndex &&
         prev.marketRange.endIndex === next.marketRange.endIndex &&
         prev.onRangeChange === next.onRangeChange
@@ -689,12 +704,12 @@ const SELL_DOT = {fill: "#e36f5b", r: 5, strokeWidth: 0} as const;
 
 interface EquityChartProps {
     points: TradingPoint[];
-    testDate: string | undefined;
+    holdoutDate: string | undefined;
 }
 
-/** Out-of-sample equity curve. Memoized for the same reason as MarketChart. */
+/** Development curve；暫停後先追加封存 holdout。 */
 const EquityChart = React.memo<EquityChartProps>(
-    ({points, testDate}) => (
+    ({points, holdoutDate}) => (
         <ResponsiveContainer height="100%" width="100%">
             <LineChart data={points} margin={{left: 0, right: 14, top: 8, bottom: 0}}>
                 <CartesianGrid stroke="#252a31" strokeDasharray="3 3" vertical={false} />
@@ -703,11 +718,11 @@ const EquityChart = React.memo<EquityChartProps>(
                 <Tooltip contentStyle={{background: "#15191f", border: "1px solid #303640", borderRadius: 8}} formatter={formatMoneyTooltip} />
                 <Line dataKey="strategy" dot={false} isAnimationActive={false} name="策略" stroke="#58d68d" strokeWidth={2} type="monotone" />
                 <Line dataKey="benchmark" dot={false} isAnimationActive={false} name="買入持有" stroke="#e7b955" strokeWidth={1.5} type="monotone" />
-                {testDate ? <ReferenceLine label={{value: "測試", fill: "#e7b955", fontSize: 11}} stroke="#e7b955" strokeDasharray="4 4" x={testDate} /> : null}
+                {holdoutDate ? <ReferenceLine label={{value: "封存測試", fill: "#e7b955", fontSize: 11}} stroke="#e7b955" strokeDasharray="4 4" x={holdoutDate} /> : null}
             </LineChart>
         </ResponsiveContainer>
     ),
-    (prev, next) => prev.points === next.points && prev.testDate === next.testDate
+    (prev, next) => prev.points === next.points && prev.holdoutDate === next.holdoutDate
 );
 
 const ParameterValue = React.memo(({label, value}: {label: string; value: string}) => (
@@ -719,7 +734,7 @@ const ParameterValue = React.memo(({label, value}: {label: string; value: string
 
 async function loadMarketData(symbol: string): Promise<MarketDataResponse> {
     const normalized = symbol.trim().toUpperCase() || "QQQ";
-    const response = await fetch(`/api/market-data?symbol=${encodeURIComponent(normalized)}&range=10y&interval=1d`);
+    const response = await fetch(`/api/market-data?symbol=${encodeURIComponent(normalized)}&range=15y&interval=1d`);
     const payload = (await response.json()) as MarketDataResponse | {error: string};
     if (!response.ok || "error" in payload) {
         throw new Error("error" in payload ? payload.error : "下載市場數據失敗。");

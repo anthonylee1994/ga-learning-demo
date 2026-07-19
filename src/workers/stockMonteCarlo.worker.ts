@@ -14,7 +14,7 @@ setupMonteCarloWorker<MarketDataPoint[], ReturnType<typeof createTradingReplay>>
     evaluate(genome, data, config) {
         return evaluateStockGenome(genome, data ?? [], config?.useNeuralNetwork !== false);
     },
-    createReplay(genome, data, config) {
-        return createTradingReplay(genome, data ?? [], config?.useNeuralNetwork !== false);
+    createReplay(genome, data, config, purpose) {
+        return createTradingReplay(genome, data ?? [], config?.useNeuralNetwork !== false, purpose === "showcase");
     },
 });

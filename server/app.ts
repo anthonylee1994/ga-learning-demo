@@ -41,10 +41,10 @@ export function createApp(): express.Express {
         const symbol = String(request.query.symbol ?? "QQQ")
             .trim()
             .toUpperCase();
-        // Default 10y — full "max" history (1999+) lets GA overfit the dot-com crash for huge train %.
-        const range = String(request.query.range ?? "10y");
+        // 15 years keeps recent market regimes while retaining enough data for walk-forward validation.
+        const range = String(request.query.range ?? "15y");
         const interval = String(request.query.interval ?? "1d");
-        if (!SYMBOL_PATTERN.test(symbol) || (range !== "10y" && range !== "max") || interval !== "1d") {
+        if (!SYMBOL_PATTERN.test(symbol) || (range !== "15y" && range !== "max") || interval !== "1d") {
             response.status(400).json({error: "Ticker、range 或 interval 格式無效。"});
             return;
         }
@@ -59,8 +59,8 @@ export function createApp(): express.Express {
         try {
             const period2 = new Date();
             const period1 = new Date(period2);
-            if (range === "10y") {
-                period1.setFullYear(period1.getFullYear() - 10);
+            if (range === "15y") {
+                period1.setFullYear(period1.getFullYear() - 15);
             } else {
                 period1.setFullYear(1900, 0, 1);
             }

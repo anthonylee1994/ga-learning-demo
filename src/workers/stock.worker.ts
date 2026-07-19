@@ -8,7 +8,7 @@ import {setupEvolutionWorker} from "./workerRuntime";
 setupEvolutionWorker<MarketDataPoint[], ReturnType<typeof createTradingReplay>>({
     geneCount: STOCK_GENE_COUNT,
     requiresData: true,
-    // Full-history trading replay is ~MB per postMessage; refresh far less often than snake/breaker.
+    // 15-year trading replay is ~MB per postMessage; refresh far less often than snake/breaker.
     minReplayGenerationGap: 20,
     seedGenomes: createStockSeedGenomes(),
     // Period genes explore hard; NN decision head mutates gently.
@@ -16,7 +16,7 @@ setupEvolutionWorker<MarketDataPoint[], ReturnType<typeof createTradingReplay>>(
     evaluate(genome, data, config) {
         return evaluateStockGenome(genome, data ?? [], config?.useNeuralNetwork !== false);
     },
-    createReplay(genome, data, config) {
-        return createTradingReplay(genome, data ?? [], config?.useNeuralNetwork !== false);
+    createReplay(genome, data, config, purpose) {
+        return createTradingReplay(genome, data ?? [], config?.useNeuralNetwork !== false, purpose === "showcase");
     },
 });

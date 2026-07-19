@@ -13,13 +13,15 @@ interface MetricsProps {
     extra?: MetricItem[];
     /** Override for the generation counter label (e.g. 蒙地卡羅 → 批次). */
     generationLabel?: string;
+    bestFitnessLabel?: string;
+    averageFitnessLabel?: string;
 }
 
-export const Metrics = React.memo<MetricsProps>(({stats, extra = [], generationLabel = "世代"}) => {
+export const Metrics = React.memo<MetricsProps>(({stats, extra = [], generationLabel = "世代", bestFitnessLabel = "最佳適應度", averageFitnessLabel = "平均適應度"}) => {
     const values: MetricItem[] = [
         {label: generationLabel, value: stats ? String(stats.generation) : "0"},
-        {label: "最佳適應度", value: stats ? formatNumber(stats.bestFitness) : "—"},
-        {label: "平均適應度", value: stats ? formatNumber(stats.averageFitness) : "—"},
+        {label: bestFitnessLabel, value: stats ? formatNumber(stats.bestFitness) : "—"},
+        {label: averageFitnessLabel, value: stats ? formatNumber(stats.averageFitness) : "—"},
         {label: "多樣性", value: stats ? stats.diversity.toFixed(3) : "—"},
         ...extra,
     ];
