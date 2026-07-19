@@ -41,10 +41,10 @@ export function createApp(): express.Express {
         const symbol = String(request.query.symbol ?? "QQQ")
             .trim()
             .toUpperCase();
-        // 15 years keeps recent market regimes while retaining enough data for walk-forward validation.
-        const range = String(request.query.range ?? "15y");
+        // Full history gives walk-forward validation more market regimes to evaluate.
+        const range = String(request.query.range ?? "max");
         const interval = String(request.query.interval ?? "1d");
-        if (!SYMBOL_PATTERN.test(symbol) || (range !== "15y" && range !== "max") || interval !== "1d") {
+        if (!SYMBOL_PATTERN.test(symbol) || range !== "max" || interval !== "1d") {
             response.status(400).json({error: "Ticker、range 或 interval 格式無效。"});
             return;
         }
@@ -59,11 +59,7 @@ export function createApp(): express.Express {
         try {
             const period2 = new Date();
             const period1 = new Date(period2);
-            if (range === "15y") {
-                period1.setFullYear(period1.getFullYear() - 15);
-            } else {
-                period1.setFullYear(1900, 0, 1);
-            }
+            period1.setFullYear(1900, 0, 1);
             const result = await yahooFinance.chart(symbol, {
                 period1,
                 period2,

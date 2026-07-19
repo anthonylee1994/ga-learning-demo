@@ -566,7 +566,7 @@ interface MarketChartProps {
 }
 
 /**
- * Heavy 15-year market chart. Memoized so the ~8/sec generation ticks (which only touch
+ * Heavy full-history market chart. Memoized so the ~8/sec generation ticks (which only touch
  * stats/history) do not force recharts to redraw thousands of points every frame —
  * series data only re-renders when the champion replay actually refreshes.
  */
@@ -734,7 +734,7 @@ const ParameterValue = React.memo(({label, value}: {label: string; value: string
 
 async function loadMarketData(symbol: string): Promise<MarketDataResponse> {
     const normalized = symbol.trim().toUpperCase() || "QQQ";
-    const response = await fetch(`/api/market-data?symbol=${encodeURIComponent(normalized)}&range=15y&interval=1d`);
+    const response = await fetch(`/api/market-data?symbol=${encodeURIComponent(normalized)}&range=max&interval=1d`);
     const payload = (await response.json()) as MarketDataResponse | {error: string};
     if (!response.ok || "error" in payload) {
         throw new Error("error" in payload ? payload.error : "下載市場數據失敗。");

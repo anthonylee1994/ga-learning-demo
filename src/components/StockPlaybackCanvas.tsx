@@ -54,7 +54,7 @@ export const StockPlaybackCanvas = React.memo<Props>(({replay, speed, playing = 
         if (!playing || !replay?.points.length) {
             return;
         }
-        // Higher speed → more days per tick + shorter delay (15-year series needs chunking).
+        // Higher speed → more days per tick + shorter delay (full-history series needs chunking).
         const step = Math.max(1, Math.round(speed * 1.5));
         const frameMs = Math.max(16, 90 - speed * 12);
         const last = replay.points.length - 1;

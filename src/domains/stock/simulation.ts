@@ -64,7 +64,7 @@ const MIN_HOLDOUT_DAYS = 20;
 const FOLD_MEDIAN_WEIGHT = 0.5;
 const FOLD_MEAN_WEIGHT = 0.3;
 const FOLD_WORST_WEIGHT = 0.2;
-/** 每條價格序列最多 cache 幾套指標參數（Float64Array，約 ~1MB／15 年） */
+/** 每條價格序列最多 cache 幾套指標參數（Float64Array，約 ~1MB／全歷史） */
 const MAX_INDICATOR_CACHE = 16;
 /**
  * NN 權重 L2 衰減係數。要細過 return scale，唔係 GA 寧願 cash 都好過 invest。
