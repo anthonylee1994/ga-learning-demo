@@ -290,7 +290,7 @@ export function useEvolutionDemo<TData, TReplay>(options: EvolutionDemoOptions<T
     };
     const loadChampion = (payload: LoadChampionPayload<TReplay>) => {
         // If training is mid-flight, stop accepting worker champion updates (including
-        // pause-showcase) so the imported brain is not immediately overwritten.
+        // pause-showcase) so the imported genome is not immediately overwritten.
         if (status === "running") {
             awaitingPauseShowcaseRef.current = false;
             suppressChampionUpdatesRef.current = true;

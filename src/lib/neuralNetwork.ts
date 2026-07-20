@@ -1,5 +1,8 @@
-import {NeuralNetwork} from "brain.js";
+import * as tf from "@tensorflow/tfjs";
 import type {Genome, NetworkTopology} from "./types";
+
+/** Small MLP + GA hot path stays pure JS; TF.js is reference only — CPU is enough everywhere. */
+void tf.setBackend("cpu");
 
 export interface LayerParams {
     /** Bias per neuron in this layer. */
@@ -25,7 +28,7 @@ export interface NetworkForwardPass {
 export class NeuralNetworkAdapter {
     readonly topology: NetworkTopology;
     readonly geneCount: number;
-    private network: NeuralNetwork<number[], number[]> | null = null;
+    private model: tf.LayersModel | null = null;
 
     constructor(topology: NetworkTopology) {
         this.topology = topology;
@@ -38,7 +41,7 @@ export class NeuralNetworkAdapter {
 
     /**
      * Pure forward pass that also returns per-layer activations.
-     * Used by UI visualizers — keeps brain.js graph out of the animation path.
+     * Used by UI visualizers — keeps TF.js graph out of the animation path.
      */
     runDetailed(genome: Genome, input: number[]): NetworkForwardPass {
         return forwardWithActivations(genome, this.topology, input);
@@ -49,32 +52,34 @@ export class NeuralNetworkAdapter {
     }
 
     createRunner(genome: Genome): (input: number[]) => number[] {
-        // Pure JS forward is faster than brain.js on the stock hot path (thousands of
+        // Pure JS forward is faster than TF.js on the stock hot path (thousands of
         // bar-steps × population × generations) and matches tanh stack used elsewhere.
         return createForwardRunner(genome, this.topology);
     }
 
-    /** brain.js path kept for adapters that need a live Network instance. */
-    createBrainRunner(genome: Genome): (input: number[]) => number[] {
+    /**
+     * TensorFlow.js path kept for adapters that need a live LayersModel instance.
+     * Prefer `createRunner` for GA fitness — this is mainly for parity / export tooling.
+     */
+    createTfjsRunner(genome: Genome): (input: number[]) => number[] {
         if (genome.length !== this.geneCount) {
             throw new Error(`Genome length ${genome.length} does not match ${this.geneCount}`);
         }
-        if (!this.network) {
-            this.network = new NeuralNetwork<number[], number[]>({
-                inputSize: this.topology.inputSize,
-                hiddenLayers: this.topology.hiddenLayers,
-                outputSize: this.topology.outputSize,
-                activation: "tanh",
-            });
-            this.network.initialize();
+        if (!this.model) {
+            this.model = buildTfjsModel(this.topology);
         }
-        applyGenome(this.network, genome);
-        const network = this.network;
+        applyGenomeToTfjs(this.model, genome, this.topology);
+        const model = this.model;
+        const inputSize = this.topology.inputSize;
         return (input: number[]) => {
-            if (input.length !== this.topology.inputSize) {
-                throw new Error(`Input length ${input.length} does not match ${this.topology.inputSize}`);
+            if (input.length !== inputSize) {
+                throw new Error(`Input length ${input.length} does not match ${inputSize}`);
             }
-            return Array.from(network.run(input));
+            return tf.tidy(() => {
+                const xs = tf.tensor2d([input], [1, inputSize]);
+                const ys = model.predict(xs) as tf.Tensor;
+                return Array.from(ys.dataSync());
+            });
         };
     }
 }
@@ -151,7 +156,7 @@ export function inspectGenome(genome: Genome, topology: NetworkTopology): Networ
 }
 
 /**
- * Feed-forward with tanh, matching brain.js layout used by `applyGenome`.
+ * Feed-forward with tanh, matching TF.js Dense layout used by `applyGenomeToTfjs`.
  * Returns activations for every layer so the UI can light up nodes live.
  */
 export function forwardWithActivations(genome: Genome, topology: NetworkTopology, input: number[]): NetworkForwardPass {
@@ -180,19 +185,46 @@ export function forwardWithActivations(genome: Genome, topology: NetworkTopology
     return {activations, outputs, decision: argMax(outputs)};
 }
 
-function applyGenome(network: NeuralNetwork<number[], number[]>, genome: Genome): void {
-    let cursor = 0;
-    for (let layer = 1; layer < network.sizes.length; layer += 1) {
-        for (let node = 0; node < network.sizes[layer]; node += 1) {
-            network.biases[layer][node] = genome[cursor];
-            cursor += 1;
-        }
-        for (let node = 0; node < network.sizes[layer]; node += 1) {
-            for (let input = 0; input < network.sizes[layer - 1]; input += 1) {
-                network.weights[layer][node][input] = genome[cursor];
-                cursor += 1;
+function buildTfjsModel(topology: NetworkTopology): tf.LayersModel {
+    const sizes = layerSizes(topology);
+    const model = tf.sequential();
+    for (let layer = 1; layer < sizes.length; layer += 1) {
+        model.add(
+            tf.layers.dense({
+                units: sizes[layer],
+                ...(layer === 1 ? {inputShape: [sizes[0]]} : {}),
+                activation: "tanh",
+                useBias: true,
+            })
+        );
+    }
+    return model;
+}
+
+/**
+ * Load flat genome into a TF.js sequential model of Dense(tanh) layers.
+ * Genome layout per layer: [biases…] then for each node [weights from previous layer…].
+ * TF Dense kernel is [in, out], so we transpose from weights[node][prev].
+ */
+function applyGenomeToTfjs(model: tf.LayersModel, genome: Genome, topology: NetworkTopology): void {
+    const inspection = inspectGenome(genome, topology);
+    const tensors: tf.Tensor[] = [];
+    for (const layer of inspection.layers) {
+        const nodeCount = layer.biases.length;
+        const prevCount = layer.weights[0]?.length ?? 0;
+        const kernelData = new Float32Array(prevCount * nodeCount);
+        for (let node = 0; node < nodeCount; node += 1) {
+            for (let prev = 0; prev < prevCount; prev += 1) {
+                // TF kernel layout: row = input, col = unit
+                kernelData[prev * nodeCount + node] = layer.weights[node][prev];
             }
         }
+        tensors.push(tf.tensor2d(kernelData, [prevCount, nodeCount]));
+        tensors.push(tf.tensor1d(Float32Array.from(layer.biases)));
+    }
+    model.setWeights(tensors);
+    for (const tensor of tensors) {
+        tensor.dispose();
     }
 }
 

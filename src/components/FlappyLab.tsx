@@ -60,7 +60,7 @@ export const FlappyLab = React.memo(() => {
     return (
         <DemoShell
             accent="flappy"
-            description="一個 6 → 10 → 2 嘅 Brain.js 網絡，靠通過水管數、存活同靠近縫心 shaping 學識拍翼。"
+            description="一個 6 → 10 → 2 嘅 TensorFlow.js 網絡，靠通過水管數、存活同靠近縫心 shaping 學識拍翼。"
             icon={<Bird size={20} strokeWidth={1.5} />}
             title="Flappy Bird · 神經演化"
         >
@@ -99,7 +99,7 @@ export const FlappyLab = React.memo(() => {
                     <FitnessChart history={demo.history} />
                     <ApplicationPanel
                         fitness="通過水管² + 存活步數 + 靠近縫心 shaping"
-                        genome="Brain.js 6 → 10 → 2 網絡嘅所有權重同偏差"
+                        genome="TensorFlow.js 6 → 10 → 2 網絡嘅所有權重同偏差"
                         inputs="鳥 y / vy、下條管距離、縫隙上沿／下沿、相對縫心"
                         outputs="拍翼、滑翔"
                         termination="撞地／撞頂／撞管，或步數上限；fitness = 3 個固定 seed 平均"

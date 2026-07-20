@@ -58,7 +58,7 @@ export const SnakeLab = React.memo(() => {
     }, [demo.champion]);
 
     return (
-        <DemoShell accent="snake" description="一個 10 → 12 → 3 嘅 Brain.js 網絡，靠食嘢、存活同靠近食物獎勵學識轉彎。" icon={<Dna size={20} strokeWidth={1.5} />} title="貪食蛇 · 神經演化">
+        <DemoShell accent="snake" description="一個 10 → 12 → 3 嘅 TensorFlow.js 網絡，靠食嘢、存活同靠近食物獎勵學識轉彎。" icon={<Dna size={20} strokeWidth={1.5} />} title="貪食蛇 · 神經演化">
             <div className="workspace-grid">
                 <main className="demo-main">
                     <Metrics
@@ -94,7 +94,7 @@ export const SnakeLab = React.memo(() => {
                     <FitnessChart history={demo.history} />
                     <ApplicationPanel
                         fitness="食物平方獎勵 + 存活步數 + 接近食物塑造"
-                        genome="Brain.js 10 → 12 → 3 網絡嘅所有權重同偏差"
+                        genome="TensorFlow.js 10 → 12 → 3 網絡嘅所有權重同偏差"
                         inputs="前、左、右危險；食物相對位置；方向 one-hot；身體長度"
                         outputs="左轉、直行、右轉"
                         termination="撞牆、撞自己、長時間食唔到食物，或步數上限"

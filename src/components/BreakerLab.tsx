@@ -112,7 +112,7 @@ export const BreakerLab = React.memo(() => {
                     <FitnessChart history={demo.history} />
                     <ApplicationPanel
                         fitness="清磚×140 + 全清大獎 + 愈快清晒愈高分（全清速度二次方獎 + 消磚效率）；多餘接球扣分，唔俾用 hit chok 分"
-                        genome="Brain.js 8 → 12 → 3 網絡嘅所有權重同偏差"
+                        genome="TensorFlow.js 8 → 12 → 3 網絡嘅所有權重同偏差"
                         inputs="擋板/球位置、球速、最近磚塊方向、剩餘比例"
                         outputs="向左、停住、向右"
                         termination="球跌出底部、清晒 45 塊磚，或步數上限；fitness = 5 場真隨機場景平均；畫面每圈重抽一場"

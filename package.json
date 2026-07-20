@@ -16,7 +16,7 @@
     "dependencies": {
         "@heroui/react": "^3.0.0",
         "@heroui/styles": "^3.0.0",
-        "brain.js": "2.0.0-beta.24",
+        "@tensorflow/tfjs": "^4.22.0",
         "express": "^5.1.0",
         "lucide-react": "^0.468.0",
         "matter-js": "^0.20.0",

@@ -12,7 +12,7 @@ export default defineConfig({
         },
     },
     build: {
-        // Snake/breaker workers embed brain.js (+ matter-js); those entry chunks stay large by design.
+        // Snake/breaker workers embed matter-js; those entry chunks stay large by design.
         chunkSizeWarningLimit: 700,
         rollupOptions: {
             output: {

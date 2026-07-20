@@ -22,8 +22,8 @@ export function createPineScript(genome: Genome, symbol: string, useNetwork = tr
     return `//@version=6
 strategy("EvoLab ${safeSymbol} Evolved Strategy", overlay=true, initial_capital=1000000, default_qty_type=strategy.percent_of_equity, default_qty_value=100, pyramiding=0, commission_type=strategy.commission.percent, commission_value=0.15, process_orders_on_close=false)
 
-// Optimized by EvoLab genetic algorithm — indicator periods, thresholds, and Brain.js weights.
-// Network topology: ${topologyLabel} (tanh on every layer, matching brain.js).
+// Optimized by EvoLab genetic algorithm — indicator periods, thresholds, and TensorFlow.js weights.
+// Network topology: ${topologyLabel} (tanh on every layer, matching TensorFlow.js Dense).
 // Long / flat only (sell = close to cash). Fills next bar open, 0.15% commission — matches browser sim.
 // Validate this strategy on fresh out-of-sample data before considering any use.
 smaFastPeriod = ${parameters.smaFastPeriod}
@@ -115,7 +115,7 @@ plotshape(exited, title="Close", style=shape.triangledown, location=location.abo
 
 /**
  * Emit full MLP matching STOCK_TOPOLOGY (supports N hidden layers).
- * Every layer uses tanh — same as brain.js `activation: "tanh"`.
+ * Every layer uses tanh — same as TensorFlow.js Dense `activation: "tanh"`.
  * argMax of tanh(z) == argMax(z), so decisions match either pre/post activation on the last layer;
  * we still emit tanh on the output so values match the in-app network panel.
  */
@@ -166,7 +166,7 @@ export function createNetworkDecisionLines(networkGenome: Genome): string[] {
         if (layer.weights.some(row => row.length !== inputs.length)) {
             throw new Error(`Layer ${layerIndex} weight row width does not match previous layer`);
         }
-        // tanh on every layer, including output (matches brain.js + NeuralNetworkAdapter).
+        // tanh on every layer, including output (matches TensorFlow.js + NeuralNetworkAdapter).
         lines.push(...createLayerLines(outputs, inputs, layer, true));
         lines.push("");
     }
@@ -200,7 +200,7 @@ function createRuleDecisionLines(): string[] {
 }
 
 /**
- * Decode network genes into dense layers. Layout matches `inspectGenome` / brain.js applyGenome:
+ * Decode network genes into dense layers. Layout matches `inspectGenome` / applyGenomeToTfjs:
  * for each layer: [biases…] then for each node [weights from previous layer…].
  */
 export function decodeLayers(networkGenome: Genome): DenseLayer[] {

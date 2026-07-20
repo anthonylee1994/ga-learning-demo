@@ -103,7 +103,7 @@ const CONCEPTS = [
     {
         icon: Network,
         title: "神經演化",
-        text: "唔用反向傳播。brain.js 只做 forward；GA 負責改權重。",
+        text: "唔用反向傳播。TensorFlow.js 只做 forward；GA 負責改權重。",
         visual: "neuro" as const,
     },
     {
@@ -224,7 +224,7 @@ export const TheoryLab = React.memo(() => {
                     <h2>用演化，搜尋一個夠好嘅決策腦</h2>
                     <p>
                         唔係人手寫「見到紅燈就停」啲死規則，而係：隨機出一班策略 → 睇邊個叻 → 好嘅生仔 → 仔有少少突變 → 重複幾百代。EvoLab 進化嘅係神經網絡權重（股票仲進化指標參數）；
-                        <strong className="theory-inline-strong">brain.js 只負責推理，GA 負責改權重</strong>。
+                        <strong className="theory-inline-strong">TensorFlow.js 只負責推理，GA 負責改權重</strong>。
                     </p>
                 </div>
                 <div className="intro-stat-stack">

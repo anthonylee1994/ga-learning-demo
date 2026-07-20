@@ -2,13 +2,13 @@
 
 ## Summary
 
-建立 Vite + React + TypeScript 單頁學習工作台，以繁體中文展示 Genetic Algorithm 理論，以及 Snake、Block Breaker、Stock Trading 三個真實運行 demo。三者統一使用 `brain.js` neural networks，由 GA 進化 network weights；Stock 預設使用 `QQQ` 十年日線數據。
+建立 Vite + React + TypeScript 單頁學習工作台，以繁體中文展示 Genetic Algorithm 理論，以及 Snake、Block Breaker、Stock Trading 三個真實運行 demo。三者統一使用 `@tensorflow/tfjs` neural networks，由 GA 進化 network weights；Stock 預設使用 `QQQ` 十年日線數據。
 
 ## Theory Experience
 
 - 工作台加入「演算法原理」主題，同三個實驗並列，唔做獨立 marketing landing page。
 - 內容以短章節、流程圖、可操作示例呈現：
-    1. **Genome / Chromosome**：一組 Brain.js weights 與 biases 如何代表一個 AI。
+    1. **Genome / Chromosome**：一組 TensorFlow.js weights 與 biases 如何代表一個 AI。
     2. **Population**：同一代包含多個不同 neural networks。
     3. **Fitness Function**：用分數衡量個體解決問題嘅能力。
     4. **Selection**：以 roulette wheel selection 按 fitness 比例增加優良個體繁殖機會。
@@ -33,13 +33,13 @@
 ## Core Implementation
 
 - 初始化 Vite React project，入口使用 `app.tsx`，遵從 `AGENTS.md` React 規範。
-- 使用 HeroUI v3、Tailwind CSS v4、Lucide icons、Recharts、Matter.js、`brain.js`。
-- 鎖定 `brain.js@2.0.0-beta.24`，使用 browser bundle及 TypeScript declarations。
+- 使用 HeroUI v3、Tailwind CSS v4、Lucide icons、Recharts、Matter.js、`@tensorflow/tfjs`。
+- 使用 `@tensorflow/tfjs` Dense(tanh) 作為參考 forward 路徑；GA hot path 用 pure JS forward 以提升速度。
 - 建立 `NeuralNetworkAdapter`：
     - 固定各 domain 嘅 input、hidden layer、output topology。
-    - GA genome 為扁平化 Brain.js weights 及 biases。
-    - Adapter 將 genome 載入 Brain.js network，以 `run()` 做 forward inference。
-    - 不使用 Brain.js `train()` 或 backpropagation。
+    - GA genome 為扁平化 Dense layer weights 及 biases。
+    - Adapter 將 genome 載入 pure JS / TF.js network，做 forward inference。
+    - 不使用 `model.fit()` 或 backpropagation。
 - 三個訓練流程放入獨立 Web Workers。
 - 共用 typed GA engine：seeded RNG、roulette wheel selection、elitism、uniform crossover、Gaussian mutation及 generation statistics。
 - UI 提供開始、暫停、重設、速度、population、mutation rate、seed，以及 generation、best/average fitness、population diversity、champion replay。
@@ -51,7 +51,7 @@
 ### Snake
 
 - 20×20 canvas，純 AI 觀察模式。
-- Brain.js inputs 包括障礙方向、食物相對位置及目前移動方向；outputs 為左轉、直行、右轉。
+- TensorFlow.js inputs 包括障礙方向、食物相對位置及目前移動方向；outputs 為左轉、直行、右轉。
 - 多個固定 food seeds 評估；fitness 結合食物數、存活步數及接近食物獎勵，並設 step cap。
 - Theory panel 明確展示：
     - Genome：Snake network weights/biases。
@@ -61,7 +61,7 @@
 ### Block Breaker
 
 - Matter.js 固定 timestep 模擬 paddle、ball、walls及 bricks。
-- Brain.js inputs 包括 paddle/ball 位置、ball velocity及最近目標；outputs 為左、停、右。
+- TensorFlow.js inputs 包括 paddle/ball 位置、ball velocity及最近目標；outputs 為左、停、右。
 - Fitness 根據清除 bricks、回球次數、存活時間及 clear bonus；使用固定 ball seeds。
 - Theory panel 解釋同一 genome 點樣喺多個初始角度評估，避免靠一次好彩取得高 fitness。
 
@@ -81,7 +81,7 @@
     - N 日最高價（new high ratio：close / N-day high）。
     - 目前持倉比例。
 - Warm-up 未完成嘅日期不參與訓練或測試；所有 inputs 會正規化及限制極端值。
-- Brain.js outputs 為買入、持有、賣出，對應 100% long、保持倉位、100% cash；不做 short selling或 leverage。
+- TensorFlow.js outputs 為買入、持有、賣出，對應 100% long、保持倉位、100% cash；不做 short selling或 leverage。
 - 每次倉位轉換計入 0.1% transaction cost。
 - Fitness 只使用 training segment，綜合 total return、Sharpe ratio及 max drawdown；test segment 不參與 selection。
 - 圖表顯示 QQQ 價格、買賣點、strategy equity、buy-and-hold benchmark及 train/test 分界。
@@ -98,7 +98,7 @@
 - 無效 ticker 回 `400/404`，Yahoo/network 問題回 `502`。
 - 共用 types：
     - `GAConfig`, `Genome`, `GenerationStats`, `Champion`
-    - `NetworkTopology`, `SerializedBrainGenome`
+    - `NetworkTopology`, `SerializedNetworkGenome`
     - `WorkerCommand`, `WorkerEvent`
     - `MarketDataPoint`, `IndicatorSnapshot`, `TradingResult`
     - `PersistedLabStateV1`
@@ -107,7 +107,7 @@
 ## Test Plan
 
 - GA tests：selection、elitism、crossover、mutation、seed reproducibility及 population invariants。
-- Brain.js adapter tests：genome round-trip、deterministic output、topology weight count及 mutated genome loading。
+- TensorFlow.js adapter tests：genome round-trip、deterministic output、topology weight count及 mutated genome loading。
 - Theory visualizer tests：parent inheritance、mutation highlighting、mutation rate boundaries。
 - Indicator tests：SMA、Williams %R、ROC、RSI、MACD、Bollinger Bands、volatility及 volume z-score。
 - Stock tests：無 future leakage、warm-up、80/20 split、fees、fitness、QQQ default及 benchmark。
@@ -119,7 +119,7 @@
 ## Assumptions
 
 - 使用 `pnpm`、Node 20+；不加入登入、database、cloud persistence或多人功能。
-- Brain.js beta dependency 鎖定 exact version，並由 adapter 隔離 API 變動。
+- `@tensorflow/tfjs` 由 adapter 隔離 API 變動；genome layout 保持穩定以便匯出／匯入。
 - 理論內容以具備基本程式概念但未學過 GA 嘅讀者為目標。
 - Yahoo Finance 數據只作教育用途，介面標示非投資建議。
 - 網站名稱為「EvoLab 遺傳演算法實驗室」。

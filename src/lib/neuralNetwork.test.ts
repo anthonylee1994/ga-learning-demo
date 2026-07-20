@@ -20,21 +20,21 @@ describe("NeuralNetworkAdapter", () => {
         expect(() => adapter.run([1, 2], [0, 0, 0])).toThrow(/Genome length/);
     });
 
-    it("matches pure forward activations with brain.js outputs", () => {
+    it("matches pure forward activations with TensorFlow.js outputs", () => {
         const adapter = new NeuralNetworkAdapter(topology);
         const genome = Array.from({length: adapter.geneCount}, (_, index) => Math.sin(index * 0.37) * 0.8);
         const input = [0.2, -0.4, 0.7];
-        const brainOut = adapter.createBrainRunner(genome)(input);
+        const tfOut = adapter.createTfjsRunner(genome)(input);
         const pureOut = createForwardRunner(genome, topology)(input);
         const detailed = forwardWithActivations(genome, topology, input);
         expect(detailed.outputs).toHaveLength(2);
         expect(detailed.activations).toHaveLength(3);
         expect(detailed.activations[0]).toEqual(input);
-        for (let index = 0; index < brainOut.length; index += 1) {
-            expect(detailed.outputs[index]).toBeCloseTo(brainOut[index], 5);
-            expect(pureOut[index]).toBeCloseTo(brainOut[index], 5);
+        for (let index = 0; index < tfOut.length; index += 1) {
+            expect(detailed.outputs[index]).toBeCloseTo(tfOut[index], 5);
+            expect(pureOut[index]).toBeCloseTo(tfOut[index], 5);
         }
-        expect(detailed.decision).toBe(brainOut[0] >= brainOut[1] ? 0 : 1);
+        expect(detailed.decision).toBe(tfOut[0] >= tfOut[1] ? 0 : 1);
     });
 
     it("inspects genome into layer matrices with the right shapes", () => {
