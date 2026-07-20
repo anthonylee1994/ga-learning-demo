@@ -1,37 +1,38 @@
 /// <reference lib="webworker" />
 
-import {createPpoTrainer, disposePpoTrainer, loadPpoActorGenome, trainPpoUpdate, type PpoConfig, type PpoTrainer, type PpoUpdateResult} from "../domains/breaker/ppo";
+import {createRainbowTrainer, disposeRainbowTrainer, loadRainbowAgentGenome, trainRainbowUpdate, type RainbowConfig, type RainbowTrainer, type RainbowUpdateResult} from "../domains/breaker/rainbow";
 import type {Genome} from "../lib/types";
 
-export type BreakerPpoWorkerCommand = {type: "start"; config: PpoConfig; genome?: Genome} | {type: "pause"} | {type: "load"; config: PpoConfig; genome: Genome} | {type: "reset"};
+export type BreakerRainbowWorkerCommand = {type: "start"; config: RainbowConfig; genome?: Genome} | {type: "pause"} | {type: "load"; config: RainbowConfig; genome: Genome} | {type: "reset"};
 
-export type BreakerPpoWorkerEvent = {type: "update"; result: PpoUpdateResult} | {type: "loaded"; result: PpoUpdateResult} | {type: "paused"} | {type: "reset"} | {type: "error"; message: string};
+export type BreakerRainbowWorkerEvent =
+    {type: "update"; result: RainbowUpdateResult} | {type: "loaded"; result: RainbowUpdateResult} | {type: "paused"} | {type: "reset"} | {type: "error"; message: string};
 
 const scope = self as DedicatedWorkerGlobalScope;
-let trainer: PpoTrainer | null = null;
-let config: PpoConfig | null = null;
+let trainer: RainbowTrainer | null = null;
+let config: RainbowConfig | null = null;
 let running = false;
 let runToken = 0;
 let scheduledHandle: ReturnType<typeof scope.setTimeout> | null = null;
 let lastEmittedAt = 0;
 let lastEmittedUpdate = 0;
-let latestResult: PpoUpdateResult | null = null;
+let latestResult: RainbowUpdateResult | null = null;
 
-scope.onmessage = function handleMessage(event: MessageEvent<BreakerPpoWorkerCommand>) {
+scope.onmessage = function handleMessage(event: MessageEvent<BreakerRainbowWorkerCommand>) {
     const command = event.data;
     if (command.type === "start") {
         config = command.config;
         if (!trainer) {
-            trainer = createPpoTrainer(config.seed, config.learningRate);
-            // Restore persisted / imported actor so refresh + continue keeps the same network.
+            trainer = createRainbowTrainer(config.seed, config.learningRate, config.bufferSize);
+            // Restore persisted / imported agent so refresh + continue keeps the same network.
             if (command.genome?.length) {
                 try {
-                    latestResult = loadPpoActorGenome(trainer, command.genome, config);
+                    latestResult = loadRainbowAgentGenome(trainer, command.genome, config);
                     lastEmittedUpdate = 0;
                 } catch (error) {
-                    disposePpoTrainer(trainer);
+                    disposeRainbowTrainer(trainer);
                     trainer = null;
-                    emit({type: "error", message: error instanceof Error ? error.message : "PPO 策略載入失敗。"});
+                    emit({type: "error", message: error instanceof Error ? error.message : "Rainbow 策略載入失敗。"});
                     return;
                 }
             }
@@ -50,14 +51,14 @@ scope.onmessage = function handleMessage(event: MessageEvent<BreakerPpoWorkerCom
         return;
     }
     if (command.type === "load") {
-        loadActor(command.genome, command.config);
+        loadAgent(command.genome, command.config);
         return;
     }
     running = false;
     runToken += 1;
     clearScheduled();
     if (trainer) {
-        disposePpoTrainer(trainer);
+        disposeRainbowTrainer(trainer);
         trainer = null;
     }
     config = null;
@@ -67,31 +68,31 @@ scope.onmessage = function handleMessage(event: MessageEvent<BreakerPpoWorkerCom
     emit({type: "reset"});
 };
 
-function loadActor(genome: Genome, nextConfig: PpoConfig): void {
+function loadAgent(genome: Genome, nextConfig: RainbowConfig): void {
     running = false;
     runToken += 1;
     clearScheduled();
     try {
         if (trainer) {
-            disposePpoTrainer(trainer);
+            disposeRainbowTrainer(trainer);
         }
         config = nextConfig;
-        trainer = createPpoTrainer(config.seed, config.learningRate);
-        const result = loadPpoActorGenome(trainer, genome, config);
+        trainer = createRainbowTrainer(config.seed, config.learningRate, config.bufferSize);
+        const result = loadRainbowAgentGenome(trainer, genome, config);
         latestResult = result;
         lastEmittedAt = Date.now();
         lastEmittedUpdate = 0;
         emit({type: "loaded", result});
     } catch (error) {
         if (trainer) {
-            disposePpoTrainer(trainer);
+            disposeRainbowTrainer(trainer);
             trainer = null;
         }
-        emit({type: "error", message: error instanceof Error ? error.message : "PPO 策略載入失敗。"});
+        emit({type: "error", message: error instanceof Error ? error.message : "Rainbow 策略載入失敗。"});
     }
 }
 
-function emit(event: BreakerPpoWorkerEvent): void {
+function emit(event: BreakerRainbowWorkerEvent): void {
     scope.postMessage(event);
 }
 
@@ -118,7 +119,7 @@ async function runUpdate(token: number): Promise<void> {
         return;
     }
     try {
-        const result = await trainPpoUpdate(trainer, config);
+        const result = await trainRainbowUpdate(trainer, config);
         if (!running || token !== runToken) {
             return;
         }
@@ -129,7 +130,7 @@ async function runUpdate(token: number): Promise<void> {
         scheduleNext(token);
     } catch (error) {
         running = false;
-        emit({type: "error", message: error instanceof Error ? error.message : "PPO 訓練失敗。"});
+        emit({type: "error", message: error instanceof Error ? error.message : "Rainbow 訓練失敗。"});
     }
 }
 

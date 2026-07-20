@@ -325,7 +325,7 @@ function simulateBreakerWithPolicy(
                 y: paddle.position.y,
             });
 
-            // 5c. PPO dense shaping：球向下落到下半場時，即時獎勵縮短板球距離。
+            // 5c. RL dense shaping：球向下落到下半場時，即時獎勵縮短板球距離。
             //     用移板前後差值，隔離球本身水平移動造成嘅 noise，等 credit
             //     assignment 可以直接分辨「今步向啱方向」定「向錯方向」。
             if (ball.position.y > HEIGHT * 0.45 && ball.velocity.y > 0) {

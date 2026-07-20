@@ -86,13 +86,13 @@ describe("genomeIO", () => {
         expect(parseGenomeFile(mcFile, {topic: "stock", topology, geneCount: composite.length})).toEqual(composite);
     });
 
-    it("allows breaker GA ↔ PPO actor interchange", () => {
+    it("allows breaker GA ↔ Rainbow agent interchange", () => {
         const topology = {inputSize: 8, hiddenLayers: [12], outputSize: 3};
         const breakerGenome = Array.from({length: calculateGeneCount(topology)}, (_, index) => Math.cos(index * 0.11) * 0.3);
         const gaFile = buildGenomeFile({topic: "breaker", topology, genome: breakerGenome});
-        expect(parseGenomeFile(gaFile, {topic: "breaker-ppo", topology})).toEqual(breakerGenome);
+        expect(parseGenomeFile(gaFile, {topic: "breaker-rainbow", topology})).toEqual(breakerGenome);
 
-        const ppoFile = buildGenomeFile({topic: "breaker-ppo", topology, genome: breakerGenome});
-        expect(parseGenomeFile(ppoFile, {topic: "breaker", topology})).toEqual(breakerGenome);
+        const rainbowFile = buildGenomeFile({topic: "breaker-rainbow", topology, genome: breakerGenome});
+        expect(parseGenomeFile(rainbowFile, {topic: "breaker", topology})).toEqual(breakerGenome);
     });
 });

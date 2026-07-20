@@ -23,7 +23,7 @@
     --muted: oklch(0.67 0.015 250);
     --snake: #58d68d;
     --breaker: #e7b955;
-    --breaker-ppo: #5da6d9;
+    --breaker-rainbow: #5da6d9;
     --flappy: #5ec8e8;
     --stock: #e36f5b;
     --stock-mc: #d48bd4;
@@ -160,8 +160,8 @@ button {
 .nav-breaker i {
     background: var(--breaker);
 }
-.nav-breaker-ppo i {
-    background: var(--breaker-ppo);
+.nav-breaker-rainbow i {
+    background: var(--breaker-rainbow);
 }
 .nav-stock i {
     background: var(--stock);
@@ -1293,8 +1293,8 @@ button.flow-stage {
 .accent-breaker {
     --accent-color: var(--breaker);
 }
-.accent-breaker-ppo {
-    --accent-color: var(--breaker-ppo);
+.accent-breaker-rainbow {
+    --accent-color: var(--breaker-rainbow);
 }
 .accent-flappy {
     --accent-color: var(--flappy);
@@ -1425,7 +1425,7 @@ button.flow-stage {
     line-height: 1.5;
     margin-bottom: 10px;
 }
-.ppo-fixed-grid {
+.rainbow-fixed-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 7px 10px;
@@ -1435,13 +1435,13 @@ button.flow-stage {
     font-family: "SFMono-Regular", Consolas, monospace;
     font-size: 11px;
 }
-.ppo-fixed-grid span {
+.rainbow-fixed-grid span {
     display: flex;
     min-width: 0;
     justify-content: space-between;
     gap: 6px;
 }
-.ppo-fixed-grid strong {
+.rainbow-fixed-grid strong {
     overflow: hidden;
     color: #b7bdc5;
     font-weight: 500;
@@ -1912,9 +1912,9 @@ button.flow-stage {
     border-bottom: 2px dashed #7aa2c9;
     background: transparent;
 }
-.legend-dot.ppo-loss {
+.legend-dot.rainbow-loss {
     height: 0;
-    border-bottom: 2px dashed var(--breaker-ppo);
+    border-bottom: 2px dashed var(--breaker-rainbow);
     background: transparent;
 }
 .application-panel {

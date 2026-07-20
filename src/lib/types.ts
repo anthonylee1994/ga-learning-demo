@@ -1,4 +1,4 @@
-export type TopicId = "theory" | "snake" | "breaker" | "breaker-ppo" | "flappy" | "stock" | "stock-mc";
+export type TopicId = "theory" | "snake" | "breaker" | "breaker-rainbow" | "flappy" | "stock" | "stock-mc";
 
 export interface GAConfig {
     populationSize: number;
@@ -236,7 +236,7 @@ export type WorkerEvent<TReplay = unknown> =
     | {type: "error"; message: string};
 
 export interface PersistedDemoState {
-    /** Lab-specific config JSON (GAConfig for evolution labs, PpoConfig for breaker-ppo). */
+    /** Lab-specific config JSON (GAConfig for evolution labs, RainbowConfig for breaker-rainbow). */
     config: GAConfig;
     champion?: Genome;
     bestFitness?: number;

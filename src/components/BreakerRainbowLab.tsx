@@ -1,26 +1,27 @@
 import React from "react";
 import {Button, Card, Chip, Tooltip} from "@heroui/react";
 import {Blocks, Pause, Play, RotateCcw} from "lucide-react";
-import {createPpoActorReplay, DEFAULT_PPO_CONFIG, type PpoConfig, type PpoUpdateStats} from "../domains/breaker/ppo";
+import {createRainbowAgentReplay, DEFAULT_RAINBOW_CONFIG, type RainbowConfig, type RainbowUpdateStats} from "../domains/breaker/rainbow";
 import {BREAKER_INPUT_LABELS, BREAKER_OUTPUT_LABELS, BREAKER_TOPOLOGY, buildBreakerInputFromFrame} from "../domains/breaker/simulation";
 import type {BreakerFrame, BreakerReplay, Genome, PersistedLabStateV1} from "../lib/types";
-import type {BreakerPpoWorkerCommand, BreakerPpoWorkerEvent} from "../workers/breakerPpo.worker";
+import type {BreakerRainbowWorkerCommand, BreakerRainbowWorkerEvent} from "../workers/breakerRainbow.worker";
 import {ApplicationPanel} from "./ApplicationPanel";
 import {BreakerCanvas} from "./BreakerCanvas";
 import {ControlSlider} from "./DemoControls";
 import {GenomeTransfer} from "./GenomeTransfer";
 import {NetworkPanel} from "./NetworkPanel";
-import {PpoTrainingChart} from "./PpoTrainingChart";
+import {RainbowTrainingChart} from "./RainbowTrainingChart";
 import {DemoShell} from "./SnakeLab";
 
 type TrainingStatus = "idle" | "running" | "paused";
 
 const STORAGE_KEY = "evolab-state-v1";
-const PPO_TOPIC = "breaker-ppo" as const;
+const RAINBOW_TOPIC = "breaker-rainbow" as const;
+const LEGACY_PPO_TOPIC = "breaker-ppo" as const;
 const PERSIST_DEBOUNCE_MS = 750;
 
-export const BreakerPpoLab = React.memo(() => {
-    const stored = React.useMemo(() => readStoredPpoDemo(), []);
+export const BreakerRainbowLab = React.memo(() => {
+    const stored = React.useMemo(() => readStoredRainbowDemo(), []);
     const workerRef = React.useRef<Worker | null>(null);
     const bestReplayUpdateRef = React.useRef(0);
     const persistTimerRef = React.useRef<number | null>(null);
@@ -29,11 +30,11 @@ export const BreakerPpoLab = React.memo(() => {
     const acceptWorkerResultsRef = React.useRef(true);
     const storedChampionRef = React.useRef<Genome | undefined>(stored?.champion);
     const storedBestReturnRef = React.useRef<number | undefined>(stored?.bestFitness);
-    const configRef = React.useRef<PpoConfig>(stored?.config ?? {...DEFAULT_PPO_CONFIG, seed: Math.round(Math.random() * 1_000_000)});
+    const configRef = React.useRef<RainbowConfig>(stored?.config ?? {...DEFAULT_RAINBOW_CONFIG, seed: Math.round(Math.random() * 1_000_000)});
 
-    const [config, setConfig] = React.useState<PpoConfig>(() => configRef.current);
+    const [config, setConfig] = React.useState<RainbowConfig>(() => configRef.current);
     const [status, setStatus] = React.useState<TrainingStatus>(stored?.champion?.length ? "paused" : "idle");
-    const [stats, setStats] = React.useState<PpoUpdateStats | null>(() =>
+    const [stats, setStats] = React.useState<RainbowUpdateStats | null>(() =>
         stored?.champion?.length
             ? {
                   update: 0,
@@ -41,39 +42,41 @@ export const BreakerPpoLab = React.memo(() => {
                   averageReturn: stored.bestFitness ?? 0,
                   bestReturn: stored.bestFitness ?? 0,
                   averageEpisodeLength: 0,
-                  policyLoss: 0,
-                  valueLoss: 0,
-                  entropy: 0,
+                  tdLoss: 0,
+                  meanTdError: 0,
+                  epsilon: DEFAULT_RAINBOW_CONFIG.epsilonStart,
+                  bufferSize: 0,
+                  beta: DEFAULT_RAINBOW_CONFIG.priorityBetaStart,
               }
             : null
     );
-    const [history, setHistory] = React.useState<PpoUpdateStats[]>([]);
-    const [actorGenome, setActorGenome] = React.useState<Genome | null>(() => (stored?.champion?.length ? [...stored.champion] : null));
+    const [history, setHistory] = React.useState<RainbowUpdateStats[]>([]);
+    const [agentGenome, setAgentGenome] = React.useState<Genome | null>(() => (stored?.champion?.length ? [...stored.champion] : null));
     /** 循環重播用：每圈 re-roll 真·隨機場景（同 GA 撞磚頁）。 */
     const [showcaseReplay, setShowcaseReplay] = React.useState<BreakerReplay | null>(null);
     const [showcaseEpoch, setShowcaseEpoch] = React.useState(0);
     const [liveInput, setLiveInput] = React.useState<number[] | null>(null);
     const [error, setError] = React.useState<string | null>(null);
     const [transferMessage, setTransferMessage] = React.useState<{type: "status" | "error"; text: string} | null>(null);
-    const actorGenomeRef = React.useRef(actorGenome);
+    const agentGenomeRef = React.useRef(agentGenome);
 
     configRef.current = config;
-    actorGenomeRef.current = actorGenome;
+    agentGenomeRef.current = agentGenome;
 
-    const schedulePersist = React.useCallback((nextConfig: PpoConfig, genome?: Genome, bestReturn?: number) => {
+    const schedulePersist = React.useCallback((nextConfig: RainbowConfig, genome?: Genome, bestReturn?: number) => {
         if (persistTimerRef.current !== null) {
             window.clearTimeout(persistTimerRef.current);
         }
         persistTimerRef.current = window.setTimeout(() => {
             persistTimerRef.current = null;
-            writeStoredPpoDemo(nextConfig, genome, bestReturn);
+            writeStoredRainbowDemo(nextConfig, genome, bestReturn);
         }, PERSIST_DEBOUNCE_MS) as unknown as number;
     }, []);
 
     React.useEffect(() => {
-        const worker = new Worker(new URL("../workers/breakerPpo.worker.ts", import.meta.url), {type: "module"});
+        const worker = new Worker(new URL("../workers/breakerRainbow.worker.ts", import.meta.url), {type: "module"});
         workerRef.current = worker;
-        worker.onmessage = function handleWorkerMessage(event: MessageEvent<BreakerPpoWorkerEvent>) {
+        worker.onmessage = function handleWorkerMessage(event: MessageEvent<BreakerRainbowWorkerEvent>) {
             const epochAtReceive = workerEpochRef.current;
             const isStale = () => epochAtReceive !== workerEpochRef.current || !acceptWorkerResultsRef.current;
 
@@ -84,8 +87,8 @@ export const BreakerPpoLab = React.memo(() => {
                 const result = event.data.result;
                 setStats(result.stats);
                 setHistory(current => (event.data.type === "loaded" ? [result.stats] : [...current.slice(-119), result.stats]));
-                setActorGenome(result.actorGenome);
-                storedChampionRef.current = result.actorGenome;
+                setAgentGenome(result.agentGenome);
+                storedChampionRef.current = result.agentGenome;
                 storedBestReturnRef.current = result.stats.bestReturn;
                 if (event.data.type === "loaded" || result.stats.bestUpdate > bestReplayUpdateRef.current) {
                     bestReplayUpdateRef.current = result.stats.bestUpdate;
@@ -98,7 +101,7 @@ export const BreakerPpoLab = React.memo(() => {
                     setLiveInput(null);
                 }
                 setError(null);
-                schedulePersist(configRef.current, result.actorGenome, result.stats.bestReturn);
+                schedulePersist(configRef.current, result.agentGenome, result.stats.bestReturn);
                 return;
             }
             if (event.data.type === "error") {
@@ -111,13 +114,13 @@ export const BreakerPpoLab = React.memo(() => {
         };
         worker.onerror = function handleWorkerError(event) {
             setStatus("paused");
-            setError(event.message || "PPO worker 發生錯誤。");
+            setError(event.message || "Rainbow worker 發生錯誤。");
         };
 
-        // Re-hydrate actor into the worker so continue-training keeps the stored weights.
+        // Re-hydrate agent into the worker so continue-training keeps the stored weights.
         const restoredGenome = storedChampionRef.current;
         if (restoredGenome?.length) {
-            worker.postMessage({type: "load", config: configRef.current, genome: restoredGenome} satisfies BreakerPpoWorkerCommand);
+            worker.postMessage({type: "load", config: configRef.current, genome: restoredGenome} satisfies BreakerRainbowWorkerCommand);
         }
 
         return () => {
@@ -138,7 +141,7 @@ export const BreakerPpoLab = React.memo(() => {
         schedulePersist(config, storedChampionRef.current, storedBestReturnRef.current);
     }, [config, schedulePersist]);
 
-    const postCommand = (command: BreakerPpoWorkerCommand) => {
+    const postCommand = (command: BreakerRainbowWorkerCommand) => {
         workerRef.current?.postMessage(command);
     };
 
@@ -150,7 +153,7 @@ export const BreakerPpoLab = React.memo(() => {
         postCommand({
             type: "start",
             config,
-            genome: actorGenome ?? storedChampionRef.current ?? undefined,
+            genome: agentGenome ?? storedChampionRef.current ?? undefined,
         });
     };
 
@@ -168,7 +171,7 @@ export const BreakerPpoLab = React.memo(() => {
         setStatus("idle");
         setStats(null);
         setHistory([]);
-        setActorGenome(null);
+        setAgentGenome(null);
         setShowcaseReplay(null);
         setShowcaseEpoch(0);
         bestReplayUpdateRef.current = 0;
@@ -180,11 +183,11 @@ export const BreakerPpoLab = React.memo(() => {
             persistTimerRef.current = null;
         }
         skipNextConfigPersistRef.current = true;
-        clearStoredPpoDemo();
-        setConfig({...DEFAULT_PPO_CONFIG, seed: Math.round(Math.random() * 1_000_000)});
+        clearStoredRainbowDemo();
+        setConfig({...DEFAULT_RAINBOW_CONFIG, seed: Math.round(Math.random() * 1_000_000)});
     };
 
-    const updateConfig = (key: keyof PpoConfig, value: number) => {
+    const updateConfig = (key: keyof RainbowConfig, value: number) => {
         setConfig(current => ({...current, [key]: value}));
     };
 
@@ -193,9 +196,9 @@ export const BreakerPpoLab = React.memo(() => {
     };
 
     const handleLoop = () => {
-        const genome = actorGenomeRef.current;
+        const genome = agentGenomeRef.current;
         if (genome) {
-            setShowcaseReplay(createPpoActorReplay(genome, configRef.current.maxSteps));
+            setShowcaseReplay(createRainbowAgentReplay(genome, configRef.current.maxSteps));
         }
     };
 
@@ -209,21 +212,19 @@ export const BreakerPpoLab = React.memo(() => {
 
     return (
         <DemoShell
-            accent="breaker-ppo"
-            description="策略網絡逐場試動作，再用 clipped objective 同 advantage 更新；訓練／評估／重播都用真·隨機場景（同 GA），逼策略學跟波而唔係背死路線。"
+            accent="breaker-rainbow"
+            description="Q-network 用 ε-greedy 探索，經驗入優先回放；每輪做 Double DQN + n-step TD 更新。訓練／評估／重播都用真·隨機場景（同 GA），逼 agent 學跟波而唔係背死路線。"
             eyebrow="強化學習實驗"
             icon={<Blocks size={20} strokeWidth={1.5} />}
-            title="撞磚 · PPO"
+            title="撞磚 · Rainbow"
         >
             <div className="workspace-grid">
                 <main className="demo-main">
-                    <PpoMetrics replay={showcaseReplay} stats={stats} />
+                    <RainbowMetrics replay={showcaseReplay} stats={stats} />
                     <div className="simulation-stage breaker-stage">
                         <div className="stage-overlay">
                             <span>Matter.js · 60 Hz · 真隨機</span>
-                            <span>
-                                {showcaseReplay ? (status === "running" ? "最佳策略循環重播 · 訓練中" : "最佳策略循環重播 · 每圈新一場") : status === "running" ? "收集 rollout 中" : "未有策略"}
-                            </span>
+                            <span>{showcaseReplay ? (status === "running" ? "最佳策略循環重播 · 訓練中" : "最佳策略循環重播 · 每圈新一場") : status === "running" ? "收集經驗中" : "未有策略"}</span>
                         </div>
                         <BreakerCanvas
                             loop
@@ -236,60 +237,60 @@ export const BreakerPpoLab = React.memo(() => {
                         />
                     </div>
                     <NetworkPanel
-                        eyebrow="Actor 策略"
-                        genome={actorGenome ?? undefined}
+                        eyebrow="Q-network"
+                        genome={agentGenome ?? undefined}
                         input={liveInput}
                         inputLabels={BREAKER_INPUT_LABELS}
                         outputLabels={BREAKER_OUTPUT_LABELS}
-                        subtitle="節點亮度跟住策略重播每一格嘅前向運算；熱圖係 actor 權重。"
-                        title="PPO 策略網絡"
+                        subtitle="節點亮度跟住 greedy 重播每一格嘅前向運算；輸出係三個動作嘅 Q 值。"
+                        title="Rainbow Q 網絡"
                         topology={BREAKER_TOPOLOGY}
                     />
-                    <PpoTrainingChart history={history} />
+                    <RainbowTrainingChart history={history} />
                     <ApplicationPanel
-                        eyebrow="PPO 對應"
+                        eyebrow="Rainbow 對應"
                         fitness="向落緊嚟嘅球移近有即時獎勵；消磚 +2、接球 +3、跌球 -2、全清 +20，並有輕微時間成本"
                         fitnessLabel="獎勵"
-                        genome="8 → 12 → 3 actor 策略權重；critic 另外估計每個狀態嘅長期回報"
+                        genome="8 → 12 → 3 Q-network；online + target 雙網；PER + n-step + Double DQN（教學版略過 C51 / Noisy / Dueling）"
                         genomeLabel="策略"
                         inputs="擋板/球位置、球速、最近磚塊方向、剩餘比例"
-                        outputs="向左、停住、向右嘅機率分佈"
+                        outputs="向左、停住、向右嘅 Q 值（argmax 執行動作）"
                         termination="球跌出底部、清晒 45 塊磚，或每回合 100,000 步上限；訓練／固定評估用真隨機場景；畫面每圈重抽一場"
-                        title="點樣用 PPO 學撞磚"
+                        title="點樣用 Rainbow 學撞磚"
                     />
                 </main>
                 <aside className="demo-sidebar">
-                    <PpoControls config={config} error={error} onPause={pause} onReset={reset} onStart={start} onUpdate={updateConfig} stats={stats} status={status}>
+                    <RainbowControls config={config} error={error} onPause={pause} onReset={reset} onStart={start} onUpdate={updateConfig} stats={stats} status={status}>
                         <GenomeTransfer
                             disabled={status === "running"}
                             fitness={stats?.bestReturn}
-                            genome={actorGenome}
+                            genome={agentGenome}
                             onImport={handleImportGenome}
                             onMessage={setTransferMessage}
                             score={showcaseReplay?.bricksCleared}
                             steps={showcaseReplay?.steps}
-                            topic="breaker-ppo"
+                            topic="breaker-rainbow"
                             topology={BREAKER_TOPOLOGY}
                         />
                         {transferMessage ? <p className={transferMessage.type === "error" ? "error-message" : "status-message"}>{transferMessage.text}</p> : null}
-                    </PpoControls>
+                    </RainbowControls>
                 </aside>
             </div>
         </DemoShell>
     );
 });
 
-interface PpoMetricsProps {
+interface RainbowMetricsProps {
     replay: BreakerReplay | null;
-    stats: PpoUpdateStats | null;
+    stats: RainbowUpdateStats | null;
 }
 
-const PpoMetrics = React.memo<PpoMetricsProps>(({replay, stats}) => {
+const RainbowMetrics = React.memo<RainbowMetricsProps>(({replay, stats}) => {
     const items = [
         {label: "更新輪次", value: String(stats?.update ?? 0)},
         {label: "固定評估", value: formatMetric(stats?.averageReturn)},
         {label: "歷史最佳", value: formatMetric(stats?.bestReturn)},
-        {label: "策略 loss", value: formatMetric(stats?.policyLoss)},
+        {label: "TD loss", value: formatMetric(stats?.tdLoss)},
         {label: "清磚數", value: String(replay?.bricksCleared ?? 0)},
         {label: "接球次數", value: String(replay?.hits ?? 0)},
     ];
@@ -305,26 +306,26 @@ const PpoMetrics = React.memo<PpoMetricsProps>(({replay, stats}) => {
     );
 });
 
-interface PpoControlsProps {
+interface RainbowControlsProps {
     children?: React.ReactNode;
-    config: PpoConfig;
+    config: RainbowConfig;
     error: string | null;
     onPause: () => void;
     onReset: () => void;
     onStart: () => void;
-    onUpdate: (key: keyof PpoConfig, value: number) => void;
-    stats: PpoUpdateStats | null;
+    onUpdate: (key: keyof RainbowConfig, value: number) => void;
+    stats: RainbowUpdateStats | null;
     status: TrainingStatus;
 }
 
-const PpoControls = React.memo<PpoControlsProps>(({children, config, error, onPause, onReset, onStart, onUpdate, stats, status}) => {
+const RainbowControls = React.memo<RainbowControlsProps>(({children, config, error, onPause, onReset, onStart, onUpdate, stats, status}) => {
     const locked = status === "running";
     return (
         <Card className="control-panel rounded-lg" variant="default">
             <Card.Header className="flex-row items-center justify-between">
                 <div>
                     <Card.Title className="text-base">訓練控制</Card.Title>
-                    <Card.Description>調整下一輪 rollout 同更新速度</Card.Description>
+                    <Card.Description>調整收集回合同梯度更新</Card.Description>
                 </div>
                 <Chip color={status === "running" ? "success" : status === "paused" ? "warning" : "default"} size="sm" variant="soft">
                     {status === "running" ? "運行中" : status === "paused" ? "已暫停" : "待機"}
@@ -345,11 +346,12 @@ const PpoControls = React.memo<PpoControlsProps>(({children, config, error, onPa
                             <RotateCcw size={15} strokeWidth={1.5} />
                             重設
                         </Button>
-                        <Tooltip.Content showArrow>清除 PPO 策略同訓練記錄。</Tooltip.Content>
+                        <Tooltip.Content showArrow>清除 Rainbow 策略同訓練記錄。</Tooltip.Content>
                     </Tooltip>
                 </div>
-                <ControlSlider disabled={locked} label="每輪回合" max={12} min={4} onChange={value => onUpdate("episodesPerUpdate", value)} step={1} value={config.episodesPerUpdate} />
-                <ControlSlider disabled={locked} label="學習率" max={0.003} min={0.0002} onChange={value => onUpdate("learningRate", value)} step={0.0002} value={config.learningRate} />
+                <ControlSlider disabled={locked} label="每輪回合" max={8} min={2} onChange={value => onUpdate("episodesPerUpdate", value)} step={1} value={config.episodesPerUpdate} />
+                <ControlSlider disabled={locked} label="每輪梯度步" max={64} min={8} onChange={value => onUpdate("trainStepsPerUpdate", value)} step={8} value={config.trainStepsPerUpdate} />
+                <ControlSlider disabled={locked} label="學習率" max={0.003} min={0.0001} onChange={value => onUpdate("learningRate", value)} step={0.0001} value={config.learningRate} />
                 <ControlSlider disabled={locked} label="播放／訓練速度" max={5} min={1} onChange={value => onUpdate("speed", value)} step={1} value={config.speed} />
                 <label className="control-field">
                     <span className="control-label">隨機種子</span>
@@ -364,21 +366,27 @@ const PpoControls = React.memo<PpoControlsProps>(({children, config, error, onPa
                     />
                 </label>
                 {children}
-                <div className="ppo-fixed-grid">
+                <div className="rainbow-fixed-grid">
                     <span>
-                        clip <strong>{config.clipRatio.toFixed(2)}</strong>
+                        n-step <strong>{config.nStep}</strong>
                     </span>
                     <span>
                         gamma <strong>{config.gamma.toFixed(2)}</strong>
                     </span>
                     <span>
-                        GAE <strong>{config.gaeLambda.toFixed(2)}</strong>
+                        ε <strong>{stats ? stats.epsilon.toFixed(3) : config.epsilonStart.toFixed(3)}</strong>
                     </span>
                     <span>
-                        entropy <strong>{stats ? stats.entropy.toFixed(3) : "—"}</strong>
+                        β <strong>{stats ? stats.beta.toFixed(3) : config.priorityBetaStart.toFixed(3)}</strong>
                     </span>
                     <span>
-                        value loss <strong>{stats ? stats.valueLoss.toFixed(3) : "—"}</strong>
+                        buffer <strong>{stats ? stats.bufferSize : 0}</strong>
+                    </span>
+                    <span>
+                        |TD| <strong>{stats ? stats.meanTdError.toFixed(3) : "—"}</strong>
+                    </span>
+                    <span>
+                        batch <strong>{config.batchSize}</strong>
                     </span>
                     <span>
                         平均步數 <strong>{stats ? Math.round(stats.averageEpisodeLength) : "—"}</strong>
@@ -394,21 +402,24 @@ function formatMetric(value: number | undefined): string {
     return value === undefined || !Number.isFinite(value) ? "—" : value.toFixed(2);
 }
 
-interface StoredPpoDemo {
-    config: PpoConfig;
+interface StoredRainbowDemo {
+    config: RainbowConfig;
     champion?: Genome;
     bestFitness?: number;
 }
 
-function readStoredPpoDemo(): StoredPpoDemo | undefined {
+function readStoredRainbowDemo(): StoredRainbowDemo | undefined {
     try {
         const state = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null") as PersistedLabStateV1 | null;
-        const demo = state?.version === 1 ? state.demos[PPO_TOPIC] : undefined;
+        if (state?.version !== 1) {
+            return undefined;
+        }
+        const demo = state.demos[RAINBOW_TOPIC] ?? state.demos[LEGACY_PPO_TOPIC as keyof typeof state.demos];
         if (!demo) {
             return undefined;
         }
         return {
-            config: mergePpoConfig(demo.config),
+            config: mergeRainbowConfig(demo.config),
             champion: demo.champion,
             bestFitness: demo.bestFitness,
         };
@@ -417,26 +428,28 @@ function readStoredPpoDemo(): StoredPpoDemo | undefined {
     }
 }
 
-function writeStoredPpoDemo(config: PpoConfig, champion?: Genome, bestFitness?: number): void {
+function writeStoredRainbowDemo(config: RainbowConfig, champion?: Genome, bestFitness?: number): void {
     try {
         const current = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null") as PersistedLabStateV1 | null;
         const state: PersistedLabStateV1 = current?.version === 1 ? current : {version: 1, demos: {}};
-        // Same bag as GA demos; config JSON is lab-specific (PpoConfig here).
-        state.demos[PPO_TOPIC] = {config: config as never, champion, bestFitness};
+        // Same bag as GA demos; config JSON is lab-specific (RainbowConfig here).
+        state.demos[RAINBOW_TOPIC] = {config: config as never, champion, bestFitness};
+        delete state.demos[LEGACY_PPO_TOPIC as keyof typeof state.demos];
         localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     } catch {
         // Private browsing or storage quotas should not stop a training session.
     }
 }
 
-function clearStoredPpoDemo(): void {
+function clearStoredRainbowDemo(): void {
     try {
         const state = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null") as PersistedLabStateV1 | null;
         if (state?.version !== 1) {
             localStorage.removeItem(STORAGE_KEY);
             return;
         }
-        delete state.demos[PPO_TOPIC];
+        delete state.demos[RAINBOW_TOPIC];
+        delete state.demos[LEGACY_PPO_TOPIC as keyof typeof state.demos];
         if (Object.keys(state.demos).length === 0) {
             localStorage.removeItem(STORAGE_KEY);
             return;
@@ -447,21 +460,30 @@ function clearStoredPpoDemo(): void {
     }
 }
 
-function mergePpoConfig(raw: unknown): PpoConfig {
-    const base = {...DEFAULT_PPO_CONFIG, seed: Math.round(Math.random() * 1_000_000)};
+function mergeRainbowConfig(raw: unknown): RainbowConfig {
+    const base = {...DEFAULT_RAINBOW_CONFIG, seed: Math.round(Math.random() * 1_000_000)};
     if (!raw || typeof raw !== "object") {
         return base;
     }
-    const source = raw as Partial<PpoConfig>;
+    const source = raw as Partial<RainbowConfig> & {episodesPerUpdate?: number};
     return {
         episodesPerUpdate: typeof source.episodesPerUpdate === "number" ? source.episodesPerUpdate : base.episodesPerUpdate,
+        trainStepsPerUpdate: typeof source.trainStepsPerUpdate === "number" ? source.trainStepsPerUpdate : base.trainStepsPerUpdate,
+        batchSize: typeof source.batchSize === "number" ? source.batchSize : base.batchSize,
         maxSteps: typeof source.maxSteps === "number" ? source.maxSteps : base.maxSteps,
-        epochs: typeof source.epochs === "number" ? source.epochs : base.epochs,
         learningRate: typeof source.learningRate === "number" ? source.learningRate : base.learningRate,
         gamma: typeof source.gamma === "number" ? source.gamma : base.gamma,
-        gaeLambda: typeof source.gaeLambda === "number" ? source.gaeLambda : base.gaeLambda,
-        clipRatio: typeof source.clipRatio === "number" ? source.clipRatio : base.clipRatio,
-        entropyCoefficient: typeof source.entropyCoefficient === "number" ? source.entropyCoefficient : base.entropyCoefficient,
+        nStep: typeof source.nStep === "number" ? source.nStep : base.nStep,
+        bufferSize: typeof source.bufferSize === "number" ? source.bufferSize : base.bufferSize,
+        minBufferSize: typeof source.minBufferSize === "number" ? source.minBufferSize : base.minBufferSize,
+        tau: typeof source.tau === "number" ? source.tau : base.tau,
+        priorityAlpha: typeof source.priorityAlpha === "number" ? source.priorityAlpha : base.priorityAlpha,
+        priorityBetaStart: typeof source.priorityBetaStart === "number" ? source.priorityBetaStart : base.priorityBetaStart,
+        priorityBetaEnd: typeof source.priorityBetaEnd === "number" ? source.priorityBetaEnd : base.priorityBetaEnd,
+        betaAnnealingUpdates: typeof source.betaAnnealingUpdates === "number" ? source.betaAnnealingUpdates : base.betaAnnealingUpdates,
+        epsilonStart: typeof source.epsilonStart === "number" ? source.epsilonStart : base.epsilonStart,
+        epsilonEnd: typeof source.epsilonEnd === "number" ? source.epsilonEnd : base.epsilonEnd,
+        epsilonDecayUpdates: typeof source.epsilonDecayUpdates === "number" ? source.epsilonDecayUpdates : base.epsilonDecayUpdates,
         seed: typeof source.seed === "number" ? source.seed : base.seed,
         speed: typeof source.speed === "number" ? source.speed : base.speed,
     };
