@@ -33,7 +33,7 @@ describe("champion replay playback", () => {
                 set: () => true,
             }
         );
-        vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(context as unknown as CanvasRenderingContext2D);
+        vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(context as unknown as GPUCanvasContext);
     });
 
     afterEach(() => {

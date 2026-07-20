@@ -159,10 +159,11 @@ function validateGenomeArray(values: unknown[], geneCount: number): Genome {
     return genome;
 }
 
-/** Stock GA and 蒙地卡羅 labs share the same composite genome layout. */
+/** Related labs that share an identical flat genome layout can import each other. */
 function topicsCompatible(fileTopic: GenomeFileTopic, expectedTopic: GenomeFileTopic): boolean {
     const stockFamily = new Set<GenomeFileTopic>(["stock", "stock-mc"]);
-    return stockFamily.has(fileTopic) && stockFamily.has(expectedTopic);
+    const breakerFamily = new Set<GenomeFileTopic>(["breaker", "breaker-ppo"]);
+    return (stockFamily.has(fileTopic) && stockFamily.has(expectedTopic)) || (breakerFamily.has(fileTopic) && breakerFamily.has(expectedTopic));
 }
 
 function topologiesMatch(a: NetworkTopology, b: NetworkTopology): boolean {

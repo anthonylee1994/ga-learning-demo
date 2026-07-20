@@ -92,18 +92,20 @@ interface ControlSliderProps {
     step: number;
     value: number;
     onChange: (value: number) => void;
+    disabled?: boolean;
 }
 
-const ControlSlider = React.memo<ControlSliderProps>(props => {
+export const ControlSlider = React.memo<ControlSliderProps>(props => {
     return (
         <label className="control-field">
             <span className="control-label">
                 <span>{props.label}</span>
-                <span className="text-foreground inline-flex items-center gap-1 font-mono text-xs">{props.step < 1 ? props.value.toFixed(2) : props.value}</span>
+                <span className="text-foreground inline-flex items-center gap-1 font-mono text-xs">{formatSliderValue(props.value, props.step)}</span>
             </span>
             <input
                 aria-label={props.label}
                 className="range-input"
+                disabled={props.disabled}
                 max={props.max}
                 min={props.min}
                 onChange={event => props.onChange(Number(event.target.value))}
@@ -114,3 +116,11 @@ const ControlSlider = React.memo<ControlSliderProps>(props => {
         </label>
     );
 });
+
+function formatSliderValue(value: number, step: number): string {
+    if (step >= 1) {
+        return String(value);
+    }
+    const decimalPlaces = Math.min(6, Math.max(2, Math.ceil(-Math.log10(step))));
+    return value.toFixed(decimalPlaces);
+}

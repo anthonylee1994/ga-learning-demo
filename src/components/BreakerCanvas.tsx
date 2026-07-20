@@ -38,21 +38,22 @@ export const BreakerCanvas = React.memo<Props>(({replay, speed, playing = true, 
         const currentFrame = replay.frames[frameIndex];
         const delay = currentFrame?.terminal && loop ? TERMINAL_HOLD_MS : frameMs;
         const timer = window.setTimeout(() => {
-            setFrameIndex(current => {
-                const last = replay.frames.length - 1;
-                if (last < 0) {
-                    return 0;
+            const last = replay.frames.length - 1;
+            if (last < 0) {
+                setFrameIndex(0);
+                return;
+            }
+            if (frameIndex >= last) {
+                if (loop) {
+                    // Ask parent for a new random rollout before restarting frames.
+                    onLoopRef.current?.();
+                    setFrameIndex(0);
+                    return;
                 }
-                if (current >= last) {
-                    if (loop) {
-                        // Ask parent for a new random rollout before restarting frames.
-                        onLoopRef.current?.();
-                        return 0;
-                    }
-                    return last;
-                }
-                return current + 1;
-            });
+                setFrameIndex(last);
+                return;
+            }
+            setFrameIndex(frameIndex + 1);
         }, delay);
         return () => window.clearTimeout(timer);
     }, [frameIndex, replay, speed, playing, loop]);

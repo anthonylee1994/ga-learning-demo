@@ -23,6 +23,7 @@
     --muted: oklch(0.67 0.015 250);
     --snake: #58d68d;
     --breaker: #e7b955;
+    --breaker-ppo: #5da6d9;
     --flappy: #5ec8e8;
     --stock: #e36f5b;
     --stock-mc: #d48bd4;
@@ -158,6 +159,9 @@ button {
 }
 .nav-breaker i {
     background: var(--breaker);
+}
+.nav-breaker-ppo i {
+    background: var(--breaker-ppo);
 }
 .nav-stock i {
     background: var(--stock);
@@ -1289,6 +1293,9 @@ button.flow-stage {
 .accent-breaker {
     --accent-color: var(--breaker);
 }
+.accent-breaker-ppo {
+    --accent-color: var(--breaker-ppo);
+}
 .accent-flappy {
     --accent-color: var(--flappy);
 }
@@ -1417,6 +1424,28 @@ button.flow-stage {
     font-size: 13px;
     line-height: 1.5;
     margin-bottom: 10px;
+}
+.ppo-fixed-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px 10px;
+    border-top: 1px solid #262d34;
+    padding-top: 14px;
+    color: #6f7883;
+    font-family: "SFMono-Regular", Consolas, monospace;
+    font-size: 11px;
+}
+.ppo-fixed-grid span {
+    display: flex;
+    min-width: 0;
+    justify-content: space-between;
+    gap: 6px;
+}
+.ppo-fixed-grid strong {
+    overflow: hidden;
+    color: #b7bdc5;
+    font-weight: 500;
+    text-overflow: ellipsis;
 }
 .genome-transfer {
     position: relative;
@@ -1881,6 +1910,11 @@ button.flow-stage {
 .legend-dot.diversity {
     height: 0;
     border-bottom: 2px dashed #7aa2c9;
+    background: transparent;
+}
+.legend-dot.ppo-loss {
+    height: 0;
+    border-bottom: 2px dashed var(--breaker-ppo);
     background: transparent;
 }
 .application-panel {

@@ -126,6 +126,7 @@ interface DemoShellProps {
     accent: string;
     icon: React.ReactNode;
     children: React.ReactNode;
+    eyebrow?: string;
 }
 
 export const DemoShell = React.memo<DemoShellProps>(props => {
@@ -134,7 +135,7 @@ export const DemoShell = React.memo<DemoShellProps>(props => {
             <header className="demo-header">
                 <div className="demo-icon">{props.icon}</div>
                 <div>
-                    <p className="eyebrow">即時演化實驗</p>
+                    <p className="eyebrow">{props.eyebrow ?? "即時演化實驗"}</p>
                     <h2>{props.title}</h2>
                     <p>{props.description}</p>
                 </div>

@@ -11,11 +11,12 @@ interface NetworkPanelProps {
     outputLabels?: readonly string[];
     title?: string;
     subtitle?: string;
+    eyebrow?: string;
     /** Optional footer (e.g. stock day scrubber). */
     children?: React.ReactNode;
 }
 
-export const NetworkPanel = React.memo<NetworkPanelProps>(({topology, genome, input = null, inputLabels, outputLabels, title = "神經網絡", subtitle = "冠軍拓撲 · 權重 · 即時激活", children}) => {
+export const NetworkPanel = React.memo<NetworkPanelProps>(({topology, genome, input = null, inputLabels, outputLabels, title = "神經網絡", subtitle = "冠軍拓撲 · 權重 · 即時激活", eyebrow = "神經演化大腦", children}) => {
     const inspection = React.useMemo(() => {
         if (!genome || genome.length === 0) {
             return null;
@@ -46,7 +47,7 @@ export const NetworkPanel = React.memo<NetworkPanelProps>(({topology, genome, in
         <section className="network-panel">
             <div className="panel-heading">
                 <div>
-                    <p className="eyebrow">神經演化大腦</p>
+                    <p className="eyebrow">{eyebrow}</p>
                     <h3>{title}</h3>
                 </div>
                 <div className="network-meta">

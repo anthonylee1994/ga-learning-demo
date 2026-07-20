@@ -56,6 +56,36 @@ interface BreakerResult {
     replay: BreakerReplay;
 }
 
+export interface BreakerPolicyDecision {
+    action: number;
+    logProbability?: number;
+    value?: number;
+}
+
+export interface BreakerPolicyTransition {
+    observation: number[];
+    action: number;
+    reward: number;
+    nextObservation: number[];
+    done: boolean;
+    logProbability: number;
+    value: number;
+}
+
+export interface BreakerPolicyEpisode extends BreakerResult {
+    return: number;
+    transitions: BreakerPolicyTransition[];
+}
+
+interface BreakerPolicyOptions {
+    launch?: number;
+    maxSteps?: number;
+    random?: RandomSource;
+    record?: boolean;
+}
+
+type BreakerPolicy = (observation: number[]) => BreakerPolicyDecision;
+
 /**
  * 即場 RNG（唔 seed）。
  * gaussian 用 Box–Muller，spare 存第二個樣本，慳一次 random。
@@ -96,9 +126,9 @@ export function evaluateBreakerGenome(genome: Genome): number {
  * UI 用：隨機抽一個發射角，錄低整場 replay frames 畀畫面播。
  * 每次 call 都重新 random，所以 loop / re-roll 會見到唔同版本。
  */
-export function createBreakerReplay(genome: Genome): BreakerReplay {
+export function createBreakerReplay(genome: Genome, maxSteps = MAX_STEPS): BreakerReplay {
     const launch = EVAL_LAUNCHES[Math.floor(Math.random() * EVAL_LAUNCHES.length)];
-    return simulateBreaker(genome, launch, true, createLiveRandom()).replay;
+    return simulateBreaker(genome, launch, true, createLiveRandom(), maxSteps).replay;
 }
 
 /** 對應 8 維輸入（畀 UI 顯示 activation 標籤） */
@@ -123,24 +153,18 @@ export const BREAKER_OUTPUT_LABELS = ["向左", "停住", "向右"] as const;
  *   [7] 剩餘磚比例（0～1）
  */
 export function buildBreakerInputFromFrame(frame: BreakerFrame): number[] {
-    const activeBricks = frame.bricks.filter(brick => brick.active);
-    // 最近磚：用 |Δx| 揀（同模擬 loop 一致），冇磚就假一個喺球頭頂
-    const nearestBrick = activeBricks.reduce(
-        (nearest, brick) => (Math.abs(brick.x - frame.ball.x) < Math.abs(nearest.x - frame.ball.x) ? brick : nearest),
-        activeBricks[0] ?? {id: -1, x: frame.ball.x, y: 0, active: false}
-    );
-    const velocity = frame.ballVelocity ?? {x: 0, y: 0};
-    const totalBricks = Math.max(1, frame.bricks.length);
-    return [
-        (frame.paddleX / WIDTH) * 2 - 1,
-        (frame.ball.x / WIDTH) * 2 - 1,
-        (frame.ball.y / HEIGHT) * 2 - 1,
-        clamp(velocity.x / 7, -1, 1),
-        clamp(velocity.y / 7, -1, 1),
-        clamp((nearestBrick.x - frame.ball.x) / WIDTH, -1, 1),
-        clamp((nearestBrick.y - frame.ball.y) / HEIGHT, -1, 1),
-        activeBricks.length / totalBricks,
-    ];
+    return buildBreakerObservation(frame.paddleX, frame.ball, frame.ballVelocity ?? {x: 0, y: 0}, frame.bricks);
+}
+
+export function runBreakerPolicy(policy: BreakerPolicy, options: BreakerPolicyOptions = {}): BreakerPolicyEpisode {
+    const launch = options.launch ?? EVAL_LAUNCHES[Math.floor(Math.random() * EVAL_LAUNCHES.length)];
+    const transitions: BreakerPolicyTransition[] = [];
+    let episodeReturn = 0;
+    const result = simulateBreakerWithPolicy(policy, launch, options.record ?? false, options.random ?? createLiveRandom(), options.maxSteps ?? MAX_STEPS, function collectTransition(transition) {
+        transitions.push(transition);
+        episodeReturn += transition.reward;
+    });
+    return {...result, return: episodeReturn, transitions};
 }
 
 /**
@@ -151,10 +175,29 @@ export function buildBreakerInputFromFrame(frame: BreakerFrame): number[] {
  * @param record          true = 抽樣存 frames 做 replay；false = 淨係計 fitness（快）
  * @param random          亂數源（出生點、jitter、spin 都靠佢）
  */
-function simulateBreaker(genome: Genome, xVelocityFactor: number, record: boolean, random: RandomSource): BreakerResult {
+function simulateBreaker(genome: Genome, xVelocityFactor: number, record: boolean, random: RandomSource, maxSteps = MAX_STEPS): BreakerResult {
+    const runNetwork = networkAdapter.createRunner(genome);
+    return simulateBreakerWithPolicy(
+        function selectAction(observation) {
+            return {action: argMax(runNetwork(observation))};
+        },
+        xVelocityFactor,
+        record,
+        random,
+        maxSteps
+    );
+}
+
+function simulateBreakerWithPolicy(
+    policy: BreakerPolicy,
+    xVelocityFactor: number,
+    record: boolean,
+    random: RandomSource,
+    maxSteps: number,
+    onTransition?: (transition: BreakerPolicyTransition) => void
+): BreakerResult {
     // ── 1. 建立無重力物理世界 ──────────────────────────────────────────
     const engine = Matter.Engine.create({gravity: {x: 0, y: 0}});
-    const runNetwork = networkAdapter.createRunner(genome);
 
     // 擋板起始 X 有隨機偏移：唔可以淨係背「中間接 serve」
     const paddleStartX = clamp(WIDTH / 2 + (random.next() - 0.5) * 56, PADDLE_WIDTH / 2, WIDTH - PADDLE_WIDTH / 2);
@@ -219,7 +262,7 @@ function simulateBreaker(genome: Genome, xVelocityFactor: number, record: boolea
     let terminal: NonNullable<BreakerFrame["terminal"]> = "timeout";
     const frames: BreakerFrame[] = [];
     // 抽樣間隔：保證 frames 唔超過 MAX_REPLAY_FRAMES；唔 record 時 stride 唔重要
-    const frameStride = record ? Math.max(4, Math.ceil(MAX_STEPS / MAX_REPLAY_FRAMES)) : 4;
+    const frameStride = record ? Math.max(4, Math.ceil(maxSteps / MAX_REPLAY_FRAMES)) : 4;
 
     // ── 4. 碰撞回調 ───────────────────────────────────────────────────
     const onCollisionStart = (event: Matter.IEventCollision<Matter.Engine>) => {
@@ -263,39 +306,34 @@ function simulateBreaker(genome: Genome, xVelocityFactor: number, record: boolea
 
     try {
         // ── 5. 主 loop：感知 → 決策 → 移板 → 物理 → 檢查結束 ─────────
-        for (let step = 0; step < MAX_STEPS; step += 1) {
+        for (let step = 0; step < maxSteps; step += 1) {
             executedSteps = step + 1;
 
             // 5a. 組 NN 輸入（同 buildBreakerInputFromFrame 同一套正規化）
-            const activeBricks = Array.from(bricks.values()).filter(brick => brick.active);
-            const nearestBrick = activeBricks.reduce(
-                (nearest, brick) => (Math.abs(brick.x - ball.position.x) < Math.abs(nearest.x - ball.position.x) ? brick : nearest),
-                activeBricks[0] ?? {id: -1, x: ball.position.x, y: 0, active: false}
-            );
-            const input = [
-                (paddle.position.x / WIDTH) * 2 - 1,
-                (ball.position.x / WIDTH) * 2 - 1,
-                (ball.position.y / HEIGHT) * 2 - 1,
-                clamp(ball.velocity.x / 7, -1, 1),
-                clamp(ball.velocity.y / 7, -1, 1),
-                clamp((nearestBrick.x - ball.position.x) / WIDTH, -1, 1),
-                clamp((nearestBrick.y - ball.position.y) / HEIGHT, -1, 1),
-                activeBricks.length / bricks.size,
-            ];
+            const input = buildBreakerObservation(paddle.position.x, ball.position, ball.velocity, Array.from(bricks.values()));
 
             // 5b. NN 揀動作：0 左、1 停、2 右；每 step 移 7px
-            const action = argMax(runNetwork(input));
+            const decision = policy(input);
+            const action = clamp(Math.round(decision.action), 0, BREAKER_TOPOLOGY.outputSize - 1);
             const movement = action === 0 ? -7 : action === 2 ? 7 : 0;
+            const previousBricksCleared = bricksCleared;
+            const previousHits = hits;
+            const previousPaddleDistance = Math.abs(paddle.position.x - ball.position.x);
+            let stepReward = -0.001;
             Matter.Body.setPosition(paddle, {
                 x: clamp(paddle.position.x + movement, PADDLE_WIDTH / 2, WIDTH - PADDLE_WIDTH / 2),
                 y: paddle.position.y,
             });
 
-            // 5c. Dense shaping：球落半場時，板越對正球 reward 越高
-            //     幫 early generation 學「跟住球行」，唔使等消到磚先有訊號
-            if (ball.position.y > HEIGHT * 0.45) {
+            // 5c. PPO dense shaping：球向下落到下半場時，即時獎勵縮短板球距離。
+            //     用移板前後差值，隔離球本身水平移動造成嘅 noise，等 credit
+            //     assignment 可以直接分辨「今步向啱方向」定「向錯方向」。
+            if (ball.position.y > HEIGHT * 0.45 && ball.velocity.y > 0) {
+                const paddleDistance = Math.abs(paddle.position.x - ball.position.x);
+                const distanceProgress = clamp((previousPaddleDistance - paddleDistance) / 7, -1, 1);
                 const align = 1 - Math.min(1, Math.abs(paddle.position.x - ball.position.x) / (PADDLE_WIDTH * 1.5));
                 trackingReward += align * 0.08;
+                stepReward += distanceProgress * 0.12 + align * 0.015;
             }
 
             // 5d. 推進物理一幀（~16.67ms @ 60Hz）
@@ -317,12 +355,34 @@ function simulateBreaker(genome: Genome, xVelocityFactor: number, record: boolea
             }
 
             // 5f. 結束條件
+            let done = false;
             if (ball.position.y > HEIGHT + 20) {
                 terminal = "lost"; // 球跌出場
-                break;
-            }
-            if (bricksCleared === bricks.size) {
+                stepReward -= 2;
+                done = true;
+            } else if (bricksCleared === bricks.size) {
                 terminal = "cleared"; // 全清
+                stepReward += 20;
+                done = true;
+            } else if (step === maxSteps - 1) {
+                terminal = "timeout";
+                done = true;
+            }
+
+            stepReward += (bricksCleared - previousBricksCleared) * 2;
+            stepReward += (hits - previousHits) * 3;
+            if (onTransition) {
+                onTransition({
+                    observation: input,
+                    action,
+                    reward: stepReward,
+                    nextObservation: buildBreakerObservation(paddle.position.x, ball.position, ball.velocity, Array.from(bricks.values())),
+                    done,
+                    logProbability: decision.logProbability ?? 0,
+                    value: decision.value ?? 0,
+                });
+            }
+            if (done) {
                 break;
             }
             // 否則跑到 MAX_STEPS → terminal 保持 "timeout"
@@ -372,7 +432,7 @@ function simulateBreaker(genome: Genome, xVelocityFactor: number, record: boolea
     const paceBonus = executedSteps > 0 ? (bricksCleared / executedSteps) * 1_400 : 0;
 
     // finishRatio = 剩低時間比例；平方後「快好多」>>「快少少」
-    const finishRatio = clearedAll ? Math.max(0, 1 - executedSteps / MAX_STEPS) : 0;
+    const finishRatio = clearedAll ? Math.max(0, 1 - executedSteps / maxSteps) : 0;
     const clearSpeedBonus = finishRatio * finishRatio * 2_200 + finishRatio * 500;
 
     // tracking 有硬 cap：最多 ≈ 每磚 8 分 + 12，永遠rival 唔到一粒磚嘅 140
@@ -383,6 +443,24 @@ function simulateBreaker(genome: Genome, xVelocityFactor: number, record: boolea
         fitness: bricksCleared * 140 + clearBonus + clearSpeedBonus + paceBonus + trackingScore - wastePenalty,
         replay: {frames, bricksCleared, hits, steps: executedSteps},
     };
+}
+
+function buildBreakerObservation(paddleX: number, ball: {x: number; y: number}, velocity: {x: number; y: number}, bricks: BreakerBrick[]): number[] {
+    const activeBricks = bricks.filter(brick => brick.active);
+    const nearestBrick = activeBricks.reduce(
+        (nearest, brick) => (Math.abs(brick.x - ball.x) < Math.abs(nearest.x - ball.x) ? brick : nearest),
+        activeBricks[0] ?? {id: -1, x: ball.x, y: 0, active: false}
+    );
+    return [
+        (paddleX / WIDTH) * 2 - 1,
+        (ball.x / WIDTH) * 2 - 1,
+        (ball.y / HEIGHT) * 2 - 1,
+        clamp(velocity.x / 7, -1, 1),
+        clamp(velocity.y / 7, -1, 1),
+        clamp((nearestBrick.x - ball.x) / WIDTH, -1, 1),
+        clamp((nearestBrick.y - ball.y) / HEIGHT, -1, 1),
+        activeBricks.length / Math.max(1, bricks.length),
+    ];
 }
 
 /** 對速度加細隨機偏移，再 normalize（牆／磚反彈後用） */
